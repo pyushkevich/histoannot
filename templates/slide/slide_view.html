@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block header %}
+{% endblock %}
+
+{% block content %}
+
+<style type="text/css">
+html {
+    overflow: hidden;
+}
+body {
+    margin: 0;
+    padding: 0;
+}
+div#view {
+    position: relative;
+    left: 0;
+    width: 100%;
+    height: calc(100vh - 120px);
+    background-color: white;
+    color: black;
+}
+div#draw_button {
+    position: relative;
+    left: 0;
+    bottom: 40px;
+    width: 100px;
+    height: 30px;
+    background-color: blue;
+    color: white;
+    text-align: center;
+    line-height: 30px;
+    border-radius: 3px;
+}
+
+div#draw_button:hover {
+    box-shadow:0 8px 16px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19)
+}
+
+</style>
+<a href="{{ url_for('slide.index')}}">Home</a> : <a href="{{ url_for('slide.block_detail', id=slide_info['block_id']) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }}  
+
+<div id="view"> </div>
+<div id="draw_button">Draw Lines</div>
+
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-scalebar.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-fabricjs-overlay.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='fabric/fabric.adapted.js') }}"></script>
+<script type="text/javascript">
+$(document).ready(function() {
+    var viewer = new OpenSeadragon({
+        id: "view",
+        tileSources: "{{ url_for('slide.dzi', id=slide_id) }}",
+        prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
+        showNavigator: true,
+        showRotationControl: false,
+        showSequenceControl: true,
+        animationTime: 0.5,
+        blendTime: 0.1,
+        constrainDuringPan: true,
+        maxZoomPixelRatio: 2,
+        minZoomLevel: 1,
+        visibilityRatio: 1,
+        zoomPerScroll: 2,
+        timeout: 120000,
+    });
+    viewer.addHandler("open", function() {
+        // To improve load times, ignore the lowest-resolution Deep Zoom
+        // levels.  This is a hack: we can't configure the minLevel via
+        // OpenSeadragon configuration options when the viewer is created
+        // from DZI XML.
+        viewer.source.minLevel = 8;
+    });
+    var mpp = parseFloat("{{ slide_mpp }}");
+    viewer.scalebar({
+        pixelsPerMeter: mpp ? (1e6 / mpp) : 0,
+        xOffset: 10,
+        yOffset: 10,
+        barThickness: 3,
+        color: '#555555',
+        fontColor: '#333333',
+        backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    });
+
+    // initialize overlay
+    var options = { scale: 1000 }
+    var overlay = viewer.fabricjsOverlay(options);
+
+    // Create a drawing button
+
+    // Create a button
+    var line_button = new fabric.Rect({left: 930, top: 50, width: 60, height:30, fill:'blue', selectable:false, action:'btn_line'})
+    var line_button_text = new fabric.Text('Draw Lines', {left: 935, top:55, fontSize:18, fontFamily: 'Helvetica', textAlign: 'center', fill: 'black', selectable: false, action: 'btn_line'})
+    overlay.fabricCanvas().add(line_button)
+    overlay.fabricCanvas().add(line_button_text)
+
+    // Event handler
+    var mouse_down_handler = function(options) {
+        if (options.target && (options.target.action=='btn_line')) {
+            viewer.setMouseNavEnabled(false);
+            viewer.outerTracker.setTracking(false);
+            line_button.set('fill', 'darkblue')
+            overlay.fabricCanvas().isDrawingMode=true;
+        }
+    }
+
+    overlay.fabricCanvas().on('mouse:down', mouse_down_handler)
+        
+
+    
+
+    // Paint something on the overlay
+    var my_rect = new fabric.Rect({left:200, top:200, width:40, height:40, fill:'orange'})
+    overlay.fabricCanvas().add(my_rect)
+
+
+    
+});
+</script>
+
+
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <title>{% block title %}{% endblock %} - Flaskr</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pure/pure-min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='pure/layouts/marketing.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+<body>
+  <div class="header">A
+    <div class="home-menu pure-menu pure-menu-horizontal pure-menu-fixed">
+      <a class="pure-menu-heading" href="">PICSL Histology Annotator</a>
+      <ul class="pure-menu-list">
+        {% if g.user %}
+        <li class="pure-menu-item"><span>{{ g.user['username'] }}</span>
+          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Log Out</a>
+            {% else %}
+            <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.register') }}">Register</a>
+              <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Log In</a>
+                {% endif %}
+      </ul>
+    </div>
+
+    <div id="main">
+      <div class="content">
+        <h1> {% block header %}{% endblock %} </h1>
+        {% for message in get_flashed_messages() %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

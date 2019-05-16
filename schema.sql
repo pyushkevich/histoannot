@@ -1,0 +1,44 @@
+DROP TABLE IF EXISTS user;
+DROP TABLE IF EXISTS block;
+DROP TABLE IF EXISTS slide;
+DROP TABLE IF EXISTS annot;
+
+CREATE TABLE user (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL
+);
+
+CREATE TABLE block (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  specimen_name TEXT NOT NULL,
+  block_name TEXT NOT NULL
+);
+
+CREATE TABLE slide (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  block_id INTEGER NOT NULL,
+  section INTEGER NOT NULL,
+  slide INTEGER NOT NULL,
+  stain INTEGER NOT NULL,
+  tiff_file TEXT NOT NULL,
+  mat_file TEXT NOT NULL,
+  CONSTRAINT fk_block
+    FOREIGN KEY (block_id)
+    REFERENCES block_id(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE annot (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  author_id INTEGER NOT NULL,
+  slide_id INTEGER NOT NULL,
+  anntype INTEGER NOT NULL,
+  data TEXT,
+  created INTEGER NOT NULL,
+  FOREIGN KEY (slide_id) REFERENCES slide (id),
+  FOREIGN KEY (author_id) REFERENCES user (id)
+);
+
+
+

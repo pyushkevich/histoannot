@@ -1,0 +1,141 @@
+import sqlite3
+import os
+import re
+
+import click
+from flask import current_app, g
+from flask.cli import with_appcontext
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(
+            current_app.config['DATABASE'],
+            detect_types=sqlite3.PARSE_DECLTYPES
+        )
+        g.db.row_factory = sqlite3.Row
+
+    return g.db
+
+
+def close_db(e=None):
+    db = g.pop('db', None)
+
+    if db is not None:
+        db.close()
+
+def init_db():
+    db = get_db()
+
+    with current_app.open_resource('schema.sql') as f:
+        db.executescript(f.read().decode('utf8'))
+
+def add_block(specimen, block):
+    db=get_db()
+    if db.execute('SELECT id FROM block'
+                  ' WHERE specimen_name=? and block_name=?', 
+                 (specimen, block)).fetchone() is not None:
+        return
+
+
+# Check if the file refers to a valid slide
+def is_valid_slide(src_dir, matfile):
+    if os.path.isfile(os.path.join(src_dir, matfile)) and matfile.endswith('.mat'):
+        p = re.compile('.mat$').sub('.tiff', matfile)
+        return os.path.exists(os.path.join(src_dir, p))
+    else:
+        return False
+
+# Get a dictionary from a filename
+def parse_slide_filename(matfile, src_dir):
+
+    # Drop the .mat extension
+    basename = re.compile('_x16_aff.mat$').sub('', matfile)
+
+    # Split the filename on '_'
+    s=basename.split('_')
+
+    # Take the last bits
+    n = len(s)
+    if n < 4:
+        raise ValueError('Invalid filename')
+
+    # Get the full filename
+    matfile_full = os.path.abspath(os.path.join(src_dir, matfile))
+    tiff_file = re.compile('.mat$').sub('.tiff', matfile_full)
+
+    return {'slide':s[n-2], 'section':s[n-3], 'stain':s[n-1], 'block':s[n-4],
+            'tiff_file': tiff_file, 'mat_file': matfile_full}
+
+
+# The administrator is expected to curate the image collection. The system simply
+# takes stock of the available data and presents it for segmentation. Each image 
+# in the curated collection is associated with one or more segmentations. The SVG
+# files are updated as the segmentation progresses.
+def rebuild_slide_db(src_dir):
+
+    # Clear the block and slide tables
+    db = get_db()
+    db.execute('DELETE FROM block WHERE id >= 0')
+    db.execute('DELETE FROM slide WHERE id >= 0')
+    db.commit()
+    
+    # Traverse over specimens and blocks
+    specimens = filter(lambda d: os.path.isdir(os.path.join(src_dir, d)), os.listdir(src_dir))
+    for s in specimens:
+        spec_dir = os.path.join(src_dir, s)
+        blocks = filter(lambda d: os.path.isdir(os.path.join(spec_dir, d)), os.listdir(spec_dir))
+        for b in blocks:
+            block_dir = os.path.join(spec_dir, b)
+
+            # Collect a list of valid slides with .mat files
+            mats = filter(lambda d: is_valid_slide(block_dir, d), os.listdir(block_dir))
+
+            # There must be at least one slide
+            if len(mats) > 0:
+
+                # Add a block reference
+                db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (s,b))
+
+                # Get the inserted id
+                block_id = db.execute('SELECT id FROM block'
+                                      ' WHERE specimen_name=? AND block_name=?', (s,b)
+                                     ).fetchone()['id']
+
+
+                # Add each of the slides
+                for m in mats:
+
+                    si=parse_slide_filename(m, block_dir)
+
+                    slide_id = db.execute('INSERT INTO slide '
+                                          '    (block_id, section, slide, stain, tiff_file, mat_file)'
+                                          ' VALUES (?,?,?,?,?,?)', 
+                                          (block_id, si['section'], si['slide'], 
+                                           si['stain'], si['tiff_file'], si['mat_file'])).fetchone()
+
+                # Commit the database
+                db.commit()
+
+
+@click.command('init-db')
+@with_appcontext
+def init_db_command():
+    """Clear the existing data and create new tables."""
+    init_db()
+    click.echo('Initialized the database.')
+
+
+@click.command('scan-slides')
+@click.option('--src', prompt='Source directory', 
+              help='Directory to import data from')
+@with_appcontext
+def scan_slides_command(src):
+    """Scan the local directory for slides and create block and slide database"""
+    rebuild_slide_db(src)
+    click.echo('Scanned for slides')
+
+
+def init_app(app):
+    app.teardown_appcontext(close_db)
+    app.cli.add_command(init_db_command)
+    app.cli.add_command(scan_slides_command)

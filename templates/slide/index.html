@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block header %}
+Specimen Listing
+{% endblock %}
+
+{% block content %}
+<p>Select one of these specimens to view slides.</p>
+
+  <table class="pure-table">
+    <thead>
+      <tr>
+        <th>Specimen</th>
+        <th>Block</th>
+        <th># Slides</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+  {% for block in blocks %}
+      <tr>
+        <td>{{block['specimen_name']}}</td>
+        <td>{{block['block_name']}}</td>
+        <td>{{block['nslides']}}</td>
+        <td><a class="action" href="{{ url_for('slide.block_detail', id=block['id']) }}">View</a></td>
+      </tr>
+  {% endfor %}
+{% endblock %}

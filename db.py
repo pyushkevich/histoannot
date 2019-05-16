@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import re
+import csv
 
 import click
 from flask import current_app, g
@@ -117,6 +118,66 @@ def rebuild_slide_db(src_dir):
                 db.commit()
 
 
+# The administrator is expected to curate the image collection. The system simply
+# takes stock of the available data and presents it for segmentation. Each image 
+# in the curated collection is associated with one or more segmentations. The SVG
+# files are updated as the segmentation progresses.
+def rebuild_slide_db_block(src_dir, specimen, block, match_csv):
+
+    # Clear the block and slide tables
+    db = get_db()
+    brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', (specimen, block)).fetchone()
+    if brec is not None:
+        db.execute('DELETE FROM slide WHERE block_id = ?', (brec['id'],))
+        db.execute('DELETE FROM block WHERE id = ?', (brec['id'],))
+        db.commit()
+
+    # Create a list of dicts from CSV
+    si=[]
+
+    # Read CSV
+    with open(match_csv) as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        for row in csv_reader:
+            # Check correctness
+            if row[2] != block:
+                raise ValueError('block name mismatch')
+
+            # Check for existence of file
+            fn=None
+            for ext in ('.svs', '.tiff'):
+                fn_test=os.path.join(src_dir, row[0]+ext)
+                if os.path.exists(fn_test):
+                    fn=fn_test
+                    break
+
+            # If file exists, add it to the database
+            if fn is not None:
+                si.append({'tiff_file':fn, 'stain':row[1], 'section':row[3], 'slide':row[4], 'mat_file':'blah'})
+
+    # Make sure we read some records
+    if len(si) > 0:
+
+        # Add a block reference
+        db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (specimen,block))
+
+        # Get the inserted id
+        block_id = db.execute('SELECT id FROM block'
+                              ' WHERE specimen_name=? AND block_name=?', (specimen,block)).fetchone()['id']
+
+        # Add each slide
+        for s in si:
+
+            db.execute('INSERT INTO slide '
+                       '    (block_id, section, slide, stain, tiff_file, mat_file)'
+                       ' VALUES (?,?,?,?,?,?)', 
+                       (block_id, s['section'], s['slide'], 
+                        s['stain'], s['tiff_file'], s['mat_file']))
+
+        # Commit the database
+        db.commit()
+
+
 @click.command('init-db')
 @with_appcontext
 def init_db_command():
@@ -133,6 +194,18 @@ def scan_slides_command(src):
     """Scan the local directory for slides and create block and slide database"""
     rebuild_slide_db(src)
     click.echo('Scanned for slides')
+
+@click.command('add-block')
+@click.option('--src', prompt='Source directory', help='Directory to import data from')
+@click.option('--specimen', prompt='Specimen ID')
+@click.option('--block', prompt='Block ID')
+@click.option('--match', prompt='Match CSV file')
+@with_appcontext
+def scan_slides_command(src, specimen, block, match):
+    """Scan the local directory for slides and create block and slide database"""
+    rebuild_slide_db_block(src, specimen, block, match)
+    click.echo('Scanned for slides')
+
 
 
 def init_app(app):

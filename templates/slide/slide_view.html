@@ -21,28 +21,26 @@ div#view {
     background-color: white;
     color: black;
 }
-div#draw_button {
-    position: relative;
-    left: 0;
-    bottom: 40px;
-    width: 100px;
-    height: 30px;
-    background-color: blue;
-    color: white;
-    text-align: center;
-    line-height: 30px;
+button.bottom_button {
     border-radius: 3px;
+    margin: 0 5px 0 5px;
+    padding: 2px 0 2px 0;
+    cursor: pointer;
+    border: 2px solid blue;
+    color: blue;
 }
 
-div#draw_button:hover {
-    box-shadow:0 8px 16px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19)
+button.active, button.bottom_button:hover {
+    background-color: blue;
+    color: white;
 }
 
 </style>
 <a href="{{ url_for('slide.index')}}">Home</a> : <a href="{{ url_for('slide.block_detail', id=slide_info['block_id']) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }}  
 
 <div id="view"> </div>
-<div id="draw_button">Draw Lines</div>
+<button id="draw_button" class="bottom_button">&nbsp Draw Lines &nbsp</div>
+<button id="nav_button" class="bottom_button active">&nbsp Zoom and Pan &nbsp</div>
 
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
@@ -89,28 +87,41 @@ $(document).ready(function() {
     var options = { scale: 1000 }
     var overlay = viewer.fabricjsOverlay(options);
 
-    // Create a drawing button
-
-    // Create a button
-    var line_button = new fabric.Rect({left: 930, top: 50, width: 60, height:30, fill:'blue', selectable:false, action:'btn_line'})
-    var line_button_text = new fabric.Text('Draw Lines', {left: 935, top:55, fontSize:18, fontFamily: 'Helvetica', textAlign: 'center', fill: 'black', selectable: false, action: 'btn_line'})
-    overlay.fabricCanvas().add(line_button)
-    overlay.fabricCanvas().add(line_button_text)
-
-    // Event handler
-    var mouse_down_handler = function(options) {
-        if (options.target && (options.target.action=='btn_line')) {
-            viewer.setMouseNavEnabled(false);
-            viewer.outerTracker.setTracking(false);
-            line_button.set('fill', 'darkblue')
-            overlay.fabricCanvas().isDrawingMode=true;
-        }
+    // Active button decoration
+    var fn_active_button = function(element) {
+        var current = document.getElementsByClassName("active");
+        current[0].className = current[0].className.replace(" active", "");
+        element.className += " active";
     }
 
-    overlay.fabricCanvas().on('mouse:down', mouse_down_handler)
-        
+    // Event handler
+    var draw_pressed_handler = function(options) {
+        viewer.setMouseNavEnabled(false);
+        viewer.outerTracker.setTracking(false);
+        overlay.fabricCanvas().isDrawingMode=true;
+        fn_active_button(document.getElementById('draw_button'))
+    }
 
-    
+    var nav_pressed_handler = function(options) {
+        viewer.setMouseNavEnabled(true);
+        viewer.outerTracker.setTracking(true);
+        overlay.fabricCanvas().isDrawingMode=false;
+        fn_active_button(document.getElementById('nav_button'))
+    }
+
+    var drawButton_elt = document.getElementById('draw_button');
+    var navButton_elt = document.getElementById('nav_button');
+
+    // Create a drawing button
+    var drawButton = new OpenSeadragon.Button({element: drawButton_elt, tooltip: 'Draw line segments on the slide'})
+    var navButton = new OpenSeadragon.Button({element: navButton_elt, tooltip: 'Navigate around the slide using zoom and pan'})
+
+    viewer.addControl(navButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
+    viewer.addControl(drawButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
+
+    drawButton.addHandler('press', draw_pressed_handler)
+    navButton.addHandler('press', nav_pressed_handler)
+
 
     // Paint something on the overlay
     var my_rect = new fabric.Rect({left:200, top:200, width:40, height:40, fill:'orange'})

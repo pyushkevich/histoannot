@@ -47,11 +47,23 @@ button.disabled, button.disabled:hover {
 </style>
 <a href="{{ url_for('slide.index')}}">Home</a> : <a href="{{ url_for('slide.block_detail', id=slide_info['block_id']) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }}  
 
-<div id="view"> </div>
+<span style="float:right">
+{% if prev_slide %}
+    <a href="{{url_for('slide.slide_view', id=prev_slide['id'])}}">Previous Slide</a>
+{% endif %}
+&nbsp
+{% if next_slide  %}
+    <a href="{{url_for('slide.slide_view', id=next_slide['id'])}}">Next Slide</a>
+{% endif %}
+</span>
+
+<div id="view">
+<input id="marker" placeholder="Enter Text" style="display:none; position: absolute; left:0px; top:0px; width:100px; height:40px;"></input>
+</div>
 <button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (D) &nbsp</div>
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</div>
 <button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</div>
-
+<button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</div>
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-scalebar.js') }}"></script>
@@ -61,6 +73,7 @@ button.disabled, button.disabled:hover {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.9.25/paper-full.min.js"></script>
 <script type="text/javascript">
 $(document).ready(function() {
+
     var viewer = new OpenSeadragon({
         id: "view",
         prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
@@ -100,6 +113,9 @@ $(document).ready(function() {
         overlay = viewer.paperjsOverlay();
         overlay.resize();
         overlay.resizecanvas();
+
+        // Get the initial data
+        download_annot()
     }
 
     // Paper default settings
@@ -124,15 +140,39 @@ $(document).ready(function() {
         return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
     }
 
+    // Helper function to get the delta corresponding to OSD event
+    var ev_delta = function(event) {
+        var transformed_point1 = paper.view.viewToProject(new paper.Point(0,0));
+        var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
+        return transformed_point2.subtract(transformed_point1);
+    }
+    
+
     var deselect_all_paths = function() {
         var selected = paper.project.selectedItems;
         for (var i = 0; i < selected.length; i++) {
             var item = selected[i];
-            if (item instanceof paper.Path) {
+            if (item instanceof paper.Path || item instanceof paper.PointText) {
                 item.selected = false;
             }
         }
     }
+
+    var upload_annot = function() {
+        payload = paper.project.exportJSON();
+        $.post( "{{ url_for('slide.upload_json', id = slide_id) }}", payload, function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
+    }
+
+    var download_annot = function() {
+        $.get( "{{ url_for('slide.get_json', id = slide_id) }}", function(data, status) {
+            if(status=='success' && data.length) {
+                paper.project.importJSON(data)
+            }
+        })
+    }
+
+    var moving_object
+    var moving_object_moved=false;
 
     var press_handler = function(event) {
         if(curr_mode == 'DRAW') {
@@ -144,13 +184,28 @@ $(document).ready(function() {
         }
         else if(curr_mode == 'NAV') {
             hit = paper.project.hitTest(ev_point(event))
+            moving_object=null;
             if(hit) {
-                deselect_all_paths();
-                hit.item.selected = true;
-                fn_update_button_state();
+                if(!hit.item.selected) {
+                    // Hitting an unselected target
+                    deselect_all_paths();
+                    hit.item.selected = true;
+                    fn_update_button_state();
+                    paper.view.draw();
+                    moving_object = hit.item;
+                    moving_object_moved = true;
+                }
+                else {
+                    // Starting to move a selected target
+                    moving_object = hit.item;
+                    moving_object_moved = false;
+                }
+            }
+            else {
+                deselect_all_paths()
+                viewer.setMouseNavEnabled(true);
                 paper.view.draw();
             }
-            
         }
     }
 
@@ -159,17 +214,79 @@ $(document).ready(function() {
             curr_path.add(ev_point(event))
             paper.view.draw();
         }
+        else if(curr_mode == 'NAV' && moving_object) {
+            // Move the object by the delta
+            moving_object.position = moving_object.position.add(ev_delta(event));
+            console.log(event.delta)
+            if(event.delta.x != 0 || event.delta.y != 0)
+                moving_object_moved = true;
+            paper.view.draw();
+        }
     }
 
     var dragEnd_handler = function(event) {
         if(curr_mode == 'DRAW') {
-            var start = Date.now();
             curr_path.simplify(10)
-            console.log("time elapsed: " + (Date.now() - start) + " ms.")
+            upload_annot()
             paper.view.draw();
             nav_pressed_handler();
         }
     }
+
+    var show_marker_editor = function(event, target_item) {
+        var p = ev_point(event);
+        var input = document.getElementById("marker");
+        input.style.left = "" + event.position.x - 50 + "px";
+        input.style.top = "" + event.position.y - 20 + "px";
+        input.style.width = "100px";
+        input.style.height = "40px";
+        input.style.display = "block";
+        input.style.textAlign = "center";
+        input.style.zIndex = 100;
+
+        if(target_item) { input.value = target_item.content; } else { input.value = null; }
+
+        input.focus();
+
+        input.onkeypress = function(e) {
+            if(!e) e = window.event;
+            if (e.keyCode == '13') {
+                this.style.display = "none";
+                if(target_item) {
+                    target_item.content = this.value;
+                    target_item.visible = true;
+                    target_item.selected = false;
+                } else {
+                    var newtext = new paper.PointText(p);
+                    newtext.content = this.value;
+                    newtext.style = {
+                        fontWeight: 'bold',
+                        fontSize: 100,
+                        justification: 'center'
+                    };
+                }
+                paper.view.draw();
+                nav_pressed_handler();
+                upload_annot();
+                return false;
+            }
+        }
+    }
+
+    var release_handler = function(event) {
+        if(curr_mode == 'NAV' && moving_object) {
+            if(!moving_object_moved)
+                moving_object.selected = false;
+            moving_object = null;
+            paper.view.draw();
+            upload_annot();
+        }
+        else if(curr_mode == 'MARKER') {
+            show_marker_editor(event, null);
+        }
+
+    }
+
 
     var move_handler = function(event) {
         if(curr_mode == 'NAV' && paper.project) {
@@ -180,7 +297,21 @@ $(document).ready(function() {
             }
             else {
                 document.getElementById("view").style.cursor = "default";
-                viewer.setMouseNavEnabled(true);
+                // Nav behavior only available if no selection
+                if(paper.project.selectedItems.length == 0)
+                    viewer.setMouseNavEnabled(true);
+                else
+                    viewer.setMouseNavEnabled(false);
+            }
+        }
+    }
+
+    var dblClick_handler = function(event) {
+        if(curr_mode == 'NAV') {
+            hit = paper.project.hitTest(ev_point(event))
+            if(hit && hit.item instanceof paper.PointText) {
+                hit.item.visible = false;
+                show_marker_editor(event, hit.item);
             }
         }
     }
@@ -188,8 +319,10 @@ $(document).ready(function() {
     var mouse_tracker = new OpenSeadragon.MouseTracker({
                                                        element: viewer.canvas,
                                                        pressHandler: press_handler,
+                                                       releaseHandler: release_handler,
                                                        dragHandler: drag_handler,
                                                        dragEndHandler: dragEnd_handler,
+                                                       dblClickHandler: dblClick_handler,
                                                        moveHandler: move_handler });
 
     mouse_tracker.setTracking(true);
@@ -219,6 +352,7 @@ $(document).ready(function() {
         viewer.outerTracker.setTracking(false);
         curr_mode = 'DRAW';
         fn_active_button(document.getElementById('draw_button'))
+        document.getElementById("view").style.cursor = "crosshair";
     }
 
     var nav_pressed_handler = function(options) {
@@ -226,6 +360,15 @@ $(document).ready(function() {
         viewer.outerTracker.setTracking(true);
         curr_mode = 'NAV';
         fn_active_button(document.getElementById('nav_button'))
+        document.getElementById("view").style.cursor = "default";
+    }
+
+    var marker_pressed_handler = function(options) {
+        viewer.setMouseNavEnabled(false);
+        viewer.outerTracker.setTracking(false);
+        curr_mode = 'MARKER';
+        fn_active_button(document.getElementById('marker_button'))
+        document.getElementById("view").style.cursor = "crosshair";
     }
 
     var del_pressed_handler = function(options) {
@@ -233,11 +376,12 @@ $(document).ready(function() {
             var selected = paper.project.selectedItems;
             for (var i = 0; i < selected.length; i++) {
                 var item = selected[i];
-                if (item instanceof paper.Path) {
+                if (item instanceof paper.Path || item instanceof paper.PointText) {
                     item.remove()
                 }
             }
             fn_update_button_state()
+            upload_annot();
             paper.view.draw();
         }
     }
@@ -245,23 +389,30 @@ $(document).ready(function() {
     var drawButton_elt = document.getElementById('draw_button');
     var navButton_elt = document.getElementById('nav_button');
     var delButton_elt = document.getElementById('del_button');
+    var markerButton_elt = document.getElementById('marker_button');
 
     // Create a drawing button
     var drawButton = new OpenSeadragon.Button({element: drawButton_elt, tooltip: 'Draw line segments on the slide'})
     var navButton = new OpenSeadragon.Button({element: navButton_elt, tooltip: 'Navigate around the slide using zoom and pan'})
     var delButton = new OpenSeadragon.Button({element: delButton_elt, tooltip: 'Delete selected line or text'})
+    var markerButton = new OpenSeadragon.Button({element: markerButton_elt, tooltip: 'Place anatomical marker'})
 
     viewer.addControl(navButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
     viewer.addControl(drawButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
-    viewer.addControl(delButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
-
+    viewer.addControl(markerButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
+    viewer.addControl(delButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_RIGHT })
 
 
     drawButton.addHandler('press', draw_pressed_handler)
     navButton.addHandler('press', nav_pressed_handler)
     delButton.addHandler('press', del_pressed_handler)
+    markerButton.addHandler('press', marker_pressed_handler)
 
+    // Sometimes the scrolling is messed up
+    document.body.scrollTop = document.documentElement.scrollTop = 0;
+    
     window.onresize = function() {
+        document.body.scrollTop = document.documentElement.scrollTop = 0;
         overlay.resize();
         overlay.resizecanvas(); }
 
@@ -273,9 +424,9 @@ $(document).ready(function() {
     // Some keyboard navigation
     Mousetrap.bind('d', function() { draw_pressed_handler() });
     Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
+    Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
     Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
+    Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
 });
 </script>
-
-
 {% endblock %}

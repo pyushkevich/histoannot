@@ -167,6 +167,7 @@ $(document).ready(function() {
         $.get( "{{ url_for('slide.get_json', id = slide_id) }}", function(data, status) {
             if(status=='success' && data.length) {
                 paper.project.importJSON(data)
+                deselect_all_paths()
             }
         })
     }

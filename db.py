@@ -90,6 +90,7 @@ def rebuild_slide_db(src_dir):
 
             # Collect a list of valid slides with .mat files
             mats = filter(lambda d: is_valid_slide(block_dir, d), os.listdir(block_dir))
+            print("%s: %d files" % (block_dir, len(mats)))
 
             # There must be at least one slide
             if len(mats) > 0:
@@ -201,7 +202,7 @@ def scan_slides_command(src):
 @click.option('--block', prompt='Block ID')
 @click.option('--match', prompt='Match CSV file')
 @with_appcontext
-def scan_slides_command(src, specimen, block, match):
+def add_block_command(src, specimen, block, match):
     """Scan the local directory for slides and create block and slide database"""
     rebuild_slide_db_block(src, specimen, block, match)
     click.echo('Scanned for slides')
@@ -212,3 +213,4 @@ def init_app(app):
     app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
     app.cli.add_command(scan_slides_command)
+    app.cli.add_command(add_block_command)

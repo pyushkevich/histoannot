@@ -19,6 +19,7 @@ def index():
     blocks = db.execute(
         'SELECT b.*, count(s.id) as nslides'
         ' FROM block b join slide s on b.id = s.block_id'
+        ' GROUP BY specimen_name, block_name'
         ' ORDER BY specimen_name, block_name ASC').fetchall()
     return render_template('slide/index.html', blocks=blocks)
 

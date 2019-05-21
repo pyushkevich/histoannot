@@ -7,6 +7,8 @@ import click
 from flask import current_app, g
 from flask.cli import with_appcontext
 
+import openslide
+
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(
@@ -67,6 +69,22 @@ def parse_slide_filename(matfile, src_dir):
     return {'slide':s[n-2], 'section':s[n-3], 'stain':s[n-1], 'block':s[n-4],
             'tiff_file': tiff_file, 'mat_file': matfile_full}
 
+# Generate a screenshot for a slice
+def make_thumbnail(slide_id, tiff_file, lazy):
+
+    thumb_dir = os.path.join(current_app.instance_path, 'thumb')
+    thumb_fn = os.path.join(thumb_dir, "thumb%08d.png" % (slide_id,))
+
+    if lazy is True and os.path.exists(thumb_fn):
+        return
+    
+    if not os.path.exists(thumb_dir):
+        os.makedirs(thumb_dir)
+
+    osr = openslide.OpenSlide(tiff_file)
+    thumb = osr.get_thumbnail((256,192))
+    thumb.save(thumb_fn)
+
 
 # A better way to import tiff files, actually synchronize the file system with
 # the database. That is go through all files in the directory and update or 
@@ -94,10 +112,10 @@ def update_slide_db(src_dir):
             if len(mats) > 0:
 
                 # Make sure the block exists
-                brec = db.execute('SELECT FROM block WHERE specimen_name=? AND block_name=?', (s,b)).fetchone()
+                brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', (s,b)).fetchone()
                 if brec is None:
                     db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (s,b))
-                    brec = db.execute('SELECT FROM block WHERE specimen_name=? AND block_name=?', (s,b)).fetchone()
+                    brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', (s,b)).fetchone()
 
                 # Get the block id
                 block_id = brec['id']
@@ -111,21 +129,31 @@ def update_slide_db(src_dir):
                     # Search for the slide in the database
                     srec = db.execute('SELECT * FROM slide'
                                       ' WHERE block_id=? AND section=? AND stain=? AND slide=?',
-                                      (block_id, si['section'], si['stain'], si['slide']))
+                                      (block_id, si['section'], si['stain'], si['slide'])).fetchone()
 
                     # If slide was not found, insert one
+                    lazy = True
                     if srec is None:
                         db.execute('INSERT INTO slide (block_id, section, slide, stain, tiff_file, mat_file)'
                                    ' VALUES (?,?,?,?,?,?)', 
                                    (block_id, si['section'], si['slide'], 
                                        si['stain'], si['tiff_file'], si['mat_file']))
-                        n_ins+=2
+
+                        srec = db.execute('SELECT * FROM slide'
+                                          ' WHERE block_id=? AND section=? AND stain=? AND slide=?',
+                                          (block_id, si['section'], si['stain'], si['slide'])).fetchone()
+                        lazy = False
+                        n_ins+=1
 
                     # If slide was found, check if it requires an updateA
                     elif srec['tiff_file'] != si['tiff_file'] or srec['mat_file'] != si['mat_file']:
                         db.execute('UPDATE slide SET tiff_file=?, mat_file=? WHERE id=?',
                                 (si['tiff_file'], si['mat_file'], srec['id']))
-                        n_upd+=2
+                        lazy = False
+                        n_upd+=1
+
+                    # Generate thumbnail
+                    make_thumbnail(srec['id'], srec['tiff_file'], lazy)
 
                 # Commit
                 db.commit()

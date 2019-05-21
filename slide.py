@@ -1,5 +1,5 @@
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app
+    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_from_directory
 )
 from werkzeug.exceptions import abort
 
@@ -175,3 +175,10 @@ def tile(id, level, col, row, format):
     resp.mimetype = 'image/%s' % format
     return resp
 
+
+# Serve up thumbnails
+@bp.route('/slide/<int:id>/thumb', methods=('GET',))
+def thumb(id):
+    thumb_dir = os.path.join(current_app.instance_path, 'thumb')
+    thumb_fn = "thumb%08d.png" % (id,)
+    return send_from_directory(thumb_dir, thumb_fn, as_attachment=False)

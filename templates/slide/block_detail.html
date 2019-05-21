@@ -1,15 +1,11 @@
 {% extends 'base.html' %}
 
-{% block header %}
-{{block['specimen_name']}}:{{block['block_name']}}
-{% endblock %}
-
 {% block content %}
-<p>Specimen {{block['specimen_name']}} block {{block['block_name']}} contains the following slides:</p>
-
+<a href="{{ url_for('slide.index')}}">Home</a> : {{block['specimen_name']}}:{{block['block_name']}}
   <table class="pure-table">
     <thead>
       <tr>
+	<th> </th>
         <th>Section</th>
         <th>Slice</th>
         <th>Stain</th>
@@ -19,6 +15,7 @@
     <tbody>
   {% for slide in slides %}
       <tr>
+        <td><a href="{{ url_for('slide.slide_view', id=slide['id']) }}"><img height="72px" src="{{url_for('slide.thumb', id=slide['id'])}}"></img></a></td>
         <td>{{slide['section']}}</td>
         <td>{{slide['slide']}}</td>
         <td>{{slide['stain']}}</td>

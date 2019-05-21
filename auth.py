@@ -1,11 +1,13 @@
 import functools
 
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, session, url_for
+    Blueprint, flash, g, redirect, render_template, request, session, url_for, current_app
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from flaskr.db import get_db
+import os
+import hashlib
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -15,6 +17,7 @@ def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        syspass = request.form['syspass']
         db = get_db()
         error = None
 
@@ -22,10 +25,18 @@ def register():
             error = 'Username is required.'
         elif not password:
             error = 'Password is required.'
-        elif db.execute(
-            'SELECT id FROM user WHERE username = ?', (username,)
-        ).fetchone() is not None:
-            error = 'User {} is already registered.'.format(username)
+        elif not syspass:
+            error = 'System password is required'
+        else:
+            passfile=os.path.join(current_app.instance_path,'password.txt')
+            target=''
+            with open(passfile, 'r') as infile:  
+                target=infile.read().replace('\n','')
+
+            if target != hashlib.md5(syspass.encode()).hexdigest():
+                error = 'Wrong system password: "' + hashlib.md5(syspass.encode()).hexdigest() + '" vs "' + target + '"'
+            elif db.execute('SELECT id FROM user WHERE username = ?', (username,)).fetchone() is not None:
+                error = 'User {} is already registered.'.format(username)
 
         if error is None:
             db.execute(

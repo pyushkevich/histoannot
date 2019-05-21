@@ -14,6 +14,7 @@ bp = Blueprint('slide', __name__)
 
 # The index
 @bp.route('/')
+@login_required
 def index():
     db = get_db()
     blocks = db.execute(
@@ -25,6 +26,7 @@ def index():
 
 # The block detail listing
 @bp.route('/block/<int:id>/detail', methods=('GET', 'POST'))
+@login_required
 def block_detail(id):
     db = get_db()
     block = db.execute(
@@ -35,6 +37,7 @@ def block_detail(id):
 
 # The slide view
 @bp.route('/slide/<int:id>/view', methods=('GET', 'POST'))
+@login_required
 def slide_view(id):
     db = get_db()
 
@@ -52,19 +55,20 @@ def slide_view(id):
     # Get the previous and next slides
     prev_slide = db.execute(
         'SELECT id FROM slide'
-        ' WHERE block_id=? AND section <= ? AND slide <= ? AND id != ?'
-        ' ORDER BY section DESC, slide DESC limit 1', (block_id, section, slideno, id)).fetchone()
+        ' WHERE block_id=? AND section * 1000 + slide <= ? AND id != ?'
+        ' ORDER BY section DESC, slide DESC limit 1', (block_id, section * 1000 + slideno, id)).fetchone()
 
     next_slide = db.execute(
         'SELECT id FROM slide'
-        ' WHERE block_id=? AND section >= ? AND slide >= ? AND id != ?'
-        ' ORDER BY section ASC, slide ASC limit 1', (block_id, section, slideno, id)).fetchone()
+        ' WHERE block_id=? AND section * 1000 + slide >= ? AND id != ?'
+        ' ORDER BY section ASC, slide ASC limit 1', (block_id, section * 1000 + slideno, id)).fetchone()
 
     return render_template('slide/slide_view.html', slide_id = id, 
                            slide_info = slide_info, next_slide=next_slide, prev_slide=prev_slide)
 
 # Get the DZI for a slide
 @bp.route('/slide/<int:id>.dzi', methods=('GET', 'POST'))
+@login_required
 def dzi(id):
     format = 'jpeg'
     
@@ -108,6 +112,7 @@ def get_annot_json_file(id):
 
 # Receive updated json for the slide
 @bp.route('/slide/<int:id>/annot/set', methods=('POST',))
+@login_required
 def upload_json(id):
     # Get the raw json
     data = json.loads(request.get_data())
@@ -122,6 +127,7 @@ def upload_json(id):
 
 # Send the json for the slide
 @bp.route('/slide/<int:id>/annot/get', methods=('GET',))
+@login_required
 def get_json(id):
 
     # Get the filename
@@ -148,6 +154,7 @@ class PILBytesIO(BytesIO):
 
 # Get the tiles for a slide
 @bp.route('/slide/<int:id>_files/<int:level>/<int:col>_<int:row>.<format>',  methods=('GET', 'POST'))
+@login_required
 def tile(id, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':

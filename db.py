@@ -68,6 +68,75 @@ def parse_slide_filename(matfile, src_dir):
             'tiff_file': tiff_file, 'mat_file': matfile_full}
 
 
+# A better way to import tiff files, actually synchronize the file system with
+# the database. That is go through all files in the directory and update or 
+# create their records. 
+def update_slide_db(src_dir):
+
+    db = get_db()
+
+    # Traverse over specimens and blocks
+    specimens = filter(lambda d: os.path.isdir(os.path.join(src_dir, d)), os.listdir(src_dir))
+    for s in specimens:
+        spec_dir = os.path.join(src_dir, s)
+        blocks = filter(lambda d: os.path.isdir(os.path.join(spec_dir, d)), os.listdir(spec_dir))
+        for b in blocks:
+            block_dir = os.path.join(spec_dir, b)
+
+            # Collect a list of valid slides with .mat files
+            mats = filter(lambda d: is_valid_slide(block_dir, d), os.listdir(block_dir))
+            print("%s: %d files" % (block_dir, len(mats)))
+
+            # Keep track of number of inserted and updated slides
+            (n_ins, n_upd) = (0, 0)
+
+            # There must be at least one slide
+            if len(mats) > 0:
+
+                # Make sure the block exists
+                brec = db.execute('SELECT FROM block WHERE specimen_name=? AND block_name=?', (s,b)).fetchone()
+                if brec is None:
+                    db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (s,b))
+                    brec = db.execute('SELECT FROM block WHERE specimen_name=? AND block_name=?', (s,b)).fetchone()
+
+                # Get the block id
+                block_id = brec['id']
+
+                # Loop over the slides
+                for m in mats:
+
+                    # Get the slide info from the filename
+                    si=parse_slide_filename(m, block_dir)
+
+                    # Search for the slide in the database
+                    srec = db.execute('SELECT * FROM slide'
+                                      ' WHERE block_id=? AND section=? AND stain=? AND slide=?',
+                                      (block_id, si['section'], si['stain'], si['slide']))
+
+                    # If slide was not found, insert one
+                    if srec is None:
+                        db.execute('INSERT INTO slide (block_id, section, slide, stain, tiff_file, mat_file)'
+                                   ' VALUES (?,?,?,?,?,?)', 
+                                   (block_id, si['section'], si['slide'], 
+                                       si['stain'], si['tiff_file'], si['mat_file']))
+                        n_ins+=2
+
+                    # If slide was found, check if it requires an updateA
+                    elif srec['tiff_file'] != si['tiff_file'] or srec['mat_file'] != si['mat_file']:
+                        db.execute('UPDATE slide SET tiff_file=?, mat_file=? WHERE id=?',
+                                (si['tiff_file'], si['mat_file'], srec['id']))
+                        n_upd+=2
+
+                # Commit
+                db.commit()
+
+                # Print results
+                print("  Inserted: %d, Updated %d" % (n_ins, n_upd))
+
+
+
+
+
 # The administrator is expected to curate the image collection. The system simply
 # takes stock of the available data and presents it for segmentation. Each image 
 # in the curated collection is associated with one or more segmentations. The SVG
@@ -193,7 +262,7 @@ def init_db_command():
 @with_appcontext
 def scan_slides_command(src):
     """Scan the local directory for slides and create block and slide database"""
-    rebuild_slide_db(src)
+    update_slide_db(src)
     click.echo('Scanned for slides')
 
 @click.command('add-block')

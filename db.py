@@ -295,9 +295,9 @@ def scan_slides_command(src):
 
 @click.command('add-block')
 @click.option('--src', prompt='Source directory', help='Directory to import data from')
-@click.option('--specimen', prompt='Specimen ID')
-@click.option('--block', prompt='Block ID')
-@click.option('--match', prompt='Match CSV file')
+@click.option('--specimen', prompt='Specimen ID', help='Specimen ID')
+@click.option('--block', prompt='Block ID', help='Block ID')
+@click.option('--match', prompt='Match CSV file', help='Match CSV file')
 @with_appcontext
 def add_block_command(src, specimen, block, match):
     """Scan the local directory for slides and create block and slide database"""

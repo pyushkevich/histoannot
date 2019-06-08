@@ -36,6 +36,9 @@ def create_app(test_config=None):
     # Database connection
     db.init_app(app)
 
+    # Auth commands
+    auth.init_app(app)
+
     # Auth blueprint
     app.register_blueprint(auth.bp)
 
@@ -49,7 +52,7 @@ def create_app(test_config=None):
         'DEEPZOOM_OVERLAP': 1,
         'DEEPZOOM_LIMIT_BOUNDS': True
     }
-    slide.bp.cache = cache.SlideCache(5, config_map)
+    slide.bp.cache = cache.DeepZoomSource(200, 5, config_map)
 
     # Pure CSS
     app.config['PURECSS_RESPONSIVE_GRIDS'] = True

@@ -8,6 +8,9 @@
 #include <vnl/vnl_matrix_fixed.h>
 #include "FastLinearInterpolator.h"
 
+const long TILESIZE=512;
+const long OVERHANG=2;
+ 
 class TileCache
 {
 public:
@@ -75,17 +78,19 @@ public:
         cache.erase(oldest_key);
         }
 
-      // Load the needed tile
+      // Load the needed tile (plus a little padding)
+      long actual_size = TILESIZE + 2 * OVERHANG;
       ImageType::Pointer img = ImageType::New();
-      ImageType::RegionType rgn; rgn.SetSize(0, 256); rgn.SetSize(1, 256);
+      ImageType::RegionType rgn; rgn.SetSize(0, actual_size); rgn.SetSize(1, actual_size);
       img->SetRegions(rgn);
       img->SetNumberOfComponentsPerPixel(4);
       img->Allocate();
 
       unsigned char *q = img->GetBufferPointer();
-      openslide_read_region(osr, (uint32_t *) q, tx, ty, level, 256, 256);
-      printf("Loading tile %d (%ld %ld) (%d %d)\n", level, tx, ty, 256, 256);
+      openslide_read_region(osr, (uint32_t *) q, tx, ty, level, actual_size, actual_size);
+      printf("Loading tile %d (%ld %ld) (%ld %ld)\n", level, tx, ty, actual_size, actual_size);
 
+      /*
       char fn[1024];
       sprintf(fn, "/tmp/tile_%02d_%06ld_%06ld.nii.gz", level, tx, ty);
       typedef itk::ImageFileWriter<ImageType> WriterType;
@@ -93,6 +98,7 @@ public:
       writer->SetInput(img);
       writer->SetFileName(fn);
       writer->Update();
+      */
 
       // Put the image in cache
       CacheEntry new_entry(++counter, img);
@@ -132,6 +138,14 @@ public:
     canvas[0] = canvas_x;
     canvas[1] = canvas_y;
 
+    // If canvas dimensions are zero use the current slide itself
+    if(canvas[0] == 0 || canvas[1] == 0)
+      {
+      int64_t cw, ch;
+      openslide_get_level0_dimensions(osr, &cw, &ch);
+      canvas[0] = cw; canvas[1] = ch;
+      }
+
     // Get the dimensions info
     dim_x.resize(openslide_get_level_count(osr));
     dim_y.resize(openslide_get_level_count(osr));
@@ -163,21 +177,45 @@ public:
     return openslide_get_best_level_for_downsample(osr, ds);
     }
 
+  // Locate a tile corresponding to a pixel coordinate in target space
+  // and return data associated with that index
+  void FindTile(int level, double ds, double ts, double x, double y, const Mat &A,
+    TileCache::InterpType **interp, long *tx, long *ty, float *cix)
+    {
+    // Apply affine transform to the coordinates
+    double Sx = A(0,0) * x + A(0,1) * y + A(0, 2);
+    double Sy = A(1,0) * x + A(1,1) * y + A(1, 2);
+
+    // Determine which tile we need at this level
+    double ti_x = floor(Sx / ts), ti_y = floor(Sy / ts);
+
+    // Get the starting point of the tile. Note the additional offset
+    // which accounts for a single-voxel padding factor
+    *tx = (long) floor(ti_x * ts - OVERHANG * ds);
+    *ty = (long) floor(ti_y * ts - OVERHANG * ds);
+
+    // Compute the corresponding sampling index into the tile
+    cix[0] = (Sx - *tx) / ds;
+    cix[1] = (Sy - *ty) / ds;
+
+    // Read the tile and return it
+    *interp = tile_cache->get_tile(osr, level, *tx, *ty);
+    }
+
   // Read a region of canvas given an affine transform
   void ReadRegion(int level, long x, long y, long w, long h, const Mat &A, unsigned char *out_data)
     {
     // Get the downsample
     double ds = openslide_get_level_downsample(osr, level);
+    TileCache::InterpType *interp;
     float cix[2];
+    long tx, ty;
 
     // Output array of floats
     float rgba[4];
 
     // Get the tile size in level-0 pixels
-    unsigned int ts = ds * 256;
-
-    Vec vz; vz[2] = 1.0; 
-    Vec va;
+    unsigned int ts = ds * TILESIZE;
 
     // Allocate output image
     unsigned char *p = out_data; 
@@ -185,28 +223,29 @@ public:
     // Iterate over the pixels in the target region.
     for(long py = 0; py < h; py++)
       {
+      // At the start of the line we probably need a new tile
+      FindTile(level, ds, ts, x, y + ds * py, A, &interp, &tx, &ty, cix);
+
+      // Compute the current sampling coordinate
       for(long px = 0; px < w; px++)
         {
-        // Get the level-0 coordinate of this pixel
-        vz[0] = x + px * ds;
-        vz[1] = y + py * ds;
+        // Sample the image at the current position cix
+        if(interp->Interpolate(cix, rgba) != TileCache::InterpType::INSIDE)
+          {
+          // Update the tile
+          FindTile(level, ds, ts, x + ds * px, y + ds * py, A, &interp, &tx, &ty, cix);
 
-        // Apply the affine transform 
-        va = A * vz;
+          // Now the interpolation may not fail
+          if(interp->Interpolate(cix, rgba) == TileCache::InterpType::OUTSIDE)
+            {
+            printf("Unable to place vertex (%ld,%ld) at level %d in a tile (%ld,%ld)\n", x + px, y + py, level, tx, ty);
+            printf("CIX = (%f,%f)\n", cix[0], cix[1]);
+            throw std::exception();
+            }
+          }
 
-        // Determine which tile we need at this level
-        long tx = (int) (va[0] / ts);
-        long ty = (int) (va[1] / ts);
-
-        // Get the offset into the current tile
-        cix[0] = (va[0] - tx * ts) / ds;
-        cix[1] = (va[1] - ty * ts) / ds;
-
-        // Read the tile
-        TileCache::InterpType *interp = tile_cache->get_tile(osr, level, (long) tx * ts, (long) ty * ts);
-
-        // Get that tile from the tile cache
-        interp->Interpolate(cix, rgba);
+        // Update the sampling position
+        cix[0] += A(0,0); cix[1] += A(1,0);
 
         // Copy to bytes
         for(unsigned int j = 0; j < 4; j++)

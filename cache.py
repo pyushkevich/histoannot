@@ -10,14 +10,15 @@ import mytest as m
 class AffineTransformedOpenSlide(object):
     def __init__(self, c_tile_cache, slide_path):
         # TODO: get this number
-        self._osr = m.init_osr(c_tile_cache, slide_path, (13200,10200))
+        self._osr = m.init_osr(c_tile_cache, slide_path, (0,0))
         n_levels = m.get_nlevels(self._osr)
         self.level_downsamples = ()
         self.level_dimensions = ()
         for i in range(n_levels):
             ds = m.get_downsample_level(self._osr, i); 
             self.level_downsamples += (ds, )
-            self.level_dimensions += ((int(13200/ds), int(10200/ds)),)
+            dims = m.get_level_dimensions(self._osr, i);
+            self.level_dimensions += (dims, )
 
         print("LEVEL DIMS")
         print(self.level_downsamples)
@@ -34,7 +35,8 @@ class AffineTransformedOpenSlide(object):
         # Amat = ((1.0, 0.1, 2000.0), (-0.1, 0.9, 0.0), (0.0, 0.0, 1.0))
         Amat = ((1.0, 0.1, 0.0), (-0.1, 1.0, 0.0), (0.0, 0.0, 1.0))
         m.read_region(self._osr, location, level, size, Amat, b)
-        img=Image.frombuffer('RGBA',size,str(b),'raw','RGBA',0,1)
+        # img=Image.frombuffer('RGBA',size,str(b),'raw','RGBA',0,1)
+        img=Image.frombuffer('RGBA',size,str(b),'raw','BGRA',0,1)
         return img
 
         

@@ -194,13 +194,21 @@ $(document).ready(function() {
             viewer.setMouseNavEnabled(false);
     }
 
+    var get_width_in_canvas_units = function(full_zoom_width) {
+        // Get the total dimensions of the canvas
+        // Let's say we want the text to appear like 10-point font when the entire slide occupies 
+        // a canvas of width 1000. Then the actual font is 10 * (width/1000), or really max(width,height) * 10 / 1000
+        var canvas_size = viewer.world.getItemAt(0).getContentSize();
+        return Math.round(Math.max(canvas_size.x, canvas_size.y) * full_zoom_width / 1000);
+    }
+
     var press_handler = function(event) {
         if(curr_mode == 'DRAW') {
             curr_path = new paper.Path({
                                        segments: [ev_point(event)],
                                        strokeColor: 'black',
                                        strokeCap: 'round',
-                                       strokeWidth: 20 });
+                                       strokeWidth: get_width_in_canvas_units(1) });
         }
         else if(curr_mode == 'NAV') {
             hit = paper.project.hitTest(ev_point(event))
@@ -277,11 +285,12 @@ $(document).ready(function() {
                     target_item.visible = true;
                     target_item.selected = false;
                 } else {
+
                     var newtext = new paper.PointText(p);
                     newtext.content = this.value;
                     newtext.style = {
                         fontWeight: 'bold',
-                        fontSize: 100,
+                        fontSize: get_width_in_canvas_units(10),
                         justification: 'center'
                     };
                 }

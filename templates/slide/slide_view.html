@@ -83,11 +83,12 @@ $(document).ready(function() {
         animationTime: 0.5,
         blendTime: 0.1,
         constrainDuringPan: true,
-        maxZoomPixelRatio: 2,
+        maxZoomPixelRatio: 1.1,
+        minPixelRatio: 1.0,
         minZoomLevel: 1,
         visibilityRatio: 1,
         zoomPerScroll: 2,
-        timeout: 120000,
+        timeout: 120000
     });
     viewer.addHandler("open", function() {
         // To improve load times, ignore the lowest-resolution Deep Zoom
@@ -148,7 +149,7 @@ $(document).ready(function() {
     }
     
 
-    var deselect_all_paths = function() {
+    var deselect_all_manipulables = function() {
         var selected = paper.project.selectedItems;
         for (var i = 0; i < selected.length; i++) {
             var item = selected[i];
@@ -156,6 +157,17 @@ $(document).ready(function() {
                 item.selected = false;
             }
         }
+    }
+
+    var get_number_selected_manipulables = function() {
+        var selected = paper.project.selectedItems;
+        var n = 0;
+        for (var i = 0; i < selected.length; i++) {
+            var item = selected[i];
+            if (item instanceof paper.Path || item instanceof paper.PointText)
+                n++;
+        }
+        return n;
     }
 
     var upload_annot = function() {
@@ -167,13 +179,20 @@ $(document).ready(function() {
         $.get( "{{ url_for('slide.get_json', id = slide_id) }}", function(data, status) {
             if(status=='success' && data.length) {
                 paper.project.importJSON(data)
-                deselect_all_paths()
+                deselect_all_manipulables()
             }
         })
     }
 
     var moving_object
     var moving_object_moved=false;
+
+    var set_slide_mouse_nav = function(state) {
+        if(state == true && viewer.isMouseNavEnabled() == false)
+            viewer.setMouseNavEnabled(true);
+        else if(state == false && viewer.isMouseNavEnabled() == true)
+            viewer.setMouseNavEnabled(false);
+    }
 
     var press_handler = function(event) {
         if(curr_mode == 'DRAW') {
@@ -189,7 +208,7 @@ $(document).ready(function() {
             if(hit) {
                 if(!hit.item.selected) {
                     // Hitting an unselected target
-                    deselect_all_paths();
+                    deselect_all_manipulables();
                     hit.item.selected = true;
                     fn_update_button_state();
                     paper.view.draw();
@@ -203,8 +222,8 @@ $(document).ready(function() {
                 }
             }
             else {
-                deselect_all_paths()
-                viewer.setMouseNavEnabled(true);
+                deselect_all_manipulables()
+                set_slide_mouse_nav(true);
                 paper.view.draw();
             }
         }
@@ -294,15 +313,16 @@ $(document).ready(function() {
             hit = paper.project.hitTest(ev_point(event))
             if(hit) {
                 document.getElementById("view").style.cursor = "pointer";
-                viewer.setMouseNavEnabled(false);
+                set_slide_mouse_nav(false);
             }
             else {
                 document.getElementById("view").style.cursor = "default";
+                var sel_size = get_number_selected_manipulables();
                 // Nav behavior only available if no selection
-                if(paper.project.selectedItems.length == 0)
-                    viewer.setMouseNavEnabled(true);
+                if(sel_size == 0)
+                    set_slide_mouse_nav(true);
                 else
-                    viewer.setMouseNavEnabled(false);
+                    set_slide_mouse_nav(false);
             }
         }
     }
@@ -331,7 +351,7 @@ $(document).ready(function() {
     // Update button active state
     var fn_update_button_state = function() {
         // Is there an active selection
-        if(paper.project.selectedItems.length > 0)
+        if(get_number_selected_manipulables() > 0)
             document.getElementById("del_button").className = 
                 document.getElementById("del_button").className.replace(" disabled", " enabled");
         else
@@ -349,7 +369,7 @@ $(document).ready(function() {
 
     // Event handler
     var draw_pressed_handler = function(options) {
-        viewer.setMouseNavEnabled(false);
+        set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
         curr_mode = 'DRAW';
         fn_active_button(document.getElementById('draw_button'))
@@ -357,7 +377,7 @@ $(document).ready(function() {
     }
 
     var nav_pressed_handler = function(options) {
-        viewer.setMouseNavEnabled(true);
+        set_slide_mouse_nav(true);
         viewer.outerTracker.setTracking(true);
         curr_mode = 'NAV';
         fn_active_button(document.getElementById('nav_button'))
@@ -365,7 +385,7 @@ $(document).ready(function() {
     }
 
     var marker_pressed_handler = function(options) {
-        viewer.setMouseNavEnabled(false);
+        set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
         curr_mode = 'MARKER';
         fn_active_button(document.getElementById('marker_button'))

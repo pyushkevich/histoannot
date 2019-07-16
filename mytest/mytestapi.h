@@ -10,6 +10,8 @@
 
 const long TILESIZE=512;
 const long OVERHANG=2;
+
+class OpenSlideWrapper;
  
 class TileCache
 {
@@ -17,105 +19,25 @@ public:
   typedef itk::VectorImage<unsigned char, 2> ImageType;
   typedef FastLinearInterpolator<ImageType, float, 2> InterpType;
 
-  struct TileKey {
-    openslide_t *osr;
-    int level; 
-    long tx, ty;
-    
-    bool operator < (const TileKey &other) const {
-      return 
-        (osr < other.osr ||
-         (osr == other.osr && level < other.level) ||
-         (osr == other.osr && level == other.level && tx < other.tx) ||
-         (osr == other.osr && level == other.level && tx == other.tx && ty < other.ty));
-    }
-
+  struct TileRef {
+    OpenSlideWrapper *slide;
+    int level, ti_x, ti_y;
+    TileRef(OpenSlideWrapper *s = NULL, int l = 0, int tx = 0, int ty = 0) 
+      : slide(s), level(l), ti_x(tx), ti_y(ty) {}
   };
-
-  struct CacheEntry {
-    unsigned long access_time;
-    ImageType::Pointer img;
-    InterpType *interp;
-    CacheEntry(unsigned long at, ImageType::Pointer p) :
-      access_time(at), img(p) { interp = new InterpType(img);}
-  };
-
-  typedef std::map<TileKey, CacheEntry> Cache;
-
 
   TileCache(unsigned int max_tiles) 
     {
     this->max_tiles = max_tiles;
-    }
-
-  InterpType *get_tile(openslide_t *osr, int level, long tx, long ty)
-    {
-    TileKey tk; tk.osr = osr; tk.level = level; tk.tx = tx; tk.ty = ty;
-    Cache::iterator it = cache.find(tk);
-    if(it != cache.end())
-      {
-      // Mark this tile as the latest used
-      it->second.access_time = ++counter;
-
-      // Return the tile
-      return it->second.interp;
-      }
-    else
-      {
-      // If the cache is full, find the oldest entry
-      while(cache.size() >= max_tiles)
-        {
-        unsigned long oldest_time = counter;
-        TileKey oldest_key = cache.begin()->first;
-        for(Cache::iterator it = cache.begin(); it != cache.end(); ++it)
-          {
-          if(it->second.access_time < oldest_time)
-            {
-            oldest_time = it->second.access_time;
-            oldest_key = it->first;
-            }
-          }
-        cache.erase(oldest_key);
-        }
-
-      // Load the needed tile (plus a little padding)
-      long actual_size = TILESIZE + 2 * OVERHANG;
-      ImageType::Pointer img = ImageType::New();
-      ImageType::RegionType rgn; rgn.SetSize(0, actual_size); rgn.SetSize(1, actual_size);
-      img->SetRegions(rgn);
-      img->SetNumberOfComponentsPerPixel(4);
-      img->Allocate();
-
-      unsigned char *q = img->GetBufferPointer();
-      openslide_read_region(osr, (uint32_t *) q, tx, ty, level, actual_size, actual_size);
-      printf("Loading tile %d (%ld %ld) (%ld %ld)\n", level, tx, ty, actual_size, actual_size);
-
-      /*
-      char fn[1024];
-      sprintf(fn, "/tmp/tile_%02d_%06ld_%06ld.nii.gz", level, tx, ty);
-      typedef itk::ImageFileWriter<ImageType> WriterType;
-      WriterType::Pointer writer = WriterType::New();
-      writer->SetInput(img);
-      writer->SetFileName(fn);
-      writer->Update();
-      */
-
-      // Put the image in cache
-      CacheEntry new_entry(++counter, img);
-      cache.insert(std::make_pair(tk, new_entry));
-
-      // Return the image pointer
-      return new_entry.interp;
-      }
+    this->counter = 0l;
     }
 
 protected:
-
-  Cache cache;
-  unsigned int max_tiles;
+  std::vector<TileRef> tiles;
   unsigned long counter;
-  
+  unsigned long max_tiles;
 
+  friend class OpenSlideWrapper;
 };
 
 // Global tile cache
@@ -147,13 +69,22 @@ public:
       }
 
     // Get the dimensions info
-    dim_x.resize(openslide_get_level_count(osr));
-    dim_y.resize(openslide_get_level_count(osr));
+    unsigned int n_lev = openslide_get_level_count(osr);
+    dim_x.resize(n_lev);
+    dim_y.resize(n_lev);
+    tile_array.resize(n_lev);
     for(unsigned int i = 0; i < dim_x.size(); i++)
       {
       openslide_get_level_dimensions(osr, i, &dim_x[i], &dim_y[i]);
+      
+      // how many tiles?
+      unsigned int nx = ceil(dim_x[i] * 1.0 / TILESIZE);
+      unsigned int ny = ceil(dim_y[i] * 1.0 / TILESIZE);
+      tile_array[i].resize(nx, std::vector<Tile>(ny));
       }
     }
+
+
 
   int GetNumberOfLevels() const 
     {
@@ -180,8 +111,10 @@ public:
   // Locate a tile corresponding to a pixel coordinate in target space
   // and return data associated with that index
   void FindTile(int level, double ds, double ts, double x, double y, const Mat &A,
-    TileCache::InterpType **interp, long *tx, long *ty, float *cix)
+    TileCache::InterpType **interp, long *tx, long *ty, float *cix, int *nskip)
     {
+    double t_start_method = 0.0;
+
     // Apply affine transform to the coordinates
     double Sx = A(0,0) * x + A(0,1) * y + A(0, 2);
     double Sy = A(1,0) * x + A(1,1) * y + A(1, 2);
@@ -198,13 +131,111 @@ public:
     cix[0] = (Sx - *tx) / ds;
     cix[1] = (Sy - *ty) / ds;
 
-    // Read the tile and return it
-    *interp = tile_cache->get_tile(osr, level, *tx, *ty);
+    // Are we inside the image?
+    if(ti_x < 0 || ti_y < 0 
+      || ti_x >= tile_array[level].size()
+      || ti_y >= tile_array[level][0].size())
+      {
+      // Interp will be set to NULL. There is nothing to interpolate
+      *interp = NULL;
+
+      // We also need to calculate how many voxels to skip until we hit the next
+      // tile as we walk along this line. Since cix is in tile units, we just need
+      // to walk until we run off the tile. Let's be lazy and walk
+      double wx = cix[0], wy = cix[1];
+      *nskip = 0;
+      while(wx >= 0 && wy >= 0 && wx < TILESIZE && wy <= TILESIZE)
+        {
+        (*nskip)++; wx += A(0,0); wy += A(1,0);
+        }
+      if(*nskip == 0)
+        *nskip = 1;
+
+      return;
+      }
+      
+
+    // Does the tile exist?
+    Tile &tile_info = tile_array[level][ti_x][ti_y];
+    if(tile_info.interp)
+      {
+      tile_info.TimeStamp = ++tile_cache->counter;
+      *interp = tile_info.interp;
+      }
+    else
+      {
+      // Tile has to be loaded. First make sure that the cache is not full
+      while(tile_cache->tiles.size() >= tile_cache->max_tiles)
+        {
+        // Linear search through all the cached tiles to find the oldest
+        unsigned long oldest_counter = tile_cache->counter;
+        unsigned int oldest_index = 0;
+        TileCache::TileRef oldest_tr;
+        Tile *oldest_tile = NULL;
+        for(unsigned int i = 0; i < tile_cache->tiles.size(); i++)
+          {
+          TileCache::TileRef &tr = tile_cache->tiles[i];
+          Tile *tile = &tr.slide->tile_array[tr.level][tr.ti_x][tr.ti_y];
+          if(tile->TimeStamp < oldest_counter)
+            {
+            oldest_counter = tile->TimeStamp;
+            oldest_index = i;
+            oldest_tile = tile;
+            oldest_tr = tr;
+            }
+          }
+
+        // Reset the tile
+        delete(oldest_tile->interp);
+        *oldest_tile = Tile();
+
+        // Remove from list
+        tile_cache->tiles.erase(tile_cache->tiles.begin() + oldest_index);
+        printf("Erasing tile %d (%d %d)\n", oldest_tr.level, oldest_tr.ti_x, oldest_tr.ti_y);
+        }
+
+      // Now that there is room for a new tile, we can load it
+      // Load the needed tile (plus a little padding)
+      long actual_size = TILESIZE + 2 * OVERHANG;
+      tile_info.image = TileCache::ImageType::New();
+      TileCache::ImageType::RegionType rgn; rgn.SetSize(0, actual_size); rgn.SetSize(1, actual_size);
+      tile_info.image->SetRegions(rgn);
+      tile_info.image->SetNumberOfComponentsPerPixel(4);
+      tile_info.image->Allocate();
+
+      unsigned char *q = tile_info.image->GetBufferPointer();
+      double t_start_openslide = clock();
+      openslide_read_region(osr, (uint32_t *) q, *tx, *ty, level, actual_size, actual_size);
+      t_oslide += clock() - t_start_openslide;
+      printf("Loading tile %d (%ld %ld) (%ld %ld)\n", level, *tx, *ty, actual_size, actual_size);
+
+      // Update the counter
+      tile_info.TimeStamp = ++tile_cache->counter;
+      tile_info.interp = new TileCache::InterpType(tile_info.image);
+
+      // Keep track in the cache
+      tile_cache->tiles.push_back(TileCache::TileRef(this, level, ti_x, ti_y));
+
+      // Done
+      *interp = tile_info.interp;
+
+      t_findtile += clock() - t_start_method;
+      }
     }
+
+  double t_oslide, t_findtile;
 
   // Read a region of canvas given an affine transform
   void ReadRegion(int level, long x, long y, long w, long h, const Mat &A, unsigned char *out_data)
     {
+    // Keep track of some timing 
+    double t_start = clock();
+    t_oslide = 0.0;
+    t_findtile = 0.0;
+
+    // Keep track of number of calls to FindTile
+    int n_find_calls = 0;
+
     // Get the downsample
     double ds = openslide_get_level_downsample(osr, level);
     TileCache::InterpType *interp;
@@ -220,23 +251,35 @@ public:
     // Allocate output image
     unsigned char *p = out_data; 
 
+    // Number to skip
+    int nskip = 0;
+
     // Iterate over the pixels in the target region.
     for(long py = 0; py < h; py++)
       {
       // At the start of the line we probably need a new tile
-      FindTile(level, ds, ts, x, y + ds * py, A, &interp, &tx, &ty, cix);
+      FindTile(level, ds, ts, x, y + ds * py, A, &interp, &tx, &ty, cix, &nskip);
+      ++n_find_calls;
 
       // Compute the current sampling coordinate
       for(long px = 0; px < w; px++)
         {
+        if(interp == NULL && nskip > 0)
+          {
+          nskip--;
+          rgba[0] = rgba[1] = rgba[2] = rgba[3] = 0.0f;
+          }
+
         // Sample the image at the current position cix
-        if(interp->Interpolate(cix, rgba) != TileCache::InterpType::INSIDE)
+        else if((interp == NULL && nskip == 0) ||
+          (interp->Interpolate(cix, rgba) == TileCache::InterpType::OUTSIDE))
           {
           // Update the tile
-          FindTile(level, ds, ts, x + ds * px, y + ds * py, A, &interp, &tx, &ty, cix);
+          FindTile(level, ds, ts, x + ds * px, y + ds * py, A, &interp, &tx, &ty, cix, &nskip);
+          ++n_find_calls;
 
           // Now the interpolation may not fail
-          if(interp->Interpolate(cix, rgba) == TileCache::InterpType::OUTSIDE)
+          if(interp && interp->Interpolate(cix, rgba) == TileCache::InterpType::OUTSIDE)
             {
             printf("Unable to place vertex (%ld,%ld) at level %d in a tile (%ld,%ld)\n", x + px, y + py, level, tx, ty);
             printf("CIX = (%f,%f)\n", cix[0], cix[1]);
@@ -253,6 +296,9 @@ public:
         }
       }
 
+    double t_total = (clock() - t_start) / CLOCKS_PER_SEC;
+    printf("TIME ELAPSED %f IN OPENSLIDE %f  FindTile Calls %d Time %f \n", t_total, t_oslide / CLOCKS_PER_SEC, n_find_calls, t_findtile / CLOCKS_PER_SEC);
+
     }
 
 
@@ -264,6 +310,19 @@ protected:
 
   // Dimensions
   std::vector<int64_t> dim_x, dim_y;
+
+  // Reference to a tile
+  struct Tile 
+    {
+    unsigned long TimeStamp;
+    TileCache::ImageType::Pointer image;
+    TileCache::InterpType *interp;
+    Tile() : TimeStamp(0l), interp(NULL) {}
+    };
+
+  // 2D array of tiles
+  typedef std::vector<std::vector<std::vector<Tile> > > TileArray;
+  TileArray tile_array;
 
   // Collection of cached tiles
   TileCache *tile_cache;

@@ -52,7 +52,7 @@ def create_app(test_config=None):
         'DEEPZOOM_OVERLAP': 1,
         'DEEPZOOM_LIMIT_BOUNDS': True
     }
-    slide.bp.cache = cache.DeepZoomSource(200, 5, config_map)
+    slide.bp.cache = cache.DeepZoomSource(2000, 5, config_map)
 
     # Pure CSS
     app.config['PURECSS_RESPONSIVE_GRIDS'] = True

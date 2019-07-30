@@ -1,0 +1,78 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='pure/pure-min.css') }}">
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+
+<style>
+.dot {
+  height: 25px;
+  width: 25px;
+  background-color: #bbb;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+#ctablebody tr {
+    background-color: #eee;
+}
+#ctablebody tr:hover {
+    background-color: #dde;
+    cursor: pointer;
+}
+#ctablebody tr.selected {
+    background-color: #bbe;
+    color: #000;
+}
+#ctable td {
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+#ctable th {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+#ctable td.expander {
+    width: 100%;
+}
+</style>
+
+<table class="pure-table pure-table-horizontal" id="ctable">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th class="expander">Class</th>
+            <th>Color</th>
+        </tr>
+    </thead>
+    <tbody id="ctablebody">
+        {% for L in labels %}
+        <tr data-id="{{L['id']}}" data-color="{{L['color']}}">
+            <td>{{ L['id'] }}</td>
+            <td class="expander">{{ L['name'] }}</td>
+            <td><span style="height: 14px; width: 14px; display: inline-block; border-radius: 50%; background-color: {{L['color']}}; border:1px solid black;"></span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script type="text/javascript">
+
+var get_current_label_id = function() {
+    return $("#ctablebody tr.selected").attr("data-id");
+}
+
+var get_current_label_color = function() {
+    return $("#ctablebody tr.selected").attr("data-color");
+}
+
+$(document).ready(function() {
+
+    // Row selection
+    $("#ctablebody tr").click(function(){
+        $(this).parent().children().removeClass("selected");
+        $(this).addClass("selected")
+    });
+
+    // Select the first row
+    $("#ctablebody tr").first().addClass("selected");
+});
+
+</script>

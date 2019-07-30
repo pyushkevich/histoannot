@@ -5,6 +5,7 @@ from . import cache
 from . import db
 from . import auth
 from . import slide
+from . import dltrain
 
 def create_app(test_config=None):
 
@@ -45,6 +46,9 @@ def create_app(test_config=None):
     # Slide blueprint
     app.register_blueprint(slide.bp)
     app.add_url_rule('/', endpoint='index')
+
+    # DLTrain blueprint
+    app.register_blueprint(dltrain.bp);
 
     # Initialize the image cache
     config_map = {

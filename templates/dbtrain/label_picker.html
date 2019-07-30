@@ -1,0 +1,76 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='pure/pure-min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='pure/pure-min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='pure/layouts/marketing.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='jquery-hex-colorpicker.css') }}" />
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-hex-colorpicker-min.js') }}"></script>
+
+<b>Class selector</b>
+<div id="label_table_container">
+</div>
+<a href="#" style="font-size: 0.8em" id="add_label_link">Add Label...</a>
+
+<div id="add_label_form_container" title="Add Label">
+    <form class="pure-form" id="add_label_form">
+        <label for="label_name">Label name: </label>
+        <input type="text" name="label_name"></input>
+        <label for="label_color">Color: </label>
+        <input type="text" name="label_color" id="label_color_input"></input>
+        <label for="label_desc">Description (optional): </label>
+        <textarea type="textarea" name="label_desc" style="width:100%"></textarea>
+    </form>
+</div>
+
+<script type="text/javascript">
+$(document).ready(function() {
+
+    var add_label_dialog = $("#add_label_form_container").dialog({
+                                                       autoOpen: false,
+                                                       resizable: false,
+                                                       height: "auto",
+                                                       width: 400,
+                                                       modal: true,
+                                                       buttons: {
+                                                           "Add label": function() {
+                                                               label_add_cb();
+                                                               add_label_dialog.dialog( "close" );
+                                                           },
+                                                           Cancel: function() {
+                                                               add_label_dialog.dialog( "close" );
+                                                           }
+                                                       }
+    });
+
+    // Add a color picker
+    $('#label_color_input').hexColorPicker({
+                                           "container":"dialog",
+                                           "colorModel":"hsl",
+                                           "pickerWidth":400});
+
+    var reload_labels = function() {
+        $('#label_table_container').load('{{url_for('dltrain.get_labelset_labels_table', name=labelset_name)}}');
+    }
+
+    reload_labels();
+
+    $("#add_label_link").click(function() {
+        add_label_dialog.dialog("open");
+    });
+
+    var label_add_cb = function() {
+        var data=$("#add_label_form").serialize();
+        $.post("{{url_for('dltrain.add_labelset_label', name=labelset_name)}}",
+               data,
+               function(x) {
+                   reload_labels();
+               });
+    }
+
+});
+
+
+</script>
+
+

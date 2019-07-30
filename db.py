@@ -243,10 +243,12 @@ def rebuild_slide_db_block(src_dir, specimen, block, match_csv):
 
             # Check for existence of file
             fn=None
-            for ext in ('.svs', '.tiff'):
+            for ext in ('.svs', '.tiff', '.tif'):
                 fn_test=os.path.join(src_dir, row[0]+ext)
+                print('testing file %s' % fn_test)
                 if os.path.exists(fn_test):
                     fn=fn_test
+                    print('found file %s' % fn)
                     break
 
             # If file exists, add it to the database

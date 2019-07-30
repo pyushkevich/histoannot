@@ -386,7 +386,11 @@ class GCSHandler:
         # Perform the download
         blob = self._get_blob(uri)
         with open(local_file, "wb") as file_obj:
-            self._client.download_blob_to_file(blob, file_obj)
+            worker = threading.Thread(target = self._client.download_blob_to_file, args=(blob, file_obj))
+            worker.start()
+            while worker.isAlive():
+                worker.join(1.0)
+                print('Downloaded: %d' % os.stat(local_file).st_size)
 
 
 # Get a global GCP handler

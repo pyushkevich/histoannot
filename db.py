@@ -510,7 +510,7 @@ def db_create_slide(specimen, block, section, slide, stain, slice_name, slice_ex
     db.commit()
 
     # Return the ID
-    return id
+    return sid
 
 
 # Builds up a slide database. Scans a manifest file that contains names of specimens

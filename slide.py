@@ -35,10 +35,8 @@ def block_detail(id):
         'SELECT * FROM slide WHERE block_id=? ORDER BY section, slide ASC', (id,)).fetchall()
     return render_template('slide/block_detail.html', block=block, slides=slides)
 
-# The slide view
-@bp.route('/slide/<int:id>/view', methods=('GET', 'POST'))
-@login_required
-def slide_view(id):
+# Get all the data needed for slide view/annotation/training
+def get_slide_info(id):
     db = get_db()
 
     # Get the info on the current slide
@@ -63,13 +61,25 @@ def slide_view(id):
         ' WHERE block_id=? AND section * 1000 + slide >= ? AND id != ?'
         ' ORDER BY section ASC, slide ASC limit 1', (block_id, section * 1000 + slideno, id)).fetchone()
 
+    return (slide_info, prev_slide, next_slide)
+
+
+
+# The slide view
+@bp.route('/slide/<int:id>/view/<affine_mode>/<seg_mode>', methods=('GET', 'POST'))
+@login_required
+def slide_view(id, affine_mode, seg_mode):
+    (slide_info, prev_slide, next_slide) = get_slide_info(id)
+
     return render_template('slide/slide_view.html', slide_id = id, 
-                           slide_info = slide_info, next_slide=next_slide, prev_slide=prev_slide)
+                           slide_info = slide_info, next_slide=next_slide, 
+                           prev_slide=prev_slide, affine_mode=affine_mode, 
+                           seg_mode=seg_mode)
 
 # Get the DZI for a slide
-@bp.route('/slide/<int:id>.dzi', methods=('GET', 'POST'))
+@bp.route('/slide/<mode>/<int:id>.dzi', methods=('GET', 'POST'))
 @login_required
-def dzi(id):
+def dzi(mode, id):
     format = 'jpeg'
     
     # Get the tiff filename for slide
@@ -78,7 +88,8 @@ def dzi(id):
         'SELECT tiff_file FROM slide WHERE id=?', (id,)).fetchone()['tiff_file']
 
     try:
-        slide = bp.cache.get(tiff_file)
+        do_affine = (mode == 'affine')
+        slide = bp.cache.get(tiff_file, do_affine)
         slide.filename = os.path.basename(tiff_file)
         resp = make_response(slide.get_dzi('jpeg'))
         resp.mimetype = 'application/xml'
@@ -153,9 +164,9 @@ class PILBytesIO(BytesIO):
         raise AttributeError('Not supported')
 
 # Get the tiles for a slide
-@bp.route('/slide/<int:id>_files/<int:level>/<int:col>_<int:row>.<format>',  methods=('GET', 'POST'))
+@bp.route('/slide/<mode>/<int:id>_files/<int:level>/<int:col>_<int:row>.<format>',  methods=('GET', 'POST'))
 @login_required
-def tile(id, level, col, row, format):
+def tile(mode, id, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
@@ -167,7 +178,7 @@ def tile(id, level, col, row, format):
     tiff_file = db.execute(
         'SELECT tiff_file FROM slide WHERE id=?', (id,)).fetchone()['tiff_file']
 
-    tile = bp.cache.get(tiff_file).get_tile(level, (col, row))
+    tile = bp.cache.get(tiff_file, (mode == 'affine')).get_tile(level, (col, row))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)

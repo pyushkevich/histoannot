@@ -20,9 +20,9 @@ CREATE TABLE slide (
   block_id INTEGER NOT NULL,
   section INTEGER NOT NULL,
   slide INTEGER NOT NULL,
-  stain INTEGER NOT NULL,
-  tiff_file TEXT NOT NULL,
-  mat_file TEXT NOT NULL,
+  stain TEXT NOT NULL,
+  slide_name TEXT UNIQUE,
+  slide_ext TEXT NOT NULL,
   CONSTRAINT fk_block
     FOREIGN KEY (block_id)
     REFERENCES block_id(id)
@@ -39,6 +39,3 @@ CREATE TABLE annot (
   FOREIGN KEY (slide_id) REFERENCES slide (id),
   FOREIGN KEY (author_id) REFERENCES user (id)
 );
-
-
-

@@ -3,11 +3,14 @@ import functools
 from flask import (
     Blueprint, flash, g, redirect, render_template, request, session, url_for, current_app
 )
+from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from flaskr.db import get_db
 import os
+import click
 import hashlib
+import getpass
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -49,6 +52,13 @@ def register():
         flash(error)
 
     return render_template('auth/register.html')
+
+def set_system_password():
+    syspass=getpass.getpass("System password:")
+    passfile=os.path.join(current_app.instance_path,'password.txt')
+    with open(passfile, 'w') as outfile:
+        outfile.write(hashlib.md5(syspass.encode()).hexdigest());
+
 
 @bp.route('/login', methods=('GET', 'POST'))
 def login():
@@ -103,3 +113,15 @@ def login_required(view):
         return view(**kwargs)
 
     return wrapped_view
+
+
+@click.command('passwd-set')
+@with_appcontext
+def passwd_set_command():
+    """Set the system password for new user registration"""
+    set_system_password()
+    click.echo('Updated the system password')
+
+
+def init_app(app):
+    app.cli.add_command(passwd_set_command)

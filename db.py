@@ -28,9 +28,15 @@ def close_db(e=None):
 
 def init_db():
     db = get_db()
-
     with current_app.open_resource('schema.sql') as f:
         db.executescript(f.read().decode('utf8'))
+    init_db_dltrain()
+
+def init_db_dltrain():
+    db = get_db()
+    with current_app.open_resource('schema_dltrain.sql') as f:
+        db.executescript(f.read().decode('utf8'))
+
 
 def add_block(specimen, block):
     db=get_db()
@@ -285,6 +291,13 @@ def init_db_command():
     init_db()
     click.echo('Initialized the database.')
 
+@click.command('init-db-dltrain')
+@with_appcontext
+def init_db_dltrain_command():
+    """Clear the existing data related to DL training and create new tables."""
+    init_db_dltrain()
+    click.echo('Initialized the DL training database.')
+
 
 @click.command('scan-slides')
 @click.option('--src', prompt='Source directory', 
@@ -297,9 +310,9 @@ def scan_slides_command(src):
 
 @click.command('add-block')
 @click.option('--src', prompt='Source directory', help='Directory to import data from')
-@click.option('--specimen', prompt='Specimen ID')
-@click.option('--block', prompt='Block ID')
-@click.option('--match', prompt='Match CSV file')
+@click.option('--specimen', prompt='Specimen ID', help='Specimen ID')
+@click.option('--block', prompt='Block ID', help='Block ID')
+@click.option('--match', prompt='Match CSV file', help='Match CSV file')
 @with_appcontext
 def add_block_command(src, specimen, block, match):
     """Scan the local directory for slides and create block and slide database"""
@@ -308,8 +321,334 @@ def add_block_command(src, specimen, block, match):
 
 
 
+# This is our current default mapping of resources to remote URLs and local files
+my_histo_url_schema = {
+    # The filename patterns
+    "pattern" : {
+        "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
+        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/{slide_name}_x16.tiff",
+        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/{slide_name}_affine.mat"
+    },
+
+    # The maximum number of bytes that may be cached locally for 'raw' data
+    "cache_capacity" : 32 * 1024 ** 3
+}
+
+from urlparse import urlparse
+from google.cloud import storage
+import glob
+import stat
+import heapq
+import urllib2
+import csv
+import sys, traceback
+
+# This class handles remote URLs for Google cloud. The remote URLs must have format
+# "gs://bucket/path/to/blob.ext" 
+
+class GCSHandler:
+
+    # Constructor
+    def __init__(self):
+        self._bucket_cache={}
+        self._client = storage.Client()
+
+    # Process a URL
+    def _get_blob(self, uri):
+
+        # Unpack the URL
+        o = urlparse(uri)
+
+        # Make sure that it includes gs
+        if o.scheme != "gs":
+            raise ValueError('URL should have schema "gs"')
+
+        # Find the bucket, if not found add it to the cache
+        if o.netloc in self._bucket_cache:
+            bucket = self._bucket_cache[o.netloc]
+        else:
+            bucket = self._client.get_bucket(o.netloc)
+            self._bucket_cache[o.netloc] = bucket
+
+        # Get the blob in the bucket
+        return bucket.get_blob(o.path.strip('/'))
+
+    # Check if a URL refers to an existing file
+    def exists(self, uri):
+        return self._get_blob(uri) is not None
+
+    # Download a remote resource locally
+    def download(self, uri, local_file):
+        
+        # Make sure the path containing local_file exists
+        dir_path = os.path.dirname(local_file)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        # Perform the download
+        blob = self._get_blob(uri)
+        with open(local_file, "wb") as file_obj:
+            self._client.download_blob_to_file(blob, file_obj)
+
+
+# Get a global GCP handler
+def get_gstor():
+    if 'gstor' not in g:
+        g.gstor = GCSHandler()
+    return g.gstor
+
+
+# This class is used to describe a histology slide and associated data that resides in
+# a remote (cloud-based) location and may be cached locally
+class SlideRef:
+
+    # A mapping from resources to files
+
+    # Initialize a slide reference with a remote URL.
+    # slide_info is a dict with fields specimen, block, slide_name, slide_ext
+    def __init__(self, schema, remote_baseurl, remote_handler, slide_info):
+
+        # Store the remote url
+        self._remote_baseurl = remote_baseurl
+        self._url_handler = remote_handler
+        self._specimen = slide_info["specimen"]
+        self._block = slide_info["block"]
+        self._slide_name = slide_info["slide_name"]
+        self._slide_ext = slide_info["slide_ext"]
+
+        # Store the schema
+        self._schema = schema
+
+        # Create a local directory for caching the content from the remote URL
+        self._local_baseurl = os.path.join(current_app.instance_path, 'slidecache')
+        if not os.path.exists(self._local_baseurl):
+            os.makedirs(self._local_baseurl)
+
+    # Generate the filename for the resource (local or remote)
+    def get_resource_url(self, resource, local = True):
+
+        # Use a dictionary for the substitution
+        d = {"baseurl" : self._local_baseurl if local else self._remote_baseurl,
+             "specimen" : self._specimen, "block" : self._block,
+             "slide_name": self._slide_name, "slide_ext" : self._slide_ext }
+
+        # Apply the dictionary to retrieve the filename vie schema
+        return self._schema["pattern"][resource].format(**d)
+
+    # Check whether a resource exists (locally or remotely)
+    def resource_exists(self, resource, local = True):
+        f = self.get_resource_url(resource, local)
+        if local is True:
+            return os.path.exists(f) and os.path.isfile(f)
+        else:
+            return self._url_handler.exists(f)
+
+    # Get a local copy of the resource, copying it if necessary
+    def get_local_copy(self, resource):
+
+        # Get the local URL
+        f_local = self.get_resource_url(resource, True)
+
+        # If it already exists, return it
+        if os.path.exists(f_local) and os.path.isfile(f_local):
+            return f_local
+
+        # TODO: delete some files in this category
+        if resource == 'raw':
+
+            # Generate a wildcard pattern to list all 'raw' format files 
+            d = {"baseurl" : self._local_baseurl,
+                 "specimen" : "*", "block" : "*", "slide_name": "*", "slide_ext" : "*" }
+            wildcard_str =  self._schema["pattern"]['raw'].format(**d)
+
+            # For each of the files, use os.stat to get information
+            f_heap = []
+            total_bytes = 0
+            for fn in glob.glob(wildcard_str):
+                s = os.stat(fn)
+                total_bytes += s.st_size
+                heapq.heappush(f_heap, (s.st_atime, s.st_size, fn))
+
+            # If the total number of bytes exceeds the cache size
+            while total_bytes > self._schema["cache_capacity"] and len(h) > 0:
+
+                # Get the oldest file
+                (atime, size, fn) = heapq.heappop(f_heap)
+
+                # Remove the file
+                total_bytes -= size
+                os.remove(fn)
+
+
+        # Make a copy of the resource locally
+        f_remote = self.get_resource_url(resource, False)
+        self._url_handler.download(f_remote, f_local)
+
+        return f_local
+        
+
+
+# Generic function to insert a slide, creating a block descriptor of needed
+def db_create_slide(specimen, block, section, slide, stain, slice_name, slice_ext):
+
+    db = get_db()
+
+    # Find the block
+    brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', 
+                      (specimen,block)).fetchone()
+    if brec is None:
+        bid = db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', 
+                         (specimen,block)).lastrowid
+    else:
+        bid = brec['id']
+
+    # Create a slide
+    sid = db.execute('INSERT INTO slide (block_id, section, slide, stain, slide_name, slide_ext) '
+                     'VALUES (?,?,?,?,?,?)', (bid, section, slide, stain, slice_name, slice_ext)).lastrowid
+
+    # Commit to the database
+    db.commit()
+
+    # Return the ID
+    return id
+
+
+# Builds up a slide database. Scans a manifest file that contains names of specimens
+# and URLs to Google Sheet spreadsheets in which individual slides are matched to the
+# block/section/slice/stain information. Checks if the corresponding files exist in 
+# the Google cloud and creates slide identifiers as needed
+def refresh_slide_db(manifest, bucket):
+
+    # Database cursor
+    db = get_db()
+
+    # Handler for Google Cloud Storage
+    gstor = get_gstor()
+
+    # Read from the manifest file
+    with open(manifest) as f_manifest:
+        for line in f_manifest:
+
+            specimen = line.split()[0]
+            url = line.split()[1]
+            print('Parsing specimen "%s" with URL "%s"' % (specimen,url))
+
+            try:
+                # Get the lines from the URL
+                resp=urllib2.urlopen(url)
+                r=csv.reader(resp.read().splitlines()[1:])
+
+                # For each line in the URL consider it as a new slide
+                for line in r:
+
+                    try:
+
+                        # Read the elements from the string
+                        (slide_name, stain, block, section, slide_no, cert) = line[0:6]
+
+                        # Remap slide_name to string
+                        slide_name = str(slide_name)
+
+                        # Check if the slide has already been imported into the database
+                        t = db.execute('SELECT * FROM slide WHERE slide_name=?', (slide_name,)).fetchone()
+                        if t is not None:
+                            print('Slide %s already in the database with id=%s' % (slide_name, t['id']));
+                            continue
+
+                        # Create a slideref for this object. The way we have set all of this up, the extension is not
+                        # coded anywhere in the manifests, so we dynamically check for multiple extensions
+                        for slide_ext in ('svs', 'tif', 'tiff'):
+
+                            slide_info = {
+                                "specimen" : specimen, "block" : block, "slide_name": slide_name, "slide_ext" : slide_ext }
+
+                            sr = SlideRef(my_histo_url_schema, "gs://svsbucket", gstor, slide_info)
+
+                            if sr.resource_exists('raw', False):
+
+                                # The raw slide has been found, so the slide will be entered into the database. 
+                                sid = db_create_slide(specimen, block, section, slide_no, stain, slide_name, slide_ext)
+
+                                print('Slide %s located with url %s and assigned new id %d' % 
+                                      (slide_name, sr.get_resource_url('raw', False), sid))
+
+                                break
+
+                        # We are here because no URL was found
+                        print('Raw image was not found for slide %s' % slide_name)
+
+                    except:
+
+                        print('Failed to import slide for ', line)
+                        (exc_type, exc_value, exc_traceback) = sys.exc_info()
+                        print(repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+                        raise ValueError('crash')
+
+
+            except:
+
+                print('Failed to import specimen ', specimen)
+                (exc_type, exc_value, exc_traceback) = sys.exc_info()
+                print(repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+                raise ValueError('crash')
+
+
+def get_slide_ref(slice_id):
+
+    db = get_db()  
+
+    # Load slide from database
+    row = db.execute('SELECT S.*, B.specimen_name, B.block_name '
+                     'FROM slide S LEFT JOIN block B ON S.block_id = B.id WHERE S.id=?', (slice_id,)).fetchone()
+
+    # Handle missing data
+    if row is None:
+        return None
+
+    # Create the sliceref
+    slide_info = {
+        "specimen" : row['specimen_name'], "block" : row['block_name'], 
+        "slide_name": row['slide_name'], "slide_ext" : row['slide_ext'] }
+
+    return SlideRef(my_histo_url_schema, "gs://svsbucket", get_gstor(), slide_info)
+
+
+
+def load_raw_slide_to_cache(slide_id, resource):
+
+    # Get the data for this slide
+    sr = get_slide_ref(slide_id)
+    if sr is not None:
+        sr.get_local_copy(resource)
+    else:
+        print('Slide %s not found' % (slide_id,))
+
+
+
+@click.command('refresh-slides')
+@click.option('--manifest', 
+              prompt='Manifest file',
+              help='Location of the histo_matching.txt file, which lists specimens '
+                   'and correponding Google Sheet tabs that have matching info')
+@with_appcontext
+def refresh_slides_command(manifest):
+    """Refresh the slide database using manifest files"""
+    refresh_slide_db(manifest, "gs://svsbucket");
+    click.echo('Scanning complete')
+
+
+@click.command('cache-load-raw-slide')
+@click.option('--slideid', prompt='Slide ID')
+@with_appcontext
+def cache_load_raw_slide_command(slideid):
+    """Download a raw slide into the cache"""
+    load_raw_slide_to_cache(slideid, 'raw')
+
+
+
 def init_app(app):
     app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
-    app.cli.add_command(scan_slides_command)
-    app.cli.add_command(add_block_command)
+    app.cli.add_command(init_db_dltrain_command)
+    app.cli.add_command(refresh_slides_command)
+    app.cli.add_command(cache_load_raw_slide_command)

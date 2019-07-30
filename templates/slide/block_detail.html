@@ -9,17 +9,19 @@
         <th>Section</th>
         <th>Slice</th>
         <th>Stain</th>
-        <th>Actions</th>
+        <th colspan=2>Actions</th>
       </tr>
     </thead>
     <tbody>
   {% for slide in slides %}
       <tr>
-        <td><a href="{{ url_for('slide.slide_view', id=slide['id']) }}"><img height="72px" src="{{url_for('slide.thumb', id=slide['id'])}}"></img></a></td>
+        <td><a href="{{ url_for('slide.slide_view', id=slide['id'], affine_mode='affine', seg_mode='annot') }}">
+            <img height="72px" src="{{url_for('slide.thumb', id=slide['id'])}}"></img></a></td>
         <td>{{slide['section']}}</td>
         <td>{{slide['slide']}}</td>
         <td>{{slide['stain']}}</td>
-        <td><a class="action" href="{{ url_for('slide.slide_view', id=slide['id']) }}">View</a></td>
+        <td><a class="action" href="{{ url_for('slide.slide_view', id=slide['id'], affine_mode='affine', seg_mode='annot') }}">Annotate</a></td>
+        <td><a class="action" href="{{ url_for('slide.slide_view', id=slide['id'], affine_mode='raw', seg_mode='dltrain') }}">DL Training</a></td>
       </tr>
   {% endfor %}
 {% endblock %}

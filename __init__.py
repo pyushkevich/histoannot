@@ -5,6 +5,7 @@ from . import cache
 from . import db
 from . import auth
 from . import slide
+from . import dltrain
 
 def create_app(test_config=None):
 
@@ -36,6 +37,9 @@ def create_app(test_config=None):
     # Database connection
     db.init_app(app)
 
+    # Auth commands
+    auth.init_app(app)
+
     # Auth blueprint
     app.register_blueprint(auth.bp)
 
@@ -43,13 +47,16 @@ def create_app(test_config=None):
     app.register_blueprint(slide.bp)
     app.add_url_rule('/', endpoint='index')
 
+    # DLTrain blueprint
+    app.register_blueprint(dltrain.bp);
+
     # Initialize the image cache
     config_map = {
         'DEEPZOOM_TILE_SIZE': 254,
         'DEEPZOOM_OVERLAP': 1,
         'DEEPZOOM_LIMIT_BOUNDS': True
     }
-    slide.bp.cache = cache.SlideCache(5, config_map)
+    slide.bp.cache = cache.DeepZoomSource(2000, 5, config_map)
 
     # Pure CSS
     app.config['PURECSS_RESPONSIVE_GRIDS'] = True

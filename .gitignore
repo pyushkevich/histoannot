@@ -2,3 +2,4 @@
 *.pyc
 .*.sw?
 .DS_Store
+mytest_build

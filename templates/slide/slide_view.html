@@ -4,6 +4,14 @@
 {% endblock %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-scalebar.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-paperjs-overlay.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='mousetrap.min.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
 
 <style type="text/css">
 html {
@@ -49,16 +57,21 @@ button.disabled, button.disabled:hover {
 
 <span style="float:right">
 {% if prev_slide %}
-    <a href="{{url_for('slide.slide_view', id=prev_slide['id'])}}">Previous Slide</a>
+    <a href="{{url_for('slide.slide_view', id=prev_slide['id'], affine_mode=affine_mode, seg_mode=seg_mode)}}">Previous Slide</a>
 {% endif %}
 &nbsp
 <a href="{{ url_for('slide.slide_view', id=slide_info['id'], affine_mode='affine', seg_mode=seg_mode) }}">AFF</a>
 <a href="{{ url_for('slide.slide_view', id=slide_info['id'], affine_mode='raw', seg_mode=seg_mode) }}">RAW</a>
 &nbsp
 {% if next_slide  %}
-    <a href="{{url_for('slide.slide_view', id=next_slide['id'])}}">Next Slide</a>
+    <a href="{{url_for('slide.slide_view', id=next_slide['id'], affine_mode=affine_mode, seg_mode=seg_mode)}}">Next Slide</a>
 {% endif %}
 </span>
+
+<!-- A dialog showing slide loading progress -->
+<div id="progress_dialog_container" title="Downloading Slide from Cloud Storage">
+    Download progress: <div id="progress_bar"></div>
+</div>
 
 <div class="pure-g">
     <div class="pure-u-4-5">
@@ -85,14 +98,6 @@ button.disabled, button.disabled:hover {
 <button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</div>
 {% endif %}
 
-<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
-<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
-<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui.js') }}"></script>
-<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-scalebar.js') }}"></script>
-<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-paperjs-overlay.js') }}"></script>
-<script type="text/javascript" src="{{ url_for('static', filename='mousetrap.min.js') }}"></script>
-
-  <script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
 <script type="text/javascript">
 $(document).ready(function() {
 
@@ -103,6 +108,7 @@ $(document).ready(function() {
         $('#div_dltrain_labels').load('{{url_for('dltrain.get_labelset_labels_picker', name='tangles')}}');
     }
 
+    // Initialize the viewer
     var viewer = new OpenSeadragon({
         id: "view",
         prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
@@ -207,6 +213,41 @@ $(document).ready(function() {
     // Paper default settings
     paper.settings.handleSize = 10;
 
+    // A dialog to display slide cache progress
+    var progress_dialog = $("#progress_dialog_container").dialog({
+        autoOpen: false,
+        resizable: false,
+        height: "auto",
+        width: 400,
+        modal: true
+        });
+
+    // A progress bar
+    var progress_bar = $("#progress_bar").progressbar({
+        value:0
+    });
+
+    // Get the progress of loading the current slide
+    var check_cache_progress = function() {
+        $.ajax({
+            url: "{{ url_for('slide.get_cache_progress', id=slide_id, resource='raw') }}",
+            success: function(response_text) {
+                data = JSON.parse(response_text);
+                if(data.progress < 1.0) {
+                    progress_dialog.dialog("open");
+                    progress_bar.progressbar("value", Math.floor(data.progress * 100));
+                    setTimeout(check_cache_progress, 500);
+                }
+                else {
+                    progress_dialog.dialog("close");
+                }
+            }
+        })
+    }
+
+    // Request a progress check
+    setTimeout(check_cache_progress(), 500);
+
     // Add the tiled image to the viewer and when successful, initialize the overlay
     viewer.addTiledImage({
         tileSource: "{{ url_for('slide.dzi', mode=affine_mode, id=slide_id) }}",
@@ -238,7 +279,6 @@ $(document).ready(function() {
         var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
         return transformed_point2.subtract(transformed_point1);
     }
-    
 
     var deselect_all_manipulables = function() {
         var selected = paper.project.selectedItems;
@@ -265,15 +305,6 @@ $(document).ready(function() {
 
         payload = paper.project.exportJSON();
         $.post( "{{ url_for('slide.upload_json', id = slide_id) }}", payload, function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
-    }
-
-    var download_annot = function() {
-        $.get( "{{ url_for('slide.get_json', id = slide_id) }}", function(data, status) {
-            if(status=='success' && data.length) {
-                paper.project.importJSON(data)
-                deselect_all_manipulables()
-            }
-        })
     }
 
     // An object that is being moved 

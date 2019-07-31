@@ -342,6 +342,7 @@ import heapq
 import urllib2
 import csv
 import sys, traceback
+import threading
 
 # This class handles remote URLs for Google cloud. The remote URLs must have format
 # "gs://bucket/path/to/blob.ext" 
@@ -351,10 +352,15 @@ class GCSHandler:
     # Constructor
     def __init__(self):
         self._bucket_cache={}
+        self._blob_cache={}
         self._client = storage.Client()
 
     # Process a URL
     def _get_blob(self, uri):
+
+        # Check the cache
+        if uri in self._blob_cache:
+            return self._blob_cache[uri]
 
         # Unpack the URL
         o = urlparse(uri)
@@ -370,8 +376,12 @@ class GCSHandler:
             bucket = self._client.get_bucket(o.netloc)
             self._bucket_cache[o.netloc] = bucket
 
+        # Place the blob in the cache
+        blob = bucket.get_blob(o.path.strip('/'))
+        self._blob_cache[uri] = blob
+
         # Get the blob in the bucket
-        return bucket.get_blob(o.path.strip('/'))
+        return blob
 
     # Check if a URL refers to an existing file
     def exists(self, uri):
@@ -393,6 +403,10 @@ class GCSHandler:
             while worker.isAlive():
                 worker.join(1.0)
                 print('Downloaded: %d' % os.stat(local_file).st_size)
+
+    # Get the remote download size
+    def get_size(self, uri):
+        return self._get_blob(uri).size
 
 
 # Get a global GCP handler
@@ -474,7 +488,7 @@ class SlideRef:
                 heapq.heappush(f_heap, (s.st_atime, s.st_size, fn))
 
             # If the total number of bytes exceeds the cache size
-            while total_bytes > self._schema["cache_capacity"] and len(h) > 0:
+            while total_bytes > self._schema["cache_capacity"] and len(f_heap) > 0:
 
                 # Get the oldest file
                 (atime, size, fn) = heapq.heappop(f_heap)
@@ -489,7 +503,21 @@ class SlideRef:
         self._url_handler.download(f_remote, f_local)
 
         return f_local
-        
+
+
+    # Get the download progress (fraction of local file size to remote)
+    def get_download_progress(self, resource):
+
+        # Get the local file and remote blob
+        f_local = self.get_resource_url(resource, True)
+        f_remote = self.get_resource_url(resource, False)
+
+        # Get remote size
+        sz_local = os.stat(f_local).st_size if os.path.exists(f_local) else 0
+        sz_remote = self._url_handler.get_size(f_remote)
+
+        # Get the ratio
+        return sz_local * 1.0 / sz_remote
 
 
 # Generic function to insert a slide, creating a block descriptor of needed
@@ -566,7 +594,7 @@ def refresh_slide_db(manifest, bucket):
                             slide_info = {
                                 "specimen" : specimen, "block" : block, "slide_name": slide_name, "slide_ext" : slide_ext }
 
-                            sr = SlideRef(my_histo_url_schema, "gs://svsbucket", gstor, slide_info)
+                            sr = SlideRef(my_histo_url_schema, "gs://mtl_histology", gstor, slide_info)
 
                             if sr.resource_exists('raw', False):
 
@@ -614,7 +642,7 @@ def get_slide_ref(slice_id):
         "specimen" : row['specimen_name'], "block" : row['block_name'], 
         "slide_name": row['slide_name'], "slide_ext" : row['slide_ext'] }
 
-    return SlideRef(my_histo_url_schema, "gs://svsbucket", get_gstor(), slide_info)
+    return SlideRef(my_histo_url_schema, "gs://mtl_histology", get_gstor(), slide_info)
 
 
 
@@ -637,7 +665,7 @@ def load_raw_slide_to_cache(slide_id, resource):
 @with_appcontext
 def refresh_slides_command(manifest):
     """Refresh the slide database using manifest files"""
-    refresh_slide_db(manifest, "gs://svsbucket");
+    refresh_slide_db(manifest, "gs://mtl_histology");
     click.echo('Scanning complete')
 
 

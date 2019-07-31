@@ -4,7 +4,7 @@ from flask import (
 from werkzeug.exceptions import abort
 
 from flaskr.auth import login_required
-from flaskr.db import get_db
+from flaskr.db import get_db, get_slide_ref, SlideRef
 from io import BytesIO
 
 import os
@@ -81,12 +81,12 @@ def slide_view(id, affine_mode, seg_mode):
 @login_required
 def dzi(mode, id):
     format = 'jpeg'
-    
-    # Get the tiff filename for slide
-    db = get_db()
-    tiff_file = db.execute(
-        'SELECT tiff_file FROM slide WHERE id=?', (id,)).fetchone()['tiff_file']
 
+    # Get the raw SVS/tiff file for the slide (the resource should exist, 
+    # or else we will spend a minute here waiting with no response to user)
+    sr = get_slide_ref(id)
+    tiff_file = sr.get_local_copy('raw')
+    
     try:
         do_affine = (mode == 'affine')
         slide = bp.cache.get(tiff_file, do_affine)
@@ -97,6 +97,17 @@ def dzi(mode, id):
     except KeyError:
         # Unknown slug
         abort(404)
+
+# What percentage of the slide is available locally (in the cache)
+@bp.route('/slide/api/<int:id>/cache_progress', methods=('GET', ))
+@login_required
+def get_cache_progress(id):
+
+    sr = get_slide_ref(id)
+    progress = sr.get_download_progress('raw');
+    return json.dumps({'progress':progress}), 200, {'ContentType':'application/json'} 
+
+
 
 
 # Get an annotation filename for slide
@@ -173,11 +184,10 @@ def tile(mode, id, level, col, row, format):
         return 'bad format'
         abort(404)
 
-    # Get the tiff filename for slide
-    db = get_db()
-    tiff_file = db.execute(
-        'SELECT tiff_file FROM slide WHERE id=?', (id,)).fetchone()['tiff_file']
-
+    # Get the raw SVS/tiff file for the slide (the resource should exist, 
+    # or else we will spend a minute here waiting with no response to user)
+    sr = get_slide_ref(id)
+    tiff_file = sr.get_local_copy('raw')
     tile = bp.cache.get(tiff_file, (mode == 'affine')).get_tile(level, (col, row))
 
     buf = PILBytesIO()

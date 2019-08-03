@@ -3,7 +3,7 @@ from flask import (
 )
 from werkzeug.exceptions import abort
 from flaskr.auth import login_required
-from flaskr.db import get_db
+from flaskr.db import get_db, get_slide_ref, SlideRef
 
 
 import sqlite3
@@ -103,8 +103,8 @@ def generate_sample_patch(slide_id, sample_id, rect):
 
     # Get the tiff image from which to sample the region of interest
     db = get_db()
-    tiff_file = db.execute(
-        'SELECT tiff_file FROM slide WHERE id=?', (slide_id,)).fetchone()['tiff_file']
+    sr = get_slide_ref(slide_id)
+    tiff_file = sr.get_local_copy('raw')
 
     # Get the openslide object corresponding to it
     osr = slide.bp.cache.get(tiff_file, False)._osr;
@@ -119,33 +119,32 @@ def generate_sample_patch(slide_id, sample_id, rect):
 
 
 
-@bp.route('/dltrain/api/slide/<int:id>/sample/create', methods=('POST',))
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/create', methods=('POST',))
 @login_required
-def create_sample(id):
+def create_sample(task_id, slide_id):
 
     data = json.loads(request.get_data())
     rect = data['geometry']
     db = get_db()
     sample_id = db.execute(
-        'INSERT INTO training_sample (tstamp,x0,y0,x1,y1,label,slide) VALUES (?,?,?,?,?,?,?)',
-        (time.time(), rect[0], rect[1], rect[2], rect[3], data['label_id'], id)
+        'INSERT INTO training_sample (tstamp,x0,y0,x1,y1,label,slide,task) VALUES (?,?,?,?,?,?,?,?)',
+        (time.time(), rect[0], rect[1], rect[2], rect[3], data['label_id'], slide_id, task_id)
     ).lastrowid
     db.commit();
 
     # Save an image patch around the sample
-    generate_sample_patch(id, sample_id, rect)
+    generate_sample_patch(slide_id, sample_id, rect)
 
     return json.dumps({"id":sample_id})
 
-@bp.route('/dltrain/api/slide/<int:slide_id>/samples/labelset/<ls_name>', methods=('GET',))
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/samples', methods=('GET',))
 @login_required
-def get_samples(slide_id, ls_name):
+def get_samples(task_id, slide_id):
     db = get_db()
-    set_id = db.execute('SELECT * FROM labelset WHERE name=?',(ls_name,)).fetchone()['id']
     ll = db.execute(
         'SELECT S.*, L.color FROM training_sample S left join label L on S.label = L.id '
-        'WHERE S.slide=? and L.labelset=? ORDER BY S.tstamp DESC ',
-        (slide_id, set_id));
+        'WHERE S.slide=? and S.task=? ORDER BY S.tstamp DESC ',
+        (slide_id, task_id));
     return json.dumps([dict(row) for row in ll.fetchall()])
 
 

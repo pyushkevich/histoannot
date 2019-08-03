@@ -1,7 +1,9 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<a href="{{ url_for('slide.index')}}">Home</a> : {{block['specimen_name']}}:{{block['block_name']}}
+<a href="{{ url_for('slide.index')}}">Home</a> : 
+<a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
+{{block['specimen_name']}}:{{block['block_name']}}
   <table class="pure-table">
     <thead>
       <tr>
@@ -9,19 +11,32 @@
         <th>Section</th>
         <th>Slice</th>
         <th>Stain</th>
-        <th colspan=2>Actions</th>
+        {% if task['mode'] == 'annot' %}
+          <th># Markings</th>
+        {% elif task['mode'] == 'dltrain' %}
+          <th># Samples</th>
+        {% endif %}
+        <th>Action</th>
       </tr>
     </thead>
     <tbody>
   {% for slide in slides %}
       <tr>
-        <td><a href="{{ url_for('slide.slide_view', id=slide['id'], affine_mode='affine', seg_mode='annot') }}">
-            <img height="72px" src="{{url_for('slide.thumb', id=slide['id'])}}"></img></a></td>
+        <td><img height="72px" src="{{url_for('slide.thumb', id=slide['id'])}}"></img></td>
         <td>{{slide['section']}}</td>
         <td>{{slide['slide']}}</td>
         <td>{{slide['stain']}}</td>
-        <td><a class="action" href="{{ url_for('slide.slide_view', id=slide['id'], affine_mode='affine', seg_mode='annot') }}">Annotate</a></td>
-        <td><a class="action" href="{{ url_for('slide.slide_view', id=slide['id'], affine_mode='raw', seg_mode='dltrain') }}">DL Training</a></td>
+        {% if task['mode'] == 'annot' %}
+          {% if slide['n_paths'] %}          
+            <td>{{slide['n_paths'] + slide['n_markers']}}</td>
+          {% else %}
+            <td>0</td>
+          {% endif %}
+          <td><a class="action" href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide['id'], affine_mode='affine') }}">Annotate</a></td>
+        {% elif task['mode'] == 'dltrain' %}
+          <td>{{slide['n_samples']}}</td>
+          <td><a class="action" href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide['id'], affine_mode='raw') }}">Train</a></td>
+        {% endif %}
       </tr>
   {% endfor %}
 {% endblock %}

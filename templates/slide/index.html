@@ -1,28 +1,30 @@
 {% extends 'base.html' %}
 
 {% block header %}
-Specimen Listing
+Activity Selection
 {% endblock %}
 
 {% block content %}
-<p>Select one of these specimens to view slides.</p>
+<p>Please select one of these activities to view available specimens and slides.</p>
 
-  <table class="pure-table">
+  <table class="pure-table pure-table-striped">
     <thead>
       <tr>
-        <th>Specimen</th>
-        <th>Block</th>
-        <th># Slides</th>
-        <th>Actions</th>
+        <th>Activity</th>
+        <th>Description</th>
+        <th>#SPC</th>
+        <th>#BLK</th>
+        <th>#SLD</th>
       </tr>
     </thead>
     <tbody>
-  {% for block in blocks %}
+  {% for t in tasks %}
       <tr>
-        <td>{{block['specimen_name']}}</td>
-        <td>{{block['block_name']}}</td>
-        <td>{{block['nslides']}}</td>
-        <td><a class="action" href="{{ url_for('slide.block_detail', id=block['id']) }}">View</a></td>
+        <td><a class="action" href="{{ url_for('slide.task_detail', task_id=t['id']) }}">{{t['name']}}</a></td>
+        <td width="400px">{{t['desc']}}</td>
+        <td>{{t['nspecimens']}}</td>
+        <td>{{t['nblocks']}}</td>
+        <td>{{t['nslides']}}</td>
       </tr>
   {% endfor %}
 {% endblock %}

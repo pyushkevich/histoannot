@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<a href="{{ url_for('slide.index')}}">Home</a> : 
+{{task['name']}}
+
+  <table class="pure-table">
+    <thead>
+      <tr>
+        <th>Specimen</th>
+        <th>Block</th>
+        <th># Slides</th>
+        {% if task['mode'] == 'annot' %}
+          <th># Labeled</th>
+        {% elif task['mode'] == 'dltrain' %}
+          <th># Marked</th>
+        {% endif %}
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+  {% for block in blocks %}
+    {% if clr[block['specimen_name']] == 1 %}
+      <tr>
+    {% else %}
+      <tr class="pure-table-odd">
+    {% endif %}
+        <td>{{block['specimen_name']}}</td>
+        <td>{{block['block_name']}}</td>
+        <td>{{block['nslides']}}</td>
+        {% if task['mode'] == 'annot' %}
+          <td>{{block['nannot']}}</td>
+        {% elif task['mode'] == 'dltrain' %}
+          <td>{{block['nsamples']}}</td>
+        {% endif %}
+        <td><a class="action" href="{{ url_for('slide.block_detail', block_id=block['id'], task_id=task_id) }}">View</a></td>
+      </tr>
+  {% endfor %}
+{% endblock %}

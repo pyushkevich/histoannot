@@ -53,18 +53,20 @@ button.disabled, button.disabled:hover {
 }
 
 </style>
-<a href="{{ url_for('slide.index')}}">Home</a> : <a href="{{ url_for('slide.block_detail', id=slide_info['block_id']) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }}  
+<a href="{{ url_for('slide.index')}}">Home</a> : 
+<a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
+<a href="{{ url_for('slide.block_detail', block_id=slide_info['block_id'], task_id = task_id) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }}  
 
 <span style="float:right">
 {% if prev_slide %}
-    <a href="{{url_for('slide.slide_view', id=prev_slide['id'], affine_mode=affine_mode, seg_mode=seg_mode)}}">Previous Slide</a>
+    <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode)}}">Previous Slide</a>
 {% endif %}
 &nbsp
-<a href="{{ url_for('slide.slide_view', id=slide_info['id'], affine_mode='affine', seg_mode=seg_mode) }}">AFF</a>
-<a href="{{ url_for('slide.slide_view', id=slide_info['id'], affine_mode='raw', seg_mode=seg_mode) }}">RAW</a>
+<a href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='affine') }}">AFF</a>
+<a href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='raw') }}">RAW</a>
 &nbsp
 {% if next_slide  %}
-    <a href="{{url_for('slide.slide_view', id=next_slide['id'], affine_mode=affine_mode, seg_mode=seg_mode)}}">Next Slide</a>
+    <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode)}}">Next Slide</a>
 {% endif %}
 </span>
 
@@ -105,7 +107,7 @@ $(document).ready(function() {
 
     // Load the label listing
     if (seg_mode == 'dltrain') {
-        $('#div_dltrain_labels').load('{{url_for('dltrain.get_labelset_labels_picker', name='tangles')}}');
+        $('#div_dltrain_labels').load('{{url_for('dltrain.get_labelset_labels_picker', name=task['dltrain']['labelset'])}}');
     }
 
     // Initialize the viewer
@@ -304,7 +306,7 @@ $(document).ready(function() {
     var upload_annot = function() {
 
         payload = paper.project.exportJSON();
-        $.post( "{{ url_for('slide.upload_json', id = slide_id) }}", payload, function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
+        $.post( "{{ url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id) }}", payload, function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
     }
 
     // An object that is being moved 
@@ -329,7 +331,7 @@ $(document).ready(function() {
 
 
     var download_annot = function() {
-        $.get( "{{ url_for('slide.get_json', id = slide_id) }}", function(data, status) {
+        $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id) }}", function(data, status) {
             if(status=='success' && data.length) {
                 paper.project.importJSON(data)
                 deselect_all_manipulables()
@@ -409,7 +411,7 @@ $(document).ready(function() {
         this.upload_new_sample = function(box) {
 
             // Send the completed marker to the server
-            $.post("{{ url_for('dltrain.create_sample', id = slide_id) }}", 
+            $.post("{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}", 
                    JSON.stringify(box.data), 
                    function(response_text) { 
                        data = JSON.parse(response_text);
@@ -451,7 +453,7 @@ $(document).ready(function() {
 
             // Make a request for the samples
             $.ajax({
-                   url: "{{ url_for('dltrain.get_samples', slide_id = slide_id, ls_name = 'tangles') }}",
+                   url: "{{ url_for('dltrain.get_samples', task_id = task_id, slide_id = slide_id) }}",
                    type: 'get',
                    success: function(data) {
 

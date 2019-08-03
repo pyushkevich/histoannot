@@ -1,7 +1,6 @@
 DROP TABLE IF EXISTS user;
 DROP TABLE IF EXISTS block;
 DROP TABLE IF EXISTS slide;
-DROP TABLE IF EXISTS annot;
 
 CREATE TABLE user (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,13 +28,32 @@ CREATE TABLE slide (
     ON DELETE CASCADE
 );
 
-CREATE TABLE annot (
+DROP TABLE IF EXISTS task;
+CREATE TABLE task (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  author_id INTEGER NOT NULL,
+  name TEXT UNIQUE NOT NULL,
+  json TEXT NOT NULL,
+  restrict_access BOOLEAN NOT NULL
+);
+
+DROP TABLE IF EXISTS task_access;
+CREATE TABLE task_access (
+  user INTEGER NOT NULL,
+  task INTEGER NOT NULL,
+  PRIMARY KEY(user, task),
+  FOREIGN KEY (user) REFERENCES user (id),
+  FOREIGN KEY (task) REFERENCES task (id)
+);
+
+DROP TABLE IF EXISTS annot;
+CREATE TABLE annot (
   slide_id INTEGER NOT NULL,
-  anntype INTEGER NOT NULL,
-  data TEXT,
-  created INTEGER NOT NULL,
+  task_id INTEGER NOT NULL,
+  json TEXT,
+  t_modified INTEGER NOT NULL,
+  n_paths INTEGER NOT NULL,
+  n_markers INTEGER NOT NULL,
   FOREIGN KEY (slide_id) REFERENCES slide (id),
-  FOREIGN KEY (author_id) REFERENCES user (id)
+  FOREIGN KEY (task_id) REFERENCES task (id),
+  PRIMARY KEY (slide_id,task_id)
 );

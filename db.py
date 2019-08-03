@@ -677,6 +677,113 @@ def cache_load_raw_slide_command(slideid):
     load_raw_slide_to_cache(slideid, 'raw')
 
 
+# --------------------------------
+# TASKS
+# --------------------------------
+from jsonschema import validate
+import json
+
+# A schema against which the JSON is validated
+task_schema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "name" : { "type" : "string", "minLength": 2, "maxLength": 80 },
+        "desc" : { "type" : "string", "maxLength": 1024 },
+        "mode" : { "type" : "string", "enum" : ["annot", "dltrain", "browse" ] },
+        "dltrain" : { 
+            "type" : "object",
+            "properties" : {
+                "labelset" : { "type" : "string" },
+            },
+            "required" : ["labelset"]
+        },
+        "restrict-access" : { "type" : "boolean" },
+        "stains" : {
+            "type" : "array",
+            "items" : {
+                "type" : "string"
+            }
+        }
+    },
+    "required" : ["name", "mode", "restrict-access"]
+}
+
+
+# Add a new task (or update existing task) based on a JSON specifier. We
+# will check the JSON for completeness here and then configure the task
+def add_task(json_file, update_existing_task_id = None):
+
+    with open(json_file) as fdesc:
+
+        # Validate the JSON against the schema
+        data=json.load(fdesc)
+        validate(instance=data, schema=task_schema)
+
+        db = get_db()
+
+        # Update or insert?
+        if update_existing_task_id is None:
+
+            # Insert the JSON
+            rc = db.execute('INSERT INTO task(name,json,restrict_access) VALUES (?,?,?)',
+                            (data['name'], json.dumps(data), data['restrict-access']))
+            if rc.rowcount == 1:
+                print("Successfully inserted task %s with id %d" % (data['name'], rc.lastrowid))
+
+        else:
+
+            # Update
+            rc = db.execute('UPDATE task SET name=?, json=?, restrict_access=? WHERE id=?',
+                            (data['name'], json.dumps(data), data['restrict-access'], update_existing_task_id))
+            if rc.rowcount == 1:
+                print("Successfully updated task %d" % int(update_existing_task_id))
+            else:
+                raise ValueError("Task %d not found" % int(update_existing_task_id))
+
+        db.commit()
+
+
+@click.command('tasks-add')
+@click.option('--json', prompt='JSON descriptor for the task')
+@with_appcontext
+def add_task_command(json):
+    """Configure a new task"""
+    add_task(json)
+
+@click.command('tasks-update')
+@click.option('--json', prompt='JSON descriptor for the task')
+@click.option('--task', prompt='ID of the task to update')
+@with_appcontext
+def update_task_command(json, task):
+    """Update an existing task"""
+    add_task(json, task)
+
+@click.command('tasks-list')
+@with_appcontext
+def list_tasks_command():
+    """List available tasks"""
+    print('%08s %s' % ('Task ID', 'Task Name'))
+
+    db = get_db()
+    rc = db.execute('SELECT id, name FROM task ORDER BY id')
+    for row in rc.fetchall():
+        print('%08s %s' % (row['id'], row['name']))
+
+@click.command('tasks-print')
+@click.option('--task', prompt='ID of the task to print')
+@with_appcontext
+def print_tasks_command(task):
+    """Print the JSON for a task"""
+
+    db = get_db()
+    rc = db.execute('SELECT json FROM task WHERE id=?', (task,)).fetchone()
+    if rc is not None:
+        print(json.dumps(json.loads(rc['json']), indent=4))
+    else:
+        print('Task %d does not exist' % (int(task),))
+
+
 
 def init_app(app):
     app.teardown_appcontext(close_db)
@@ -684,3 +791,7 @@ def init_app(app):
     app.cli.add_command(init_db_dltrain_command)
     app.cli.add_command(refresh_slides_command)
     app.cli.add_command(cache_load_raw_slide_command)
+    app.cli.add_command(add_task_command)
+    app.cli.add_command(update_task_command)
+    app.cli.add_command(list_tasks_command)
+    app.cli.add_command(print_tasks_command)

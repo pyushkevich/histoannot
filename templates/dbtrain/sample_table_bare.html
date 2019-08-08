@@ -1,0 +1,113 @@
+<style>
+#stablebody tr {
+  background-color: #eee;
+}
+#stablebody td.valid:hover {
+  background-color: #dde;
+  cursor: pointer;
+}
+#stablebody td.valid.selected {
+  background-color: #bbe;
+  color: #000;
+}
+#stable td {
+  padding-left: 2px;
+  padding-right: 2px;
+  padding-top: 2px;
+  padding-bottom: 1px;
+  height: 100px;
+  width: 100px;
+}
+#stable th {
+}
+#stable {
+  font-size: 80%;
+  line-height: 1em;
+  user-select: none;
+}
+</style>
+
+<!--
+<table "pure-table" id="stable">
+    <tbody id="stablebody">
+    </tbody>
+</table>
+-->
+
+<script type="text/javascript">
+
+// The id of the currently selected label (or NULL)
+var samples_table_ncol = 3;
+var samples_table_imgwidth = "100px";
+
+// The URL template
+var _samples_table_url_template = "{{url_for('dltrain.get_samples_for_label', task_id=task_id, slide_id=slide_id, label_id='999999')}}";
+
+// Global callbacks for the sample table
+var _sample_table_cb = {};
+
+// This object is used to set global callbacks for the samples table
+var set_sample_table_click_callback = function(f) {
+  _sample_table_cb['click'] = f;
+}
+
+// Create HTML for the table 
+var create_samples_table_html = function(container) {
+  var table = $('<table id="stable">').addClass("pure-table");
+  var tbody = $('<tbody id="stablebody">');
+  tbody.appendTo(table);
+  table.appendTo(container);
+}
+
+// Load the samples for a specific label
+var load_samples_table_ajax = function(label_id, callback_fn) {
+  $.ajax({
+    url: _samples_table_url_template.replace('999999', label_id.toString()),
+    success: function(response_text) {
+      var data = JSON.parse(response_text);
+      $('#stablebody').empty();
+
+      var tr = $('<tr>');
+      var row_size = 0;
+      $.each(data, function(i, item) {
+        var imgurl = "{{url_for('dltrain.get_sample_png', id=9999)}}".replace('9999', item['id']);
+        var img = $('<img>').attr('src', imgurl).attr('width', samples_table_imgwidth);
+        var td = $('<td>').append(img).attr('sample-id', item['id']).addClass('valid');
+        td.attr('center-x', (item['x0'] + item['x1']) / 2.0);
+        td.attr('center-y', (item['y0'] + item['y1']) / 2.0);
+        td.click(function() {
+          console.log($('#stablebody td'))
+          $('#stablebody td').removeClass("selected");
+          if($(this).attr('sample-id')) {
+            $(this).addClass("selected");
+            if(_sample_table_cb['click'])
+              _sample_table_cb['click']($(this).attr('sample-id'), $(this).attr('center-x'), $(this).attr('center-y'));
+          }
+        });
+        td.appendTo(tr);
+        row_size++;
+        if((i+1) % samples_table_ncol == 0) {
+          tr.appendTo('#stablebody')
+          tr = $('<tr>')
+          row_size=0;
+        }
+      }); 
+
+      if(row_size > 0) {
+        for(i = row_size; i < samples_table_ncol; i++)
+          tr.append($('<td>'))
+        tr.appendTo('#stablebody')
+      }
+
+      // Call the callback function
+      if(callback_fn)
+        callback_fn();
+    }
+  });
+}
+
+// $(document).ready(function() {
+//  load_samples_table_ajax(1)
+// });
+
+</script>

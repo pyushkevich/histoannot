@@ -8,6 +8,7 @@ from flask import current_app, g
 from flask.cli import with_appcontext
 
 import openslide
+import time
 
 def get_db():
     if 'db' not in g:
@@ -743,6 +744,13 @@ def add_task(json_file, update_existing_task_id = None):
 
         db.commit()
 
+# Get json for a task
+def get_task_data(task_id):
+    db = get_db()
+    rc = db.execute('SELECT * FROM task WHERE id = ?', (task_id,)).fetchone()
+    return json.loads(rc['json'])
+
+
 
 @click.command('tasks-add')
 @click.option('--json', prompt='JSON descriptor for the task')
@@ -784,6 +792,120 @@ def print_tasks_command(task):
         print('Task %d does not exist' % (int(task),))
 
 
+# --------------------------------
+# LABELSETS
+# --------------------------------
+@click.command('labelset-list')
+@with_appcontext
+def list_labelsets_command():
+    """Print label sets"""
+    print('%-8s %-32s %-8s %-8s' % ('Id', 'Name', '#Labels', '#Samples'))
+
+    db = get_db()
+    rc = db.execute('SELECT S.id, S.name, count(distinct L.id) as n_labels, count(D.id) as n_samples '
+                    'FROM labelset S left join label L on S.id=L.labelset '
+                    '                left join training_sample D on L.id = D.label '
+                    'GROUP BY S.id ORDER BY S.id')
+    for row in rc.fetchall():
+        print('%-8s %-32s %-8s %-8s' % (row['id'], row['name'], row['n_labels'], row['n_samples']))
+
+@click.command('labelset-status')
+@click.argument('id')
+@with_appcontext
+def print_labelset_labels_command(id):
+    """Print the labels in a labelset"""
+    print('%-8s %-32s %-8s %-8s' % ('Id', 'Name', 'Color', '#Samples'))
+
+    db = get_db()
+    rc = db.execute('SELECT L.id, L.name, L.color, count(D.id) as n_samples '
+                    'FROM label L left join training_sample D on L.id = D.label '
+                    'WHERE L.labelset=? '
+                    'GROUP BY L.id ORDER BY L.id', (id,))
+    for row in rc.fetchall():
+        print('%-8s %-32s %-8s %-8s' % (row['id'], row['name'], row['color'], row['n_samples']))
+
+@click.command('labelset-dump')
+@click.argument('id')
+@with_appcontext
+def dump_labelset_command(id):
+    """Dump a labelset in JSON format"""
+    db = get_db()
+    rc = db.execute('SELECT name, description, color FROM label WHERE labelset=? ORDER BY id', (id,))
+
+    d=[]
+    for row in rc.fetchall():
+        d.append({'name': row['name'], 'color': row['color'], 'description' : row['description']})
+
+    print(json.dumps(d))
+
+
+# A schema for importing labels
+label_schema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "array",
+    "items" : {
+        "type" : "object",
+        "properties" : {
+            "name" : { "type" : "string", "minLength": 2, "maxLength": 80 },
+            "description" : { "type" : "string", "maxLength": 1024 },
+            "color" : { "type" : "string", "minLength": 2, "maxLength": 80 }
+        },
+        "required" : [ "name", "color" ]
+    }
+}
+
+@click.command('labelset-update')
+@click.argument('id')
+@click.argument('json_file')
+@with_appcontext
+def update_labelset_from_json_command(id, json_file):
+
+    db = get_db()
+    with open(json_file) as fdesc:
+
+        # Validate the JSON against the schema
+        data=json.load(fdesc)
+        validate(instance=data, schema=label_schema)
+
+        # Go through the labels
+        for row in data:
+
+            # Check if a label with this name already exists
+            rc = db.execute("SELECT * FROM label "
+                            "WHERE labelset=? and name COLLATE NOCASE = ?",
+                            (id, row['name'])).fetchone()
+
+            # Get the description, which is optional
+            desc = row['description'] if 'description' in row else None
+
+            # If so, we will be updating this label
+            if rc is not None:
+                db.execute("UPDATE label SET color=?, description=? "
+                           "WHERE labelset=? and name COLLATE NOCASE = ?",
+                           (row['color'], desc, id, row['name']))
+            else:
+                db.execute("INSERT INTO label (name, color, description, labelset) VALUES (?,?,?,?)",
+                           (row['name'], row['color'], desc, id))
+
+        # Commit
+        db.commit()
+
+
+# --------------------------------
+# Editing Metadata
+# --------------------------------
+def update_edit_meta(meta_id):
+    db = get_db()
+    db.execute('UPDATE edit_meta SET editor=?, t_edit=? WHERE id=?', 
+               (g.user['id'], time.time(), meta_id))
+
+
+def create_edit_meta():
+    t_stamp = time.time()
+    db = get_db()
+    return db.execute("INSERT INTO edit_meta (creator, editor, t_create, t_edit) VALUES (?,?,?,?)",
+                      (g.user['id'], g.user['id'], t_stamp, t_stamp)).lastrowid
+
 
 def init_app(app):
     app.teardown_appcontext(close_db)
@@ -795,3 +917,7 @@ def init_app(app):
     app.cli.add_command(update_task_command)
     app.cli.add_command(list_tasks_command)
     app.cli.add_command(print_tasks_command)
+    app.cli.add_command(list_labelsets_command)
+    app.cli.add_command(print_labelset_labels_command)
+    app.cli.add_command(dump_labelset_command)
+    app.cli.add_command(update_labelset_from_json_command)

@@ -7,10 +7,9 @@
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-hex-colorpicker-min.js') }}"></script>
 
-<b>Class selector</b>
 <div id="label_table_container">
 </div>
-<a href="#" style="font-size: 0.8em" id="add_label_link">Add Label...</a>
+<a href="#" style="font-size: 0.7em" id="add_label_link">Add Label...</a>
 
 <div id="add_label_form_container" title="Add Label">
     <form class="pure-form" id="add_label_form">
@@ -24,49 +23,59 @@
 </div>
 
 <script type="text/javascript">
+
+var reload_labels = function() {
+  // Tell the label table to load itself
+  load_label_table_ajax(function() {
+    setTimeout(reload_labels, 5000)
+  });
+}
+
 $(document).ready(function() {
 
-    var add_label_dialog = $("#add_label_form_container").dialog({
-                                                       autoOpen: false,
-                                                       resizable: false,
-                                                       height: "auto",
-                                                       width: 400,
-                                                       modal: true,
-                                                       buttons: {
-                                                           "Add label": function() {
-                                                               label_add_cb();
-                                                               add_label_dialog.dialog( "close" );
-                                                           },
-                                                           Cancel: function() {
-                                                               add_label_dialog.dialog( "close" );
-                                                           }
-                                                       }
-    });
+  // Load the label table
+  $('#label_table_container').load(
+    '{{url_for('dltrain.get_labelset_labels_table', task_id=task_id, slide_id=slide_id)}}');
 
-    // Add a color picker
-    $('#label_color_input').hexColorPicker({
-                                           "container":"dialog",
-                                           "colorModel":"hsl",
-                                           "pickerWidth":400});
+  // Schedule a perpetual label reload
+  setTimeout(reload_labels, 5000)
 
-    var reload_labels = function() {
-        $('#label_table_container').load('{{url_for('dltrain.get_labelset_labels_table', name=labelset_name)}}');
+  // Create a dialog
+  var add_label_dialog = $("#add_label_form_container").dialog({
+    autoOpen: false,
+    resizable: false,
+    height: "auto",
+    width: 400,
+    modal: true,
+    buttons: {
+      "Add label": function() {
+        label_add_cb();
+        add_label_dialog.dialog( "close" );
+      },
+      Cancel: function() {
+        add_label_dialog.dialog( "close" );
+      }
     }
+  });
 
-    reload_labels();
+  // Add a color picker
+  $('#label_color_input').hexColorPicker({
+    "container":"dialog",
+    "colorModel":"hsl",
+    "pickerWidth":400});
 
-    $("#add_label_link").click(function() {
-        add_label_dialog.dialog("open");
-    });
+  $("#add_label_link").click(function() {
+    add_label_dialog.dialog("open");
+  });
 
-    var label_add_cb = function() {
-        var data=$("#add_label_form").serialize();
-        $.post("{{url_for('dltrain.add_labelset_label', name=labelset_name)}}",
-               data,
-               function(x) {
-                   reload_labels();
-               });
-    }
+  var label_add_cb = function() {
+    var data=$("#add_label_form").serialize();
+    $.post("{{url_for('dltrain.add_labelset_label', task_id=task_id)}}",
+      data,
+      function(x) {
+        reload_labels();
+      });
+  }
 
 });
 

@@ -1,0 +1,144 @@
+<style>
+.dot {
+  height: 25px;
+  width: 25px;
+  background-color: #bbb;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+#ctablebody tr {
+  background-color: #eee;
+}
+#ctablebody tr:hover {
+  background-color: #dde;
+  cursor: pointer;
+}
+#ctablebody tr.selected {
+  background-color: #bbe;
+  color: #000;
+}
+#ctable td {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  height: 0px;
+}
+#ctable th {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+#ctable td.expander {
+  width: 100%;
+}
+#ctable {
+  font-size: 80%;
+  line-height: 1em;
+  user-select: none;
+}
+#ctable span.colordot {
+  height: 12px; 
+  width: 12px; 
+  display: inline-block; 
+  border-radius: 50%; 
+  background-color: red; 
+  border:1px solid black;
+}
+</style>
+
+<!--
+<table class="pure-table pure-table-horizontal" id="ctable">
+    <thead>
+        <tr>
+            <th class="expander">Class</th>
+            <th>Color</th>
+            <th>#</th>
+        </tr>
+    </thead>
+    <tbody id="ctablebody">
+    </tbody>
+</table>
+-->
+
+<script type="text/javascript">
+
+// Global callbacks for the label table
+var _label_table_cb = {};
+
+// This object is used to set global callbacks for the label table
+var set_label_table_click_callback = function(f) {
+  _label_table_cb['click'] = f;
+}
+
+// Create a table of labels
+var create_label_table_html = function(container) {
+  $('<table class="pure-table pure-table-horizontal" id="ctable">').append(
+    $('<thead>').append(
+      $('<th class="expander">').text('Class'),
+      $('<th>').text('Color'),
+      $('<th>').text('#')),
+    $('<tbody id="ctablebody">')).appendTo(container)
+}
+
+// Load the label table from the server and populate the HTML
+// table above. The function takes an object containing callbacks
+// with the recognized callbacks being 'success' and 'click'
+var load_label_table_ajax = function(cb_success) {
+  var sel_id = get_current_label_id()
+  $.ajax({
+    url: "{{url_for('dltrain.get_labelset_labels_table_json', task_id=task_id, slide_id=slide_id)}}",
+    success: function(response_text) {
+      var data = JSON.parse(response_text);
+      var sel = null;
+      $('#ctablebody').empty();
+      $.each(data, function(i, item) {
+        var $tr = $('<tr>').append(
+          $('<td>').text(item['name']).addClass('expander'),
+          $('<td>').append($('<span>').addClass('colordot').css('background-color', item['color'])),
+          $('<td>').text(item['n_samples']));
+        $tr.appendTo('#ctablebody');
+        $tr.attr('data-id', item['id']);
+        $tr.attr('data-color', item['color']);
+        if(item['id'] == sel_id) 
+          $tr.addClass("selected");
+        $tr.click(function(){
+          $(this).parent().children().removeClass("selected");
+          $(this).addClass("selected");
+          if(_label_table_cb['click'])
+            _label_table_cb['click']($(this).attr('data-id'));
+        });
+      }); 
+      if(!sel_id) {
+        var first = $("#ctablebody tr").first();
+        first.addClass("selected");
+        label_table_sel_row = first.attr('data-id');
+      }
+
+      // Call the callback function
+      if(cb_success)
+        cb_success();
+    }
+  });
+}
+
+var get_current_label_id = function() {
+  return $("#ctablebody tr.selected").attr("data-id");
+}
+
+var select_label = function(id) {
+  $(this).parent().children().removeClass("selected");
+  $("#ctablebody tr[data-id='XXX']".replace('XXX',id)).addClass("selected")
+}
+
+var select_first_label = function() {
+  $("#ctablebody tr").first().addClass("selected");
+}
+
+var get_current_label_color = function() {
+  return $("#ctablebody tr.selected").attr("data-color");
+}
+
+// $(document).ready(function() {
+//  load_label_table_ajax()
+// });
+
+</script>

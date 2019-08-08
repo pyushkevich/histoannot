@@ -45,15 +45,28 @@ CREATE TABLE task_access (
   FOREIGN KEY (task) REFERENCES task (id)
 );
 
+DROP TABLE IF EXISTS edit_meta;
+CREATE TABLE edit_meta (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  creator INTEGER NOT NULL,
+  editor INTEGER NOT NULL,
+  t_create INTEGER NOT NULL,
+  t_edit INTEGER NOT NULL,
+  FOREIGN KEY(creator) REFERENCES user(id),
+  FOREIGN KEY(editor) REFERENCES user(id)
+);
+
+
 DROP TABLE IF EXISTS annot;
 CREATE TABLE annot (
   slide_id INTEGER NOT NULL,
   task_id INTEGER NOT NULL,
   json TEXT,
-  t_modified INTEGER NOT NULL,
+  meta_id INTEGER NOT NULL,
   n_paths INTEGER NOT NULL,
   n_markers INTEGER NOT NULL,
   FOREIGN KEY (slide_id) REFERENCES slide (id),
   FOREIGN KEY (task_id) REFERENCES task (id),
+  FOREIGN KEY (meta_id) REFERENCES edit_meta (id),
   PRIMARY KEY (slide_id,task_id)
 );

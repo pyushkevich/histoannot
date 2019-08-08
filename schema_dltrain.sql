@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS label;
 DROP TABLE IF EXISTS labelset;
-DROP TABLE IF EXISTS training_sample;
 
 CREATE TABLE labelset (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,17 +19,21 @@ CREATE TABLE label (
   UNIQUE (labelset, name)
 );
 
+DROP TABLE IF EXISTS training_sample;
 CREATE TABLE training_sample (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  tstamp INTEGER NOT NULL,
   x0 REAL NOT NULL,
   y0 REAL NOT NULL,
   x1 REAL NOT NULL,
   y1 REAL NOT NULL,
   label INTEGER NOT NULL,
   slide INTEGER NOT NULL,
+  task INTEGER NOT NULL,
+  meta_id INTEGER NOT NULL,
   FOREIGN KEY (label) REFERENCES label(id),
-  FOREIGN KEY (slide) REFERENCES slide(id)
+  FOREIGN KEY (slide) REFERENCES slide(id),
+  FOREIGN KEY (task) REFERENCES task(id),
+  FOREIGN KEY (meta_id) REFERENCES edit_meta(id)
 );
   
 INSERT INTO labelset (name) values ('tangles');

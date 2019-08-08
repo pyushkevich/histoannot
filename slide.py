@@ -4,7 +4,7 @@ from flask import (
 from werkzeug.exceptions import abort
 
 from flaskr.auth import login_required
-from flaskr.db import get_db, get_slide_ref, SlideRef
+from flaskr.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
 from io import BytesIO
 
 import os
@@ -63,12 +63,6 @@ def index():
 
     # Render the template
     return render_template('slide/index.html', tasks=t)
-
-# Get json for a task
-def get_task_data(task_id):
-    db = get_db()
-    rc = db.execute('SELECT * FROM task WHERE id = ?', (task_id,)).fetchone()
-    return json.loads(rc['json'])
 
 # Task detail
 @bp.route('/task/<int:task_id>')
@@ -296,17 +290,30 @@ def update_annot_json(task_id, slide_id):
 
     # See if an annotation already exists
     db = get_db()
-    rc = db.execute(
-        'UPDATE annot SET json=?, t_modified=?, n_paths=?, n_markers=? '
-        'WHERE slide_id=? AND task_id=?', 
-        (json.dumps(data), time.time(), n_paths, n_markers, slide_id, task_id))
+    a_row = db.execute('SELECT * FROM annot WHERE slide_id=? AND task_id=?',
+                       (slide_id, task_id)).fetchone()
 
-    # If no rows were updated, we need to insert 
-    if rc.rowcount < 1:
+    if a_row is not None:
+
+        # Update the timestamp
+        update_edit_meta(a_row['meta_id'])
+        
+        # Update the row
         db.execute(
-            'INSERT INTO annot(json, t_modified, n_paths, n_markers, slide_id, task_id) '
+            'UPDATE annot SET json=?, n_paths=?, n_markers=? '
+            'WHERE slide_id=? AND task_id=?', 
+            (json.dumps(data), n_paths, n_markers, slide_id, task_id))
+
+    else:
+
+        # Create a new timestamp
+        meta_id = create_edit_meta()
+
+        # Insert a new row
+        db.execute(
+            'INSERT INTO annot(json, meta_id, n_paths, n_markers, slide_id, task_id) '
             'VALUES (?,?,?,?,?,?)', 
-            (json.dumps(data), time.time(), n_paths, n_markers, slide_id, task_id))
+            (json.dumps(data), meta_id, n_paths, n_markers, slide_id, task_id))
 
     # Commit
     db.commit()

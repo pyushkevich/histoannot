@@ -13,6 +13,11 @@
 <script type="text/javascript" src="{{ url_for('static', filename='mousetrap.min.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
 
+{% if seg_mode == 'dltrain' %}
+  {% include 'dbtrain/label_table_bare.html' %}
+  {% include 'dbtrain/sample_table_bare.html' %}
+{% endif %}
+
 <style type="text/css">
 html {
     overflow: hidden;
@@ -84,6 +89,9 @@ button.disabled, button.disabled:hover {
     <div class="pure-u-1-5">
         <div id="div_dltrain_labels" style="padding-left: 1em">
         </div>
+        <p></p>
+        <div id="div_dltrain_samples" style="padding-left: 1em; overflow: auto;">
+        </div>
     </div>
 </div>
 
@@ -103,799 +111,846 @@ button.disabled, button.disabled:hover {
 <script type="text/javascript">
 $(document).ready(function() {
 
-    var seg_mode='{{seg_mode}}'
+  var seg_mode='{{seg_mode}}'
 
-    // Load the label listing
-    if (seg_mode == 'dltrain') {
-        $('#div_dltrain_labels').load('{{url_for('dltrain.get_labelset_labels_picker', name=task['dltrain']['labelset'])}}');
+  // Initialize the viewer
+  var viewer = new OpenSeadragon({
+    id: "view",
+    prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
+    showNavigator: true,
+    showRotationControl: false,
+    showSequenceControl: true,
+    animationTime: 0.5,
+    blendTime: 0.1,
+    constrainDuringPan: true,
+    maxZoomPixelRatio: 1.1,
+    minPixelRatio: 1.0,
+    minZoomLevel: 1,
+    visibilityRatio: 1,
+    zoomPerScroll: 2,
+    timeout: 120000
+  });
+  viewer.addHandler("open", function() {
+    // To improve load times, ignore the lowest-resolution Deep Zoom
+    // levels.  This is a hack: we can't configure the minLevel via
+    // OpenSeadragon configuration options when the viewer is created
+    // from DZI XML.
+    viewer.source.minLevel = 8;
+  });
+
+  // Get the current image zoom level
+  get_image_zoomlevel = function() {
+    var viewportZoom = viewer.viewport.getZoom(true);
+    var image1 = viewer.world.getItemAt(0);
+    var paperZoom = image1.viewportToImageZoom(viewportZoom);
+    return paperZoom;
+  }
+
+  // Scaling function for strokes/fonts/etc
+  zoom_paperjs_scaling_fn = function(raw_value, raw_accel, img_zoom) {
+    adj_value = raw_value / img_zoom;
+    return Math.max(1, adj_value);
+  }
+
+  // Adjusts the scaling of the paper.js style elements (stroke width, etc.)
+  // to match the current zoom factors. 
+  adjust_paperjs_scaling = function(paperZoom) {
+
+    // Handle paths
+    var items = paper.project.getItems({class: paper.Path});
+    for (var i = 0; i < items.length; i++) {
+      if(items[i].data.rawStrokeWidth) {
+        items[i].strokeWidth = zoom_paperjs_scaling_fn(items[i].data.rawStrokeWidth, 0, paperZoom);
+      }
     }
+    paper.view.draw();
 
-    // Initialize the viewer
-    var viewer = new OpenSeadragon({
-        id: "view",
-        prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
-        showNavigator: true,
-        showRotationControl: false,
-        showSequenceControl: true,
-        animationTime: 0.5,
-        blendTime: 0.1,
-        constrainDuringPan: true,
-        maxZoomPixelRatio: 1.1,
-        minPixelRatio: 1.0,
-        minZoomLevel: 1,
-        visibilityRatio: 1,
-        zoomPerScroll: 2,
-        timeout: 120000
-    });
-    viewer.addHandler("open", function() {
-        // To improve load times, ignore the lowest-resolution Deep Zoom
-        // levels.  This is a hack: we can't configure the minLevel via
-        // OpenSeadragon configuration options when the viewer is created
-        // from DZI XML.
-        viewer.source.minLevel = 8;
-    });
+  }
 
-    // Get the current image zoom level
-    get_image_zoomlevel = function() {
-        var viewportZoom = viewer.viewport.getZoom(true);
-        var image1 = viewer.world.getItemAt(0);
-        var paperZoom = image1.viewportToImageZoom(viewportZoom);
-        return paperZoom;
+  // Handle display zoom, adjusting the styling of displayed items
+  var last_zoom = -1;
+  viewer.addHandler("update-viewport", function() {
+    var viewportZoom = viewer.viewport.getZoom(true);
+    if(last_zoom != viewportZoom) {
+      var paperZoom = get_image_zoomlevel();
+      console.log("Zoom updated: ", viewportZoom, paperZoom)
+      if(paper.project) {
+        adjust_paperjs_scaling(paperZoom)
+      }
     }
+    last_zoom = viewportZoom;
+  })
 
-    // Scaling function for strokes/fonts/etc
-    zoom_paperjs_scaling_fn = function(raw_value, raw_accel, img_zoom) {
-        adj_value = raw_value / img_zoom;
-        return Math.max(1, adj_value);
+  // Set the strokewidth of a Path element
+  set_paperjs_item_strokewidth = function(item, strokeWidth) {
+    // Set the desired strokewidth
+    item.data.rawStrokeWidth = strokeWidth;
+    item.strokeWidth = zoom_paperjs_scaling_fn(strokeWidth, 0, get_image_zoomlevel());
+  }
+
+  var mpp = parseFloat("{{ slide_mpp }}");
+  viewer.scalebar({
+    pixelsPerMeter: mpp ? (1e6 / mpp) : 0,
+    xOffset: 10,
+    yOffset: 10,
+    barThickness: 3,
+    color: '#555555',
+    fontColor: '#333333',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+  });
+
+  // Initialization for paper_js
+  var overlay
+  function init_paperjs() {
+    overlay = viewer.paperjsOverlay();
+    overlay.resize();
+    overlay.resizecanvas();
+
+    // Get the initial data
+    if (seg_mode == 'annot') {
+      download_annot();
     }
+    else if (seg_mode == 'dltrain') {
+      sample_api.refresh_samples();
+    }
+  }
 
-    // Adjusts the scaling of the paper.js style elements (stroke width, etc.)
-    // to match the current zoom factors. 
-    adjust_paperjs_scaling = function(paperZoom) {
+  // Paper default settings
+  paper.settings.handleSize = 10;
 
-        // Handle paths
-        var items = paper.project.getItems({class: paper.Path});
-        for (var i = 0; i < items.length; i++) {
-            if(items[i].data.rawStrokeWidth) {
-                items[i].strokeWidth = zoom_paperjs_scaling_fn(items[i].data.rawStrokeWidth, 0, paperZoom);
-            }
+  // A dialog to display slide cache progress
+  var progress_dialog = $("#progress_dialog_container").dialog({
+    autoOpen: false,
+    resizable: false,
+    height: "auto",
+    width: 400,
+    modal: true
+  });
+
+  // A progress bar
+  var progress_bar = $("#progress_bar").progressbar({
+    value:0
+  });
+
+  // Get the progress of loading the current slide
+  var check_cache_progress = function() {
+    $.ajax({
+      url: "{{ url_for('slide.get_cache_progress', id=slide_id, resource='raw') }}",
+      success: function(response_text) {
+        data = JSON.parse(response_text);
+        if(data.progress < 1.0) {
+          progress_dialog.dialog("open");
+          progress_bar.progressbar("value", Math.floor(data.progress * 100));
+          setTimeout(check_cache_progress, 500);
         }
-        paper.view.draw();
-
-    }
-
-    // Handle display zoom, adjusting the styling of displayed items
-    var last_zoom = -1;
-    viewer.addHandler("update-viewport", function() {
-        var viewportZoom = viewer.viewport.getZoom(true);
-        if(last_zoom != viewportZoom) {
-            var paperZoom = get_image_zoomlevel();
-            console.log("Zoom updated: ", viewportZoom, paperZoom)
-            if(paper.project) {
-                adjust_paperjs_scaling(paperZoom)
-            }
+        else {
+          progress_dialog.dialog("close");
         }
-        last_zoom = viewportZoom;
+      }
     })
+  }
 
-    // Set the strokewidth of a Path element
-    set_paperjs_item_strokewidth = function(item, strokeWidth) {
-        // Set the desired strokewidth
-        item.data.rawStrokeWidth = strokeWidth;
-        item.strokeWidth = zoom_paperjs_scaling_fn(strokeWidth, 0, get_image_zoomlevel());
+  // Request a progress check
+  setTimeout(check_cache_progress(), 500);
+
+  // Add the tiled image to the viewer and when successful, initialize the overlay
+  viewer.addTiledImage({
+    tileSource: "{{ url_for('slide.dzi', mode=affine_mode, id=slide_id) }}",
+    x: 0,
+    y: 0,
+    success: init_paperjs
+  });
+
+  // Current interaction mode
+  var curr_mode = 'NAV'
+
+  // Initialize the paper.js overlay
+  var curr_path
+  var curr_box
+  var curr_box_drag_start
+
+  // Helper function to get Point corresponding to OSD event
+  var ev_point = function(event) {
+    return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
+  }
+
+  var ev_orig_point = function(event) {
+    return paper.view.viewToProject(new paper.Point(event.originalEvent.x, event.originalEvent.y));
+  }
+
+  // Helper function to get the delta corresponding to OSD event
+  var ev_delta = function(event) {
+    var transformed_point1 = paper.view.viewToProject(new paper.Point(0,0));
+    var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
+    return transformed_point2.subtract(transformed_point1);
+  }
+
+  var deselect_all_manipulables = function() {
+    var selected = paper.project.selectedItems;
+    for (var i = 0; i < selected.length; i++) {
+      var item = selected[i];
+      if (item instanceof paper.Path || item instanceof paper.PointText) {
+        item.selected = false;
+      }
     }
+  }
 
-    var mpp = parseFloat("{{ slide_mpp }}");
-    viewer.scalebar({
-        pixelsPerMeter: mpp ? (1e6 / mpp) : 0,
-        xOffset: 10,
-        yOffset: 10,
-        barThickness: 3,
-        color: '#555555',
-        fontColor: '#333333',
-        backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    });
-
-    // Initialization for paper_js
-    var overlay
-    function init_paperjs() {
-        overlay = viewer.paperjsOverlay();
-        overlay.resize();
-        overlay.resizecanvas();
-
-        // Get the initial data
-        if (seg_mode == 'annot') {
-            download_annot();
-        }
-        else if (seg_mode == 'dltrain') {
-            sample_api.refresh_samples();
-        }
+  var get_number_selected_manipulables = function() {
+    var selected = paper.project.selectedItems;
+    var n = 0;
+    for (var i = 0; i < selected.length; i++) {
+      var item = selected[i];
+      if (item instanceof paper.Path || item instanceof paper.PointText)
+        n++;
     }
+    return n;
+  }
 
-    // Paper default settings
-    paper.settings.handleSize = 10;
+  var upload_annot = function() {
 
-    // A dialog to display slide cache progress
-    var progress_dialog = $("#progress_dialog_container").dialog({
-        autoOpen: false,
-        resizable: false,
-        height: "auto",
-        width: 400,
-        modal: true
-        });
+    payload = paper.project.exportJSON();
+    $.post( "{{ url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id) }}", payload, function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
+  }
 
-    // A progress bar
-    var progress_bar = $("#progress_bar").progressbar({
-        value:0
-    });
+  // An object that is being moved 
+  var moving_object=null;
+  var moving_object_moved=false;
+  var moving_object_handle=null;
 
-    // Get the progress of loading the current slide
-    var check_cache_progress = function() {
-        $.ajax({
-            url: "{{ url_for('slide.get_cache_progress', id=slide_id, resource='raw') }}",
-            success: function(response_text) {
-                data = JSON.parse(response_text);
-                if(data.progress < 1.0) {
-                    progress_dialog.dialog("open");
-                    progress_bar.progressbar("value", Math.floor(data.progress * 100));
-                    setTimeout(check_cache_progress, 500);
-                }
-                else {
-                    progress_dialog.dialog("close");
-                }
-            }
-        })
-    }
+  var set_slide_mouse_nav = function(state) {
+    if(state == true && viewer.isMouseNavEnabled() == false)
+      viewer.setMouseNavEnabled(true);
+    else if(state == false && viewer.isMouseNavEnabled() == true)
+      viewer.setMouseNavEnabled(false);
+  }
 
-    // Request a progress check
-    setTimeout(check_cache_progress(), 500);
-
-    // Add the tiled image to the viewer and when successful, initialize the overlay
-    viewer.addTiledImage({
-        tileSource: "{{ url_for('slide.dzi', mode=affine_mode, id=slide_id) }}",
-        x: 0,
-        y: 0,
-        success: init_paperjs
-    });
-
-    // Current interaction mode
-    var curr_mode = 'NAV'
-
-    // Initialize the paper.js overlay
-    var curr_path
-    var curr_box
-    var curr_box_drag_start
-
-    // Helper function to get Point corresponding to OSD event
-    var ev_point = function(event) {
-        return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
-    }
-
-    var ev_orig_point = function(event) {
-        return paper.view.viewToProject(new paper.Point(event.originalEvent.x, event.originalEvent.y));
-    }
-
-    // Helper function to get the delta corresponding to OSD event
-    var ev_delta = function(event) {
-        var transformed_point1 = paper.view.viewToProject(new paper.Point(0,0));
-        var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
-        return transformed_point2.subtract(transformed_point1);
-    }
-
-    var deselect_all_manipulables = function() {
-        var selected = paper.project.selectedItems;
-        for (var i = 0; i < selected.length; i++) {
-            var item = selected[i];
-            if (item instanceof paper.Path || item instanceof paper.PointText) {
-                item.selected = false;
-            }
-        }
-    }
-
-    var get_number_selected_manipulables = function() {
-        var selected = paper.project.selectedItems;
-        var n = 0;
-        for (var i = 0; i < selected.length; i++) {
-            var item = selected[i];
-            if (item instanceof paper.Path || item instanceof paper.PointText)
-                n++;
-        }
-        return n;
-    }
-
-    var upload_annot = function() {
-
-        payload = paper.project.exportJSON();
-        $.post( "{{ url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id) }}", payload, function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
-    }
-
-    // An object that is being moved 
-    var moving_object=null;
-    var moving_object_moved=false;
-    var moving_object_handle=null;
-
-    var set_slide_mouse_nav = function(state) {
-        if(state == true && viewer.isMouseNavEnabled() == false)
-            viewer.setMouseNavEnabled(true);
-        else if(state == false && viewer.isMouseNavEnabled() == true)
-            viewer.setMouseNavEnabled(false);
-    }
-
-    var get_width_in_canvas_units = function(full_zoom_width) {
-        // Get the total dimensions of the canvas
-        // Lets say we want the text to appear like 10-point font when the entire slide occupies 
-        // a canvas of width 1000. Then the actual font is 10 * (width/1000), or really max(width,height) * 10 / 1000
-        var canvas_size = viewer.world.getItemAt(0).getContentSize();
-        return Math.round(Math.max(canvas_size.x, canvas_size.y) * full_zoom_width / 1000);
-    }
+  var get_width_in_canvas_units = function(full_zoom_width) {
+    // Get the total dimensions of the canvas
+    // Lets say we want the text to appear like 10-point font when the entire slide occupies 
+    // a canvas of width 1000. Then the actual font is 10 * (width/1000), or really max(width,height) * 10 / 1000
+    var canvas_size = viewer.world.getItemAt(0).getContentSize();
+    return Math.round(Math.max(canvas_size.x, canvas_size.y) * full_zoom_width / 1000);
+  }
 
 
-    var download_annot = function() {
-        $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id) }}", function(data, status) {
-            if(status=='success' && data.length) {
-                paper.project.importJSON(data)
-                deselect_all_manipulables()
-            }
-        })
-    }
+  var download_annot = function() {
+    $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id) }}", function(data, status) {
+      if(status=='success' && data.length) {
+        paper.project.importJSON(data)
+        deselect_all_manipulables()
+      }
+    })
+  }
 
-    // A class dealing with keeping track of samples
-    function SampleAPI() {
+  // A class dealing with keeping track of samples
+  function SampleAPI() {
 
-        // Create a self variable
-        self = this;
+    // Create a self variable
+    self = this;
 
-        // A map from sample_id to the Path Item representing that sample
-        this.boxmap = new Map();
+    // A map from sample_id to the Path Item representing that sample
+    this.boxmap = new Map();
 
-        // A function to create a box
-        this.create_box = function(x0, y0, x1, y1, label_id, color, raw_stroke_width) {
-            new_box = new paper.Path({
-                                     segments: [ new paper.Point(x0,y0), new paper.Point(x1,y0), new paper.Point(x1,y1), new paper.Point(x0,y1) ],
-                                     closed: true,
-                                     strokeColor: color});
-            new_box.data.label_id = label_id;
-            new_box.data.label_color = color;
-            new_box.data.geometry = [x0, y0, x1, y1];
-            set_paperjs_item_strokewidth(new_box, raw_stroke_width);
-            return new_box;
-        };
-
-        // A function to update a box with new coordinates
-        this.update_box = function(path_item, x0, y0, x1, y1) {
-            if(path_item.segments.length == 4) {
-                // Set the items
-                path_item.segments[0].point.x = x0; path_item.segments[0].point.y = y0;
-                path_item.segments[1].point.x = x1; path_item.segments[1].point.y = y0;
-                path_item.segments[2].point.x = x1; path_item.segments[2].point.y = y1;
-                path_item.segments[3].point.x = x0; path_item.segments[3].point.y = y1;
-
-                // Store the geometry in a separate data variable
-                path_item.data.geometry = [x0, y0, x1, y1];
-            }
-        };
-
-        // Move box by a delta
-        this.move_box = function(path_item, dx, dy) {
-            if(path_item.segments.length == 4) {
-                var x0 = path_item.data.geometry[0];
-                var y0 = path_item.data.geometry[1];
-                var x1 = path_item.data.geometry[2];
-                var y1 = path_item.data.geometry[3];
-                self.update_box(path_item, x0+dx, y0+dy, x1+dx, y1+dy);
-            }
-        }
-
-        // Move box corner by a delta
-        this.move_box_corner = function(path_item, index, dx, dy) {
-            if(path_item.segments.length == 4) {
-                var x0 = path_item.data.geometry[0];
-                var y0 = path_item.data.geometry[1];
-                var x1 = path_item.data.geometry[2];
-                var y1 = path_item.data.geometry[3];
-
-                switch(index) {
-                    case 0: x0 += dx; y0 += dy; break;
-                    case 1: x1 += dx; y0 += dy; break;
-                    case 2: x1 += dx; y1 += dy; break;
-                    case 3: x0 += dx; y1 += dy; break;
-                }
-
-                self.update_box(path_item, x0, y0, x1, y1);
-            }
-        }
-
-
-        // Upload a sample (separate from create_box because this is only done when the user
-        // is done drawing the box)
-        this.upload_new_sample = function(box) {
-
-            // Send the completed marker to the server
-            $.post("{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}", 
-                   JSON.stringify(box.data), 
-                   function(response_text) { 
-                       data = JSON.parse(response_text);
-                       box.data.id = data.id;
-                       self.boxmap.set(data.id, box);
-                       console.log("AJAX reponse"); console.log(response_text) 
-                   }
-            );
-        }
-
-        // Modify an existing sample (e.g., as a result of dragging, resizing)
-        this.modify_sample = function(box) {
-            // If for some reason the box does not have an ID, we  need to create it, but
-            // this would be a really odd occurrence
-            if(!box.data.id) {
-                console.warn('SampleAPI.modify_sample called on box without an id');
-                self.upload_new_sample(box);
-            }
-            else {
-                // Send the completed marker to the server
-                $.post("{{ url_for('dltrain.update_sample') }}", 
-                       JSON.stringify(box.data), 
-                       function(response_text) { 
-                           console.log("AJAX reponse"); console.log(response_text) 
-                       }
-                );
-            }
-        }
-
-        // Request a list of all samples from the server and update the paper.js canvas with
-        // the new samples
-        this.refresh_samples = function() {
-
-            // If we are in a middle of a movement action, do not perform updates
-            if((moving_object && moving_object_moved) || curr_box) {
-                setTimeout(self.refresh_samples, 5000);
-                return;
-            }
-
-            // Make a request for the samples
-            $.ajax({
-                   url: "{{ url_for('dltrain.get_samples', task_id = task_id, slide_id = slide_id) }}",
-                   type: 'get',
-                   success: function(data) {
-
-                       // Get a list of all the new samples
-                       samples = JSON.parse(data);
-
-                       // Keep track of samples that need to be removed
-                       var sample_ids = new Map();
-
-                       // Add all the new samples
-                       samples.forEach(function(item, index) {
-
-                           // Record that we received this id
-                           sample_ids.set(item.id, null);
-
-                           // Does this already exist?
-                           var old_box = self.boxmap.get(item.id);
-
-                           // Update or create the box
-                           if(old_box) {
-                               self.update_box(old_box, item.x0, item.y0, item.x1, item.y1);
-                               old_box.strokeColor = item.color;
-                               old_box.data.label_id = item.label;
-                               old_box.data.label_color = item.color;
-                           } else {
-                               var new_box = self.create_box(item.x0, item.y0, item.x1, item.y1, item.label, item.color, 2);
-                               self.boxmap.set(item.id, new_box);
-                               new_box.data.id = item.id;
-                           }
-                       });
-
-                       // Remove all the items that were not received (deleted elsewhere)
-                       paper.project.activeLayer.children.forEach(function(item,index) {
-                           if(! sample_ids.has(item.data.id) ) {
-                               item.remove();
-                           }
-                       });
-
-                       paper.view.draw();
-                   },
-                   complete: function(data) {
-                       setTimeout(self.refresh_samples, 5000)
-                   }
-            });
-        }
-
-        // Delete a sample
-        this.delete_sample = function(box) {
-
-            // Tell the server to delete this sample
-            console.log('Deleting ', box.data)
-            if(box.data.id) {
-                $.ajax({
-                       url: "{{ url_for('dltrain.delete_sample') }}",
-                       data: { id: box.data.id },
-                       type: 'post',
-                       success: function(data) {
-                           box.remove();
-                           self.boxmap.delete(box.data.id);
-                           paper.view.draw();
-                       }
-                });
-            }
-            else {
-                box.remove();
-                paper.view.draw();
-            }
-        };
+    // A function to create a box
+    this.create_box = function(x0, y0, x1, y1, label_id, color, raw_stroke_width) {
+      new_box = new paper.Path({
+        segments: [ new paper.Point(x0,y0), new paper.Point(x1,y0), new paper.Point(x1,y1), new paper.Point(x0,y1) ],
+        closed: true,
+        strokeColor: color});
+      new_box.data.label_id = label_id;
+      new_box.data.label_color = color;
+      new_box.data.geometry = [x0, y0, x1, y1];
+      set_paperjs_item_strokewidth(new_box, raw_stroke_width);
+      return new_box;
     };
 
-    // Instantiate API for getting samples
-    var sample_api = undefined;
-    if(seg_mode == 'dltrain') {
-        sample_api = new SampleAPI();
-    }
+    // A function to update a box with new coordinates
+    this.update_box = function(path_item, x0, y0, x1, y1) {
+      if(path_item.segments.length == 4) {
+        // Set the items
+        path_item.segments[0].point.x = x0; path_item.segments[0].point.y = y0;
+        path_item.segments[1].point.x = x1; path_item.segments[1].point.y = y0;
+        path_item.segments[2].point.x = x1; path_item.segments[2].point.y = y1;
+        path_item.segments[3].point.x = x0; path_item.segments[3].point.y = y1;
 
+        // Store the geometry in a separate data variable
+        path_item.data.geometry = [x0, y0, x1, y1];
+      }
+    };
 
-    var press_handler = function(event) {
-        if(curr_mode == 'DRAW') {
-            curr_path = new paper.Path({
-                                       segments: [ev_point(event)],
-                                       strokeColor: 'black',
-                                       strokeCap: 'round'});
-            set_paperjs_item_strokewidth(curr_path, 4);
-        }
-        else if(curr_mode == 'NAV') {
-            hit = paper.project.hitTest(ev_point(event), hit_test_options)
-            moving_object=null;
-            if(hit) {
-                if(!hit.item.selected) {
-                    // Hitting an unselected target
-                    deselect_all_manipulables();
-                    hit.item.selected = true;
-                    fn_update_button_state();
-                    paper.view.draw();
-                    moving_object = hit.item;
-                    moving_object_moved = true;
-                }
-                else {
-                    moving_object = hit.item;
-                    moving_object_moved = false;
-                    if (seg_mode == 'dltrain') {
-                        if(hit.type == 'segment') {
-                            moving_object_handle = hit.segment.index;
-                        } else {
-                            moving_object_handle = null;
-                        }
-                    }
-                }
-            }
-            else {
-                deselect_all_manipulables()
-                set_slide_mouse_nav(true);
-                paper.view.draw();
-            }
-        }
-      else if (curr_mode == 'BOX') {
-
-          // Record the starting point
-          curr_box_drag_start = ev_point(event);
-
-          // Create an empty rectangle at the point
-          curr_box = sample_api.create_box(curr_box_drag_start.x, curr_box_drag_start.y,
-                                           curr_box_drag_start.x, curr_box_drag_start.y,
-                                           get_current_label_id(), get_current_label_color(), 2);
-
-          // Redraw canvas (probably pointless)
-          paper.view.draw();
+    // Move box by a delta
+    this.move_box = function(path_item, dx, dy) {
+      if(path_item.segments.length == 4) {
+        var x0 = path_item.data.geometry[0];
+        var y0 = path_item.data.geometry[1];
+        var x1 = path_item.data.geometry[2];
+        var y1 = path_item.data.geometry[3];
+        self.update_box(path_item, x0+dx, y0+dy, x1+dx, y1+dy);
       }
     }
 
-    var drag_handler = function(event) {
-        if(curr_mode == 'DRAW') {
-            curr_path.add(ev_point(event))
-            paper.view.draw();
-        }
-        else if(curr_mode == 'BOX') {
-            var p0 = curr_box_drag_start;
-            var p1 = ev_point(event);
-            sample_api.update_box(curr_box, 
-                                  Math.min(p0.x, p1.x), Math.min(p0.y,p1.y), 
-                                  Math.max(p0.x, p1.x), Math.max(p0.y,p1.y));
-            paper.view.draw();
-        }
-        else if(curr_mode == 'NAV' && moving_object) {
-            if(event.delta.x != 0 || event.delta.y != 0) {
-                // Move the object by the delta
-                if(seg_mode == 'annot') {
-                    moving_object.position = moving_object.position.add(ev_delta(event));
-                }
-                else if(seg_mode == 'dltrain') {
-                    var delta = ev_delta(event);
-                    if(moving_object_handle != null) {
-                        sample_api.move_box_corner(moving_object, moving_object_handle, delta.x, delta.y);
-                    }
-                    else {
-                        sample_api.move_box(moving_object, delta.x, delta.y);
-                    }
-                }
+    // Move box corner by a delta
+    this.move_box_corner = function(path_item, index, dx, dy) {
+      if(path_item.segments.length == 4) {
+        var x0 = path_item.data.geometry[0];
+        var y0 = path_item.data.geometry[1];
+        var x1 = path_item.data.geometry[2];
+        var y1 = path_item.data.geometry[3];
 
-                // Mark object as having moved
-                moving_object_moved = true;
-                paper.view.draw();
-            }
+        switch(index) {
+        case 0: x0 += dx; y0 += dy; break;
+        case 1: x1 += dx; y0 += dy; break;
+        case 2: x1 += dx; y1 += dy; break;
+        case 3: x0 += dx; y1 += dy; break;
         }
+
+        self.update_box(path_item, x0, y0, x1, y1);
+      }
     }
 
-    var dragEnd_handler = function(event) {
-        if(curr_mode == 'DRAW') {
-            curr_path.simplify(10)
-            upload_annot()
+
+    // Upload a sample (separate from create_box because this is only done when the user
+    // is done drawing the box)
+    this.upload_new_sample = function(box, cb_success) {
+
+      // Send the completed marker to the server
+      $.post("{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}", 
+        JSON.stringify(box.data), 
+        function(response_text) { 
+          data = JSON.parse(response_text);
+          box.data.id = data.id;
+          self.boxmap.set(data.id, box);
+          console.log("AJAX reponse"); console.log(response_text) 
+
+          if(cb_success)
+            cb_success()
+        }
+      );
+    }
+
+    // Modify an existing sample (e.g., as a result of dragging, resizing)
+    this.modify_sample = function(box) {
+      // If for some reason the box does not have an ID, we  need to create it, but
+      // this would be a really odd occurrence
+      if(!box.data.id) {
+        console.warn('SampleAPI.modify_sample called on box without an id');
+        self.upload_new_sample(box);
+      }
+      else {
+        // Send the completed marker to the server
+        $.post("{{ url_for('dltrain.update_sample') }}", 
+          JSON.stringify(box.data), 
+          function(response_text) { 
+            console.log("AJAX reponse"); console.log(response_text) 
+          }
+        );
+      }
+    }
+
+    // Request a list of all samples from the server and update the paper.js canvas with
+    // the new samples
+    this.refresh_samples = function() {
+
+      // If we are in a middle of a movement action, do not perform updates
+      if((moving_object && moving_object_moved) || curr_box) {
+        setTimeout(self.refresh_samples, 5000);
+        return;
+      }
+
+      // Make a request for the samples
+      $.ajax({
+        url: "{{ url_for('dltrain.get_samples', task_id = task_id, slide_id = slide_id) }}",
+        type: 'get',
+        success: function(data) {
+
+          // Get a list of all the new samples
+          samples = JSON.parse(data);
+
+          // Keep track of samples that need to be removed
+          var sample_ids = new Map();
+
+          // Add all the new samples
+          samples.forEach(function(item, index) {
+
+            // Record that we received this id
+            sample_ids.set(item.id, null);
+
+            // Does this already exist?
+            var old_box = self.boxmap.get(item.id);
+
+            // Update or create the box
+            if(old_box) {
+              self.update_box(old_box, item.x0, item.y0, item.x1, item.y1);
+              old_box.strokeColor = item.color;
+              old_box.data.label_id = item.label;
+              old_box.data.label_color = item.color;
+            } else {
+              var new_box = self.create_box(item.x0, item.y0, item.x1, item.y1, item.label, item.color, 2);
+              self.boxmap.set(item.id, new_box);
+              new_box.data.id = item.id;
+            }
+          });
+
+          // Remove all the items that were not received (deleted elsewhere)
+          paper.project.activeLayer.children.forEach(function(item,index) {
+            if(! sample_ids.has(item.data.id) ) {
+              item.remove();
+            }
+          });
+
+          paper.view.draw();
+        },
+        complete: function(data) {
+          setTimeout(self.refresh_samples, 5000)
+        }
+      });
+    }
+
+    // Delete a sample
+    this.delete_sample = function(box) {
+
+      // Tell the server to delete this sample
+      console.log('Deleting ', box.data)
+      if(box.data.id) {
+        $.ajax({
+          url: "{{ url_for('dltrain.delete_sample') }}",
+          data: { id: box.data.id },
+          type: 'post',
+          success: function(data) {
+            box.remove();
+            self.boxmap.delete(box.data.id);
             paper.view.draw();
-            nav_pressed_handler();
-        }
-        else if(curr_mode == 'BOX') {
-            // Send the completed marker to the server
-            sample_api.upload_new_sample(curr_box);
-            curr_box = undefined;
-            nav_pressed_handler();
-        }
-        else if(curr_mode == 'NAV' && moving_object)
-        {
-            if(moving_object_moved) {
-                if(seg_mode == 'annot') {
-                    upload_annot();
-                }
-                else if(seg_mode == 'dltrain') {
-                    sample_api.modify_sample(moving_object);
-                }
-            }
-            else {
-                // Just toggle selection
-                moving_object.selected = false;
-            }
-            
-            moving_object = null;
-            paper.view.draw();
-        }
-    }
-
-    var show_marker_editor = function(event, target_item) {
-        var p = ev_point(event);
-        var input = document.getElementById("marker");
-        input.style.left = "" + event.position.x - 50 + "px";
-        input.style.top = "" + event.position.y - 20 + "px";
-        input.style.width = "100px";
-        input.style.height = "40px";
-        input.style.display = "block";
-        input.style.textAlign = "center";
-        input.style.zIndex = 100;
-
-        if(target_item) { input.value = target_item.content; } else { input.value = null; }
-
-        input.focus();
-
-        input.onkeypress = function(e) {
-            if(!e) e = window.event;
-            if (e.keyCode == '13') {
-                this.style.display = "none";
-                if(target_item) {
-                    target_item.content = this.value;
-                    target_item.visible = true;
-                    target_item.selected = false;
-                } else {
-
-                    var newtext = new paper.PointText(p);
-                    newtext.content = this.value;
-                    newtext.style = {
-                        fontWeight: 'bold',
-                        fontSize: get_width_in_canvas_units(10),
-                        justification: 'center'
-                    };
-                }
-                paper.view.draw();
-                nav_pressed_handler();
-                upload_annot();
-                return false;
-            }
-        }
-    }
-
-    var release_handler = function(event) {
-        if(curr_mode == 'NAV' && moving_object) {
-            if(!moving_object_moved)
-                moving_object.selected = false;
-        }
-        else if(curr_mode == 'MARKER') {
-            show_marker_editor(event, null);
-        }
-
-    }
-
-    var hit_test_options = {
-        segments: true,
-        stroke: true,
-        fill: false,
-        tolerance: 3
+          }
+        });
+      }
+      else {
+        box.remove();
+        paper.view.draw();
+      }
     };
+  };
 
-    var move_handler = function(event) {
-        var pointer = "default";
-        var curs_arr = [ "nwse-resize", "nesw-resize", "nwse-resize", "nesw-resize" ];
+  // Instantiate API for getting samples
+  var sample_api = undefined;
+  if(seg_mode == 'dltrain') {
+    sample_api = new SampleAPI();
+  }
 
-        if(curr_mode == 'NAV' && paper.project) {
-            hit = paper.project.hitTest(ev_point(event), hit_test_options)
-            if(hit) {
-                if(seg_mode == 'annot') {
-                    pointer = "pointer";
-                }
-                else if(seg_mode == 'dltrain') {
-                    if(!hit.item.selected) {
-                        pointer = "pointer";
-                    }
-                    else {
-                        if(hit.type=='segment') {
-                            pointer = curs_arr[hit.segment.index];
-                        }
-                        else {
-                            pointer = "move";
-                        }
-                    }
-                }
-                set_slide_mouse_nav(false);
+
+  var press_handler = function(event) {
+    if(curr_mode == 'DRAW') {
+      curr_path = new paper.Path({
+        segments: [ev_point(event)],
+        strokeColor: 'black',
+        strokeCap: 'round'});
+      set_paperjs_item_strokewidth(curr_path, 4);
+    }
+    else if(curr_mode == 'NAV') {
+      hit = paper.project.hitTest(ev_point(event), hit_test_options)
+      moving_object=null;
+      if(hit) {
+        if(!hit.item.selected) {
+          // Hitting an unselected target
+          deselect_all_manipulables();
+          hit.item.selected = true;
+          fn_update_button_state();
+          paper.view.draw();
+          moving_object = hit.item;
+          moving_object_moved = true;
+        }
+        else {
+          moving_object = hit.item;
+          moving_object_moved = false;
+          if (seg_mode == 'dltrain') {
+            if(hit.type == 'segment') {
+              moving_object_handle = hit.segment.index;
+            } else {
+              moving_object_handle = null;
+            }
+          }
+        }
+      }
+      else {
+        deselect_all_manipulables()
+        set_slide_mouse_nav(true);
+        paper.view.draw();
+      }
+    }
+    else if (curr_mode == 'BOX') {
+
+      // Record the starting point
+      curr_box_drag_start = ev_point(event);
+
+      // Create an empty rectangle at the point
+      curr_box = sample_api.create_box(curr_box_drag_start.x, curr_box_drag_start.y,
+        curr_box_drag_start.x, curr_box_drag_start.y,
+        get_current_label_id(), get_current_label_color(), 2);
+
+      // Redraw canvas (probably pointless)
+      paper.view.draw();
+    }
+  }
+
+  var drag_handler = function(event) {
+    if(curr_mode == 'DRAW') {
+      curr_path.add(ev_point(event))
+      paper.view.draw();
+    }
+    else if(curr_mode == 'BOX') {
+      var p0 = curr_box_drag_start;
+      var p1 = ev_point(event);
+      sample_api.update_box(curr_box, 
+        Math.min(p0.x, p1.x), Math.min(p0.y,p1.y), 
+        Math.max(p0.x, p1.x), Math.max(p0.y,p1.y));
+      paper.view.draw();
+    }
+    else if(curr_mode == 'NAV' && moving_object) {
+      if(event.delta.x != 0 || event.delta.y != 0) {
+        // Move the object by the delta
+        if(seg_mode == 'annot') {
+          moving_object.position = moving_object.position.add(ev_delta(event));
+        }
+        else if(seg_mode == 'dltrain') {
+          var delta = ev_delta(event);
+          if(moving_object_handle != null) {
+            sample_api.move_box_corner(moving_object, moving_object_handle, delta.x, delta.y);
+          }
+          else {
+            sample_api.move_box(moving_object, delta.x, delta.y);
+          }
+        }
+
+        // Mark object as having moved
+        moving_object_moved = true;
+        paper.view.draw();
+      }
+    }
+  }
+
+  var dragEnd_handler = function(event) {
+    if(curr_mode == 'DRAW') {
+      curr_path.simplify(10)
+      upload_annot()
+      paper.view.draw();
+      nav_pressed_handler();
+    }
+    else if(curr_mode == 'BOX') {
+      // Send the completed marker to the server
+      sample_api.upload_new_sample(curr_box, function() {
+        reload_label_and_sample_tables()
+      });
+      curr_box = undefined;
+      nav_pressed_handler();
+    }
+    else if(curr_mode == 'NAV' && moving_object)
+    {
+      if(moving_object_moved) {
+        if(seg_mode == 'annot') {
+          upload_annot();
+        }
+        else if(seg_mode == 'dltrain') {
+          sample_api.modify_sample(moving_object);
+        }
+      }
+      else {
+        // Just toggle selection
+        moving_object.selected = false;
+      }
+
+      moving_object = null;
+      paper.view.draw();
+    }
+  }
+
+  var show_marker_editor = function(event, target_item) {
+    var p = ev_point(event);
+    var input = document.getElementById("marker");
+    input.style.left = "" + event.position.x - 50 + "px";
+    input.style.top = "" + event.position.y - 20 + "px";
+    input.style.width = "100px";
+    input.style.height = "40px";
+    input.style.display = "block";
+    input.style.textAlign = "center";
+    input.style.zIndex = 100;
+
+    if(target_item) { input.value = target_item.content; } else { input.value = null; }
+
+    input.focus();
+
+    input.onkeypress = function(e) {
+      if(!e) e = window.event;
+      if (e.keyCode == '13') {
+        this.style.display = "none";
+        if(target_item) {
+          target_item.content = this.value;
+          target_item.visible = true;
+          target_item.selected = false;
+        } else {
+
+          var newtext = new paper.PointText(p);
+          newtext.content = this.value;
+          newtext.style = {
+            fontWeight: 'bold',
+            fontSize: get_width_in_canvas_units(10),
+            justification: 'center'
+          };
+        }
+        paper.view.draw();
+        nav_pressed_handler();
+        upload_annot();
+        return false;
+      }
+    }
+  }
+
+  var release_handler = function(event) {
+    if(curr_mode == 'NAV' && moving_object) {
+      if(!moving_object_moved)
+        moving_object.selected = false;
+    }
+    else if(curr_mode == 'MARKER') {
+      show_marker_editor(event, null);
+    }
+
+  }
+
+  var hit_test_options = {
+    segments: true,
+    stroke: true,
+    fill: false,
+    tolerance: 3
+  };
+
+  var move_handler = function(event) {
+    var pointer = "default";
+    var curs_arr = [ "nwse-resize", "nesw-resize", "nwse-resize", "nesw-resize" ];
+
+    if(curr_mode == 'NAV' && paper.project) {
+      hit = paper.project.hitTest(ev_point(event), hit_test_options)
+      if(hit) {
+        if(seg_mode == 'annot') {
+          pointer = "pointer";
+        }
+        else if(seg_mode == 'dltrain') {
+          if(!hit.item.selected) {
+            pointer = "pointer";
+          }
+          else {
+            if(hit.type=='segment') {
+              pointer = curs_arr[hit.segment.index];
             }
             else {
-                pointer = "default";
-                var sel_size = get_number_selected_manipulables();
-                // Nav behavior only available if no selection
-                if(sel_size == 0)
-                    set_slide_mouse_nav(true);
-                else
-                    set_slide_mouse_nav(false);
+              pointer = "move";
             }
+          }
         }
-
-        document.getElementById("view").style.cursor = pointer;
-    }
-
-    var dblClick_handler = function(event) {
-        if(curr_mode == 'NAV') {
-            hit = paper.project.hitTest(ev_point(event), hit_test_options)
-            if(hit && hit.item instanceof paper.PointText) {
-                hit.item.visible = false;
-                show_marker_editor(event, hit.item);
-            }
-        }
-    }
-
-    var mouse_tracker = new OpenSeadragon.MouseTracker({
-                                                       element: viewer.canvas,
-                                                       pressHandler: press_handler,
-                                                       releaseHandler: release_handler,
-                                                       dragHandler: drag_handler,
-                                                       dragEndHandler: dragEnd_handler,
-                                                       dblClickHandler: dblClick_handler,
-                                                       moveHandler: move_handler });
-
-    mouse_tracker.setTracking(true);
-
-    // Update button active state
-    var fn_update_button_state = function() {
-        // Is there an active selection
-        if(get_number_selected_manipulables() > 0)
-            document.getElementById("del_button").className = 
-                document.getElementById("del_button").className.replace(" disabled", " enabled");
+        set_slide_mouse_nav(false);
+      }
+      else {
+        pointer = "default";
+        var sel_size = get_number_selected_manipulables();
+        // Nav behavior only available if no selection
+        if(sel_size == 0)
+          set_slide_mouse_nav(true);
         else
-            document.getElementById("del_button").className = 
-                document.getElementById("del_button").className.replace(" enabled", " disabled");
+          set_slide_mouse_nav(false);
+      }
     }
 
-    
-    // Active button decoration
-    var fn_active_button = function(element) {
-        var current = document.getElementsByClassName("active");
-        current[0].className = current[0].className.replace(" active", "");
-        element.className += " active";
-    }
+    document.getElementById("view").style.cursor = pointer;
+  }
 
-    // Event handler
-    var draw_pressed_handler = function(options) {
-        set_slide_mouse_nav(false);
-        viewer.outerTracker.setTracking(false);
-        curr_mode = 'DRAW';
-        fn_active_button(document.getElementById('draw_button'))
-        document.getElementById("view").style.cursor = "crosshair";
+  var dblClick_handler = function(event) {
+    if(curr_mode == 'NAV') {
+      hit = paper.project.hitTest(ev_point(event), hit_test_options)
+      if(hit && hit.item instanceof paper.PointText) {
+        hit.item.visible = false;
+        show_marker_editor(event, hit.item);
+      }
     }
+  }
 
-    var nav_pressed_handler = function(options) {
-        set_slide_mouse_nav(true);
-        viewer.outerTracker.setTracking(true);
-        curr_mode = 'NAV';
-        fn_active_button(document.getElementById('nav_button'))
-        document.getElementById("view").style.cursor = "default";
-    }
+  var mouse_tracker = new OpenSeadragon.MouseTracker({
+    element: viewer.canvas,
+    pressHandler: press_handler,
+    releaseHandler: release_handler,
+    dragHandler: drag_handler,
+    dragEndHandler: dragEnd_handler,
+    dblClickHandler: dblClick_handler,
+    moveHandler: move_handler });
 
-    var marker_pressed_handler = function(options) {
-        set_slide_mouse_nav(false);
-        viewer.outerTracker.setTracking(false);
-        curr_mode = 'MARKER';
-        fn_active_button(document.getElementById('marker_button'))
-        document.getElementById("view").style.cursor = "crosshair";
-    }
+  mouse_tracker.setTracking(true);
 
-    var box_pressed_handler = function(options) {
-        set_slide_mouse_nav(false);
-        viewer.outerTracker.setTracking(false);
-        curr_mode = 'BOX';
-        fn_active_button(document.getElementById('box_button'))
-        document.getElementById("view").style.cursor = "crosshair";
-    }
+  // Update button active state
+  var fn_update_button_state = function() {
+    // Is there an active selection
+    if(get_number_selected_manipulables() > 0)
+      document.getElementById("del_button").className = 
+        document.getElementById("del_button").className.replace(" disabled", " enabled");
+    else
+      document.getElementById("del_button").className = 
+        document.getElementById("del_button").className.replace(" enabled", " disabled");
+  }
 
-    var del_pressed_handler = function(options) {
-        if(document.getElementById("del_button").className.includes(" enabled")) {
-            var selected = paper.project.selectedItems;
-            if(seg_mode == 'annot') {
-                for (var i = 0; i < selected.length; i++) {
-                    var item = selected[i];
-                    if (item instanceof paper.Path || item instanceof paper.PointText) {
-                        item.remove()
-                    }
-                }
-                fn_update_button_state()
-                upload_annot();
-                paper.view.draw();
-            }
-            else if(seg_mode == 'dltrain') {
-                // Iterate over the selected items
-                paper.project.selectedItems.forEach(function(item, index) {
-                    // This box needs to be deleted
-                    sample_api.delete_sample(item);
-                    fn_update_button_state()
-                });
-            }
+
+  // Active button decoration
+  var fn_active_button = function(element) {
+    var current = document.getElementsByClassName("active");
+    current[0].className = current[0].className.replace(" active", "");
+    element.className += " active";
+  }
+
+  // Event handler
+  var draw_pressed_handler = function(options) {
+    set_slide_mouse_nav(false);
+    viewer.outerTracker.setTracking(false);
+    curr_mode = 'DRAW';
+    fn_active_button(document.getElementById('draw_button'))
+    document.getElementById("view").style.cursor = "crosshair";
+  }
+
+  var nav_pressed_handler = function(options) {
+    set_slide_mouse_nav(true);
+    viewer.outerTracker.setTracking(true);
+    curr_mode = 'NAV';
+    fn_active_button(document.getElementById('nav_button'))
+    document.getElementById("view").style.cursor = "default";
+  }
+
+  var marker_pressed_handler = function(options) {
+    set_slide_mouse_nav(false);
+    viewer.outerTracker.setTracking(false);
+    curr_mode = 'MARKER';
+    fn_active_button(document.getElementById('marker_button'))
+    document.getElementById("view").style.cursor = "crosshair";
+  }
+
+  var box_pressed_handler = function(options) {
+    set_slide_mouse_nav(false);
+    viewer.outerTracker.setTracking(false);
+    curr_mode = 'BOX';
+    fn_active_button(document.getElementById('box_button'))
+    document.getElementById("view").style.cursor = "crosshair";
+  }
+
+  var del_pressed_handler = function(options) {
+    if(document.getElementById("del_button").className.includes(" enabled")) {
+      var selected = paper.project.selectedItems;
+      if(seg_mode == 'annot') {
+        for (var i = 0; i < selected.length; i++) {
+          var item = selected[i];
+          if (item instanceof paper.Path || item instanceof paper.PointText) {
+            item.remove()
+          }
         }
+        fn_update_button_state()
+        upload_annot();
+        paper.view.draw();
+      }
+      else if(seg_mode == 'dltrain') {
+        // Iterate over the selected items
+        paper.project.selectedItems.forEach(function(item, index) {
+          // This box needs to be deleted
+          sample_api.delete_sample(item);
+          reload_label_and_sample_tables();
+          fn_update_button_state()
+        });
+      }
     }
+  }
 
-    var add_seadragon_button = function(html_id, btn_tooltip, btn_anchor, press_handler) {
-        var html_elt = document.getElementById(html_id);
-        var button = new OpenSeadragon.Button({element: html_elt, tooltip: btn_tooltip});
-        viewer.addControl(button.element, {anchor: btn_anchor});
-        button.addHandler('press', press_handler);
-        return button;
-    }
+  var add_seadragon_button = function(html_id, btn_tooltip, btn_anchor, press_handler) {
+    var html_elt = document.getElementById(html_id);
+    var button = new OpenSeadragon.Button({element: html_elt, tooltip: btn_tooltip});
+    viewer.addControl(button.element, {anchor: btn_anchor});
+    button.addHandler('press', press_handler);
+    return button;
+  }
 
-    // Create a drawing button
-    var navButton = add_seadragon_button('nav_button', 'Navigate around the slide using zoom and pan', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, nav_pressed_handler);
-    Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
-    Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
+  // Create a drawing button
+  var navButton = add_seadragon_button('nav_button', 'Navigate around the slide using zoom and pan', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, nav_pressed_handler);
+  Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
+  Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
 
-    if (seg_mode=='annot') {
-        var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);
-        Mousetrap.bind('d', function() { draw_pressed_handler() });
+  if (seg_mode=='annot') {
+    var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);
+    Mousetrap.bind('d', function() { draw_pressed_handler() });
 
-        var markerButton = add_seadragon_button('marker_button', 'Place anatomical marker', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, marker_pressed_handler);
-        Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
-    }
+    var markerButton = add_seadragon_button('marker_button', 'Place anatomical marker', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, marker_pressed_handler);
+    Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
+  }
 
-    else if(seg_mode=='dltrain') {
-        var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
-        Mousetrap.bind('b', function() { box_pressed_handler() });
-    }
+  else if(seg_mode=='dltrain') {
+    var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
+    Mousetrap.bind('b', function() { box_pressed_handler() });
+  }
 
-    if(seg_mode == 'annot' || seg_mode == 'dltrain') {
-        var delButton = add_seadragon_button('del_button', 'Delete selected line or text', OpenSeadragon.ControlAnchor.BOTTOM_RIGHT, del_pressed_handler);
-        Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
-    }
+  if(seg_mode == 'annot' || seg_mode == 'dltrain') {
+    var delButton = add_seadragon_button('del_button', 'Delete selected line or text', OpenSeadragon.ControlAnchor.BOTTOM_RIGHT, del_pressed_handler);
+    Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
+  }
 
 
-    // Sometimes the scrolling is messed up
+  // Sometimes the scrolling is messed up
+  document.body.scrollTop = document.documentElement.scrollTop = 0;
+
+  window.onresize = function() {
     document.body.scrollTop = document.documentElement.scrollTop = 0;
-    
-    window.onresize = function() {
-        document.body.scrollTop = document.documentElement.scrollTop = 0;
-        overlay.resize();
-        overlay.resizecanvas(); }
+    overlay.resize();
+    overlay.resizecanvas(); }
 
-    // Disable viewer keyboard
-    viewer.innerTracker.keyDownHandler = null;
-    viewer.innerTracker.keyPressHandler = null;
-    viewer.innerTracker.keyHandler = null;
+  // Disable viewer keyboard
+  viewer.innerTracker.keyDownHandler = null;
+  viewer.innerTracker.keyPressHandler = null;
+  viewer.innerTracker.keyHandler = null;
 
-    // Some keyboard navigation
+  // Initialize the parts of the UI corresponding to labels
+  if (seg_mode == 'dltrain') {
+
+    // Function to focus on a specific sample
+    var focus_on_sample = function(id, cx, cy) {
+
+      pt_im = new OpenSeadragon.Point(Number(cx), Number(cy));
+      pt_vp = viewer.world.getItemAt(0).imageToViewportCoordinates(pt_im);
+      zoom_vp = viewer.world.getItemAt(0).imageToViewportZoom(0.2);
+      viewer.viewport.zoomTo(zoom_vp, false);
+      viewer.viewport.panTo(pt_vp, false);
+    }
+
+    // Function to reload labels in a loop
+    var reload_label_and_sample_tables = function() {
+      load_label_table_ajax(function() {
+        var id = get_current_label_id();
+        load_samples_table_ajax(id, function() {
+          setTimeout(reload_label_and_sample_tables, 50000);
+        });
+      });
+    }
+
+    // Create the labels table
+    create_label_table_html($('#div_dltrain_labels'));
+
+    // Create the samples table
+    create_samples_table_html($('#div_dltrain_samples'));
+
+    // Initialize tables with data
+    reload_label_and_sample_tables()
+
+    // A callback function for when a label is clicked
+    var label_select_callback = function(id) {
+      load_samples_table_ajax(id);
+    }
+
+    // A callback function for when a sample is clicked
+    var sample_select_callback = function(id, cx, cy) {
+      console.log('Selected sample', id, cx, cy)
+      focus_on_sample(id, cx, cy)
+    }
+
+    set_label_table_click_callback(label_select_callback)
+    set_sample_table_click_callback(sample_select_callback)
+  }
+
 
 });
 </script>

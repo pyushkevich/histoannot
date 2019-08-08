@@ -81,7 +81,7 @@ def get_samples_for_label(task_id, slide_id, label_id):
     rc = db.execute('SELECT T.id,x0,y0,x1,y1,creator,editor,t_create,t_edit '
                     'FROM training_sample T LEFT JOIN edit_meta M on T.meta_id = M.id '
                     'WHERE label = ? and slide = ? and task = ? '
-                    'ORDER BY M.t_edit DESC',
+                    'ORDER BY M.t_edit DESC LIMIT 48',
                     (label_id, slide_id, task_id))
 
     return json.dumps([dict(row) for row in rc.fetchall()])
@@ -194,10 +194,11 @@ def create_sample(task_id, slide_id):
         (meta_id, rect[0], rect[1], rect[2], rect[3], data['label_id'], slide_id, task_id)
     ).lastrowid
 
-    db.commit();
-
     # Save an image patch around the sample
     generate_sample_patch(slide_id, sample_id, rect)
+
+    # Only commit once this has been saved
+    db.commit()
 
     return json.dumps({"id":sample_id})
 

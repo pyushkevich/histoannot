@@ -2,6 +2,7 @@ import sqlite3
 import os
 import re
 import csv
+import sys
 
 import click
 from flask import current_app, g
@@ -9,6 +10,8 @@ from flask.cli import with_appcontext
 
 import openslide
 import time
+
+from PIL import Image
 
 def get_db():
     if 'db' not in g:
@@ -327,8 +330,9 @@ my_histo_url_schema = {
     # The filename patterns
     "pattern" : {
         "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
-        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/{slide_name}_x16.tiff",
-        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/{slide_name}_affine.mat"
+        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16.png",
+        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/{slide_name}_affine.mat",
+        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff"
     },
 
     # The maximum number of bytes that may be cached locally for 'raw' data
@@ -388,6 +392,10 @@ class GCSHandler:
     def exists(self, uri):
         return self._get_blob(uri) is not None
 
+    # Get the MD5 hash
+    def get_md5hash(self, uri):
+        return self._get_blob(uri).md5_hash
+
     # Download a remote resource locally
     def download(self, uri, local_file):
         
@@ -403,7 +411,7 @@ class GCSHandler:
             worker.start()
             while worker.isAlive():
                 worker.join(1.0)
-                print('Downloaded: %d' % os.stat(local_file).st_size)
+                print('GCS: downloaded: %d of %s' % (os.stat(local_file).st_size, uri))
 
     # Get the remote download size
     def get_size(self, uri):
@@ -463,16 +471,46 @@ class SlideRef:
             return self._url_handler.exists(f)
 
     # Get a local copy of the resource, copying it if necessary
-    def get_local_copy(self, resource):
+    def get_local_copy(self, resource, check_hash=False):
 
         # Get the local URL
         f_local = self.get_resource_url(resource, True)
+        f_local_md5 = f_local + '.md5'
+        f_remote = self.get_resource_url(resource, False)
 
-        # If it already exists, return it
-        if os.path.exists(f_local) and os.path.isfile(f_local):
+        # If it already exists, make sure it matches the remote file
+        have_local = os.path.exists(f_local) and os.path.isfile(f_local)
+
+        # If we are not checking hashes, and local file exists, we can return it
+        if have_local and not check_hash:
             return f_local
 
-        # TODO: delete some files in this category
+        # If we are here, we will need to access the remote url. Let's check if
+        # it actually exists. If not, we must return None. But we should also 
+        # delete the local resource to avoid stale files
+        if not self._url_handler.exists(f_remote):
+            if have_local:
+                print("Remote has disappeared for local %s" % f_local)
+                os.remove(f_local)
+                if os.path.exists(f_local_md5):
+                    os.remove(f_local_md5)
+            return None
+
+        # At this point, remote exists. If local exists, check its hash against
+        # the remote
+        if have_local:
+
+            # Get the local hash if it exists
+            if os.path.exists(f_local_md5):
+                with open(f_local_md5) as x:
+                    hash_local = x.readline()
+                    if hash_local == self._url_handler.get_md5hash(f_remote):
+                        print('File %s has NOT changed relative to remote %s' % (f_local, f_remote))
+                        return f_local
+                    else:
+                        print('File %s HAS changed relative to remote %s' % (f_local, f_remote))
+
+        # Clean up the cache
         if resource == 'raw':
 
             # Generate a wildcard pattern to list all 'raw' format files 
@@ -500,8 +538,11 @@ class SlideRef:
 
 
         # Make a copy of the resource locally
-        f_remote = self.get_resource_url(resource, False)
         self._url_handler.download(f_remote, f_local)
+
+        # Create an md5 stamp
+        with open(f_local_md5, 'wt') as f:
+            f.write(self._url_handler.get_md5hash(f_remote))
 
         return f_local
 
@@ -545,12 +586,35 @@ def db_create_slide(specimen, block, section, slide, stain, slice_name, slice_ex
     # Return the ID
     return sid
 
+# Function to update slide derived data (affine transform, thumbnail, etc.)
+def update_slide_derived_data(slide_id):
+
+    # Get the slide reference
+    sr = get_slide_ref(slide_id)
+
+    # Get the remote thumbnail file
+    f_thumb = sr.get_local_copy("thumb", check_hash=True)
+
+    # Get the local thumbnail 
+    thumb_dir = os.path.join(current_app.instance_path, 'thumb')
+    thumb_fn = os.path.join(thumb_dir, "thumb%08d.png" % (slide_id,))
+
+    # If the thumb has been downloaded successfully, derive a HTML-usable thumb
+    if f_thumb is not None:
+        x = Image.open(f_thumb)
+        m=max(x.size[0]/256.,x.size[1]/192.)
+        x = x.resize(map(int, (x.size[0]/m,x.size[1]/m)))
+
+        if not os.path.exists(thumb_dir):
+            os.makedirs(thumb_dir)
+        x.save(thumb_fn)
+
 
 # Builds up a slide database. Scans a manifest file that contains names of specimens
 # and URLs to Google Sheet spreadsheets in which individual slides are matched to the
 # block/section/slice/stain information. Checks if the corresponding files exist in 
 # the Google cloud and creates slide identifiers as needed
-def refresh_slide_db(manifest, bucket):
+def refresh_slide_db(manifest, bucket, single_specimen = None):
 
     # Database cursor
     db = get_db()
@@ -562,7 +626,16 @@ def refresh_slide_db(manifest, bucket):
     with open(manifest) as f_manifest:
         for line in f_manifest:
 
+            # Split into words
+            words = line.splot()
+            if len(words) != 2:
+                continue
+
+            # Check for single specimen selector
             specimen = line.split()[0]
+            if single_specimen is not None and single_specimen != specimen:
+                continue
+
             url = line.split()[1]
             print('Parsing specimen "%s" with URL "%s"' % (specimen,url))
 
@@ -586,6 +659,7 @@ def refresh_slide_db(manifest, bucket):
                         t = db.execute('SELECT * FROM slide WHERE slide_name=?', (slide_name,)).fetchone()
                         if t is not None:
                             print('Slide %s already in the database with id=%s' % (slide_name, t['id']));
+                            update_slide_derived_data(t['id'])
                             continue
 
                         # Create a slideref for this object. The way we have set all of this up, the extension is not
@@ -605,6 +679,9 @@ def refresh_slide_db(manifest, bucket):
                                 print('Slide %s located with url %s and assigned new id %d' % 
                                       (slide_name, sr.get_resource_url('raw', False), sid))
 
+                                # Update thumbnail and such
+                                update_slide_derived_data(sid)
+
                                 break
 
                         # We are here because no URL was found
@@ -616,7 +693,6 @@ def refresh_slide_db(manifest, bucket):
                         (exc_type, exc_value, exc_traceback) = sys.exc_info()
                         print(repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
                         raise ValueError('crash')
-
 
             except:
 
@@ -659,14 +735,13 @@ def load_raw_slide_to_cache(slide_id, resource):
 
 
 @click.command('refresh-slides')
-@click.option('--manifest', 
-              prompt='Manifest file',
-              help='Location of the histo_matching.txt file, which lists specimens '
-                   'and correponding Google Sheet tabs that have matching info')
+@click.argument('manifest', type=click.Path(exists=True))
+@click.option('-s', '--specimen', default=None, 
+        help='Only refresh slides for a single specimen')
 @with_appcontext
-def refresh_slides_command(manifest):
-    """Refresh the slide database using manifest files"""
-    refresh_slide_db(manifest, "gs://mtl_histology");
+def refresh_slides_command(manifest, specimen):
+    """Refresh the slide database using manifest file MANIFEST that lists specimens and GDrive links"""
+    refresh_slide_db(manifest, "gs://mtl_histology", specimen);
     click.echo('Scanning complete')
 
 

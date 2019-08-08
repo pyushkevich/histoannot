@@ -71,7 +71,10 @@ var load_samples_table_ajax = function(label_id, callback_fn) {
       var row_size = 0;
       $.each(data, function(i, item) {
         var imgurl = "{{url_for('dltrain.get_sample_png', id=9999)}}".replace('9999', item['id']);
-        var img = $('<img>').attr('src', imgurl).attr('width', samples_table_imgwidth);
+
+        // Trick to prevent caching when samples are updated
+        var imgurl_full = imgurl + '?t_edit=' + item['t_edit'];
+        var img = $('<img>').attr('src', imgurl_full).attr('width', samples_table_imgwidth);
         var td = $('<td>').append(img).attr('sample-id', item['id']).addClass('valid');
         td.attr('center-x', (item['x0'] + item['x1']) / 2.0);
         td.attr('center-y', (item['y0'] + item['y1']) / 2.0);

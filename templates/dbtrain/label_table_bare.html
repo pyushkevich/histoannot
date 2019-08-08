@@ -125,7 +125,7 @@ var get_current_label_id = function() {
 }
 
 var select_label = function(id) {
-  $(this).parent().children().removeClass("selected");
+  $("#ctablebody").children().removeClass("selected");
   $("#ctablebody tr[data-id='XXX']".replace('XXX',id)).addClass("selected")
 }
 

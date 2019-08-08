@@ -90,7 +90,7 @@ button.disabled, button.disabled:hover {
         <div id="div_dltrain_labels" style="padding-left: 1em">
         </div>
         <p></p>
-        <div id="div_dltrain_samples" style="padding-left: 1em; overflow: auto;">
+        <div id="div_dltrain_samples" style="padding-left: 1em; overflow-y: auto; display: block; height:420px;">
         </div>
     </div>
 </div>
@@ -306,6 +306,18 @@ $(document).ready(function() {
     return n;
   }
 
+  var get_number_selected_boxes = function() {
+    var selected = paper.project.selectedItems;
+    var n = 0;
+    for (var i = 0; i < selected.length; i++) {
+      var item = selected[i];
+      if (item.data.id) {
+        n++;
+      }
+    }
+    return n;
+  }
+
   var upload_annot = function() {
 
     payload = paper.project.exportJSON();
@@ -356,7 +368,8 @@ $(document).ready(function() {
       new_box = new paper.Path({
         segments: [ new paper.Point(x0,y0), new paper.Point(x1,y0), new paper.Point(x1,y1), new paper.Point(x0,y1) ],
         closed: true,
-        strokeColor: color});
+        strokeColor: color, 
+        selectedColor : color});
       new_box.data.label_id = label_id;
       new_box.data.label_color = color;
       new_box.data.geometry = [x0, y0, x1, y1];
@@ -423,13 +436,13 @@ $(document).ready(function() {
           console.log("AJAX reponse"); console.log(response_text) 
 
           if(cb_success)
-            cb_success()
+            cb_success();
         }
       );
     }
 
     // Modify an existing sample (e.g., as a result of dragging, resizing)
-    this.modify_sample = function(box) {
+    this.modify_sample = function(box, cb_success) {
       // If for some reason the box does not have an ID, we  need to create it, but
       // this would be a really odd occurrence
       if(!box.data.id) {
@@ -442,6 +455,8 @@ $(document).ready(function() {
           JSON.stringify(box.data), 
           function(response_text) { 
             console.log("AJAX reponse"); console.log(response_text) 
+            if(cb_success)
+              cb_success();
           }
         );
       }
@@ -482,6 +497,7 @@ $(document).ready(function() {
             if(old_box) {
               self.update_box(old_box, item.x0, item.y0, item.x1, item.y1);
               old_box.strokeColor = item.color;
+              old_box.selectedColor = item.color;
               old_box.data.label_id = item.label;
               old_box.data.label_color = item.color;
             } else {
@@ -528,6 +544,37 @@ $(document).ready(function() {
         paper.view.draw();
       }
     };
+
+    // Count selected samples
+    this.get_selected_samples_count = function() {
+      var selected = paper.project.selectedItems;
+      var n = 0;
+      for (var i = 0; i < selected.length; i++) {
+        var item = selected[i];
+        if (item.data.id) {
+          n++;
+        }
+      }
+      return n;
+    }
+
+    // Relabel selected samples
+    this.relabel_selected_samples = function(new_label_id, new_label_color, cb_success) {
+      var selected = paper.project.selectedItems;
+      var n = 0;
+      for (var i = 0; i < selected.length; i++) {
+        var item = selected[i];
+        if (item.data.id && item.data.label_id != new_label_id) {
+          item.data.label_id = new_label_id;
+          item.data.label_color = new_label_color;
+          item.strokeColor = new_label_color;
+          item.selectedColor = new_label_color;
+          self.modify_sample(item, cb_success);
+        }
+      }
+    }
+
+
   };
 
   // Instantiate API for getting samples
@@ -553,6 +600,10 @@ $(document).ready(function() {
           // Hitting an unselected target
           deselect_all_manipulables();
           hit.item.selected = true;
+          if(seg_mode == 'dltrain' && hit.item.data.label_id) {
+            select_label(hit.item.data.label_id);
+            load_samples_table_ajax(hit.item.data.label_id);
+          }
           fn_update_button_state();
           paper.view.draw();
           moving_object = hit.item;
@@ -649,7 +700,9 @@ $(document).ready(function() {
           upload_annot();
         }
         else if(seg_mode == 'dltrain') {
-          sample_api.modify_sample(moving_object);
+          sample_api.modify_sample(moving_object, function() {
+            reload_label_and_sample_tables()
+          });
         }
       }
       else {
@@ -938,7 +991,17 @@ $(document).ready(function() {
 
     // A callback function for when a label is clicked
     var label_select_callback = function(id) {
-      load_samples_table_ajax(id);
+      console.log('LABEL SELECTED')
+      if(curr_mode == 'NAV' && sample_api.get_selected_samples_count() > 0) {
+        console.log('Gotta relabel some')
+        sample_api.relabel_selected_samples(id, get_current_label_color(), function() {
+          reload_label_and_sample_tables();
+        });
+        paper.view.draw();
+      }
+      else {
+        load_samples_table_ajax(id);
+      }
     }
 
     // A callback function for when a sample is clicked

@@ -1,0 +1,6 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "Anatomical Labeling - UCLM", 
+    "desc": "Labeling anatomical boundaries and regions by the UCLM team (2019)"
+}

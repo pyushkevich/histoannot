@@ -1,0 +1,15 @@
+[
+  { "name" : "tangle", "color" : "#ca06c9", "description" : "Neurofibrillary tangle" },
+  { "name" : "tissue", "color" : "#2816ba", "description" : "Normal-appearing tissue" },
+  { "name" : "dirt", "color" : "#f97a8a", "description" : "Dirt on the slide" },
+  { "name" : "background", "color" : "#0bc027", "description" : "Slide background (white area)" },
+  { "name" : "astrocyte_tau", "color" : "#77d4c8", "description" : "ARTAG and similar inclusions"},
+  { "name" : "threads", "color" : "#18b497", "description" : "Area of tau threads"},
+  { "name" : "neuritic_plaque", "color" : "#e68a78", "description" : "Tau in neuritic plaques"},
+  { "name" : "ambiguous", "color" : "#dc04e6" },
+  { "name" : "tissue_fold", "color" : "#832125", "description" : "Tissue in a fold"},
+  { "name" : "vessel_tau", "color" : "#394a63", "description" : "Dense tau around vessels"},
+  { "name" : "tau_fold", "color" : "#ee4068", "description" : "Tau stain in a fold"},
+  { "name" : "artifact", "color" : "#01c12a", "description" : "Various unexpected areas other than dirt"},
+  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"}
+]

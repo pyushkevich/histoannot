@@ -3,7 +3,7 @@ from flask import (
 )
 from werkzeug.exceptions import abort
 from flaskr.auth import login_required
-from flaskr.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta
+from flaskr.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta, create_sample_base, generate_sample_patch, get_sample_patch_filename
 
 
 import sqlite3
@@ -141,41 +141,6 @@ def get_annot_json_file(id):
     # Get the filename
     return os.path.join(json_dir, json_filename)
 
-# Get the filename where a sample should be saved
-def get_sample_patch_filename(sample_id):
-
-    # Create a directory
-    patch_dir = os.path.join(current_app.instance_path, 'dltrain/patches')
-    if not os.path.exists(patch_dir):
-        os.makedirs(patch_dir)
-
-    # Generate the filename
-    patch_fn = "sample_%08d.png" % (sample_id,)
-
-    # Get the full path
-    return os.path.join(patch_dir, patch_fn)
-
-
-# Generate an image patch for a sample
-def generate_sample_patch(slide_id, sample_id, rect):
-
-    # Get the tiff image from which to sample the region of interest
-    db = get_db()
-    sr = get_slide_ref(slide_id)
-    tiff_file = sr.get_local_copy('raw')
-
-    # Get the openslide object corresponding to it
-    osr = slide.bp.cache.get(tiff_file, False)._osr;
-
-    # Read the region centered on the box of size 512x512
-    ctr_x = int((rect[0] + rect[2])/2.0 + 0.5)
-    ctr_y = int((rect[1] + rect[3])/2.0 + 0.5)
-    tile = osr.read_region((ctr_x - 255, ctr_y-255), 0, (512, 512));
-
-    # Convert to PNG
-    tile.save(get_sample_patch_filename(sample_id), 'png')
-
-
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/create', methods=('POST',))
 @login_required
@@ -183,22 +148,8 @@ def create_sample(task_id, slide_id):
 
     data = json.loads(request.get_data())
     rect = data['geometry']
-    db = get_db()
-
-    # Create a meta record
-    meta_id = create_edit_meta()
-
-    # Create the main record
-    sample_id = db.execute(
-        'INSERT INTO training_sample (meta_id,x0,y0,x1,y1,label,slide,task) VALUES (?,?,?,?,?,?,?,?)',
-        (meta_id, rect[0], rect[1], rect[2], rect[3], data['label_id'], slide_id, task_id)
-    ).lastrowid
-
-    # Save an image patch around the sample
-    generate_sample_patch(slide_id, sample_id, rect)
-
-    # Only commit once this has been saved
-    db.commit()
+    label_id = data['label_id']
+    sample_id = create_sample_base(task_id, slide_id, label_id, rect)
 
     return json.dumps({"id":sample_id})
 

@@ -258,7 +258,8 @@ $(document).ready(function() {
     tileSource: "{{ url_for('slide.dzi', mode=affine_mode, id=slide_id) }}",
     x: 0,
     y: 0,
-    success: init_paperjs
+    success: init_paperjs,
+    error: function() { window.alert("Slide failed to load"); }
   });
 
   // Current interaction mode
@@ -593,7 +594,7 @@ $(document).ready(function() {
       set_paperjs_item_strokewidth(curr_path, 4);
     }
     else if(curr_mode == 'NAV') {
-      hit = paper.project.hitTest(ev_point(event), hit_test_options)
+      hit = my_hit_test(ev_point(event));
       moving_object=null;
       if(hit) {
         if(!hit.item.selected) {
@@ -767,19 +768,27 @@ $(document).ready(function() {
 
   }
 
-  var hit_test_options = {
-    segments: true,
-    stroke: true,
-    fill: false,
-    tolerance: 3
-  };
+  // Customized hit testing to include paths and text
+  var my_hit_test = function(point) {
+    if(seg_mode == 'annot') {
+      return paper.project.hitTest(point);
+    } else if (seg_mode == 'dltrain') {
+      var hit_test_options = {
+        segments: true,
+        stroke: true,
+        fill: false,
+        tolerance: 3
+      }
+      return paper.project.hitTest(ev_point(event), hit_test_options);
+    }
+  }
 
   var move_handler = function(event) {
     var pointer = "default";
     var curs_arr = [ "nwse-resize", "nesw-resize", "nwse-resize", "nesw-resize" ];
 
     if(curr_mode == 'NAV' && paper.project) {
-      hit = paper.project.hitTest(ev_point(event), hit_test_options)
+      hit = my_hit_test(ev_point(event));
       if(hit) {
         if(seg_mode == 'annot') {
           pointer = "pointer";
@@ -815,7 +824,7 @@ $(document).ready(function() {
 
   var dblClick_handler = function(event) {
     if(curr_mode == 'NAV') {
-      hit = paper.project.hitTest(ev_point(event), hit_test_options)
+      hit = my_hit_test(ev_point(event));
       if(hit && hit.item instanceof paper.PointText) {
         hit.item.visible = false;
         show_marker_editor(event, hit.item);

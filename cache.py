@@ -13,6 +13,11 @@ class AffineTransformedOpenSlide(object):
         self._osr = m.init_osr(c_tile_cache, slide_path, (0,0))
         self._affine = do_affine
         n_levels = m.get_nlevels(self._osr)
+
+        # If n_levels is 1 throw up
+        if(n_levels == 1):
+            raise ValueError('Image is not a pyramid')
+
         self.level_downsamples = ()
         self.level_dimensions = ()
         for i in range(n_levels):

@@ -235,7 +235,7 @@ def dzi(mode, id):
         resp = make_response(slide.get_dzi('jpeg'))
         resp.mimetype = 'application/xml'
         return resp
-    except KeyError:
+    except (KeyError, ValueError):
         # Unknown slug
         abort(404)
 
@@ -284,9 +284,10 @@ def update_annot_json(task_id, slide_id):
     # Count the children
     n_paths = 0
     n_markers = 0
-    for x in data[0][1]['children']:
-        n_paths = n_paths + (1 if x[0] == 'Path' else 0)
-        n_markers = n_markers + (1 if x[0] == 'PointText' else 0)
+    if 'children' in data[0][1]:
+        for x in data[0][1]['children']:
+            n_paths = n_paths + (1 if x[0] == 'Path' else 0)
+            n_markers = n_markers + (1 if x[0] == 'PointText' else 0)
 
     # See if an annotation already exists
     db = get_db()

@@ -77,13 +77,44 @@ def get_labelset_labels_table(task_id, slide_id):
 def get_samples_for_label(task_id, slide_id, label_id):
     db = get_db()
 
-    # list the samples
-    rc = db.execute('SELECT T.id,x0,y0,x1,y1,creator,editor,t_create,t_edit '
-                    'FROM training_sample T LEFT JOIN edit_meta M on T.meta_id = M.id '
-                    'WHERE label = ? and slide = ? and task = ? '
-                    'ORDER BY M.t_edit DESC LIMIT 48',
-                    (label_id, slide_id, task_id))
+    # Which order to use
+    order = {"newest":"M.t_edit ASC", 
+             "oldest":"M.t_edit DESC", 
+             "random":"RANDOM()"}[request.form['sort'] if 'sort' in request.form else 'newest']
 
+    # Where clause for selecting slides
+    if 'which' not in request.form or request.form['which'] == 'slide':
+        where_clause = 'label = ? and T.slide = ? and task = ?'
+        where_arg = (label_id, slide_id, task_id)
+    elif request.form['which'] == 'block':
+        where_clause = 'label = ? and task = ? and S.block_id = (SELECT block_id FROM slide where id=?)'
+        where_arg = (label_id, task_id, slide_id)
+    elif request.form['which'] == 'specimen':
+        where_clause = '''label = ? and task = ? and S.block_id IN (
+                              SELECT id FROM block BB where BB.specimen_name = (
+                                  SELECT specimen_name FROM block B left join slide SS on B.id=SS.block_id
+                                  WHERE SS.id=?))'''
+        where_arg = (label_id, task_id, slide_id)
+    else:
+        where_clause = 'label = ? and task = ?'
+        where_arg = (label_id, task_id)
+
+    # Run query
+    query = '''SELECT T.id,x0,y0,x1,y1,
+                      UC.username as creator, t_create,
+                      UE.username as editor, t_edit,
+                      datetime(t_create,'unixepoch','localtime') as dt_create,
+                      datetime(t_edit,'unixepoch','localtime') as dt_edit,
+                      BBB.specimen_name,BBB.block_name,S.section,S.slide,S.stain,S.id as slide_id
+               FROM training_sample T LEFT JOIN edit_meta M on T.meta_id = M.id 
+                                      LEFT JOIN slide S on S.id = T.slide 
+                                      LEFT JOIN block BBB on BBB.id = S.block_id
+                                      LEFT JOIN user UC on UC.id = M.creator 
+                                      LEFT JOIN user UE on UE.id = M.editor 
+               WHERE %s 
+               ORDER BY %s LIMIT 48''' % (where_clause, order)
+    print(query)
+    rc = db.execute(query, where_arg)
     return json.dumps([dict(row) for row in rc.fetchall()])
 
 

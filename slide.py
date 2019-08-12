@@ -211,11 +211,26 @@ def slide_view(task_id, slide_id, affine_mode):
     # Get the next/previous slides for this task
     (slide_info, prev_slide, next_slide) = get_slide_info(task_id, slide_id)
 
+    # Build a dictionary to call
+    context = {
+            'slide_id': slide_id, 
+            'slide_info': slide_info, 
+            'next_slide':next_slide, 
+            'prev_slide':prev_slide, 
+            'affine_mode':affine_mode, 
+            'seg_mode':task['mode'], 
+            'task_id': task_id, 
+            'task':task }
+
+    # Add optional fields to context
+    print(json.dumps(request.form, indent=4))
+    for field in ('sample_id', 'sample_cx', 'sample_cy'):
+        if field in request.form:
+            context[field] = request.form[field]
+
     # Render the template
-    return render_template('slide/slide_view.html', slide_id = slide_id, 
-                           slide_info = slide_info, next_slide=next_slide, 
-                           prev_slide=prev_slide, affine_mode=affine_mode, 
-                           seg_mode=task['mode'], task_id = task_id, task=task)
+    return render_template('slide/slide_view.html', **context)
+
 
 # Get the DZI for a slide
 @bp.route('/slide/<mode>/<int:id>.dzi', methods=('GET', 'POST'))
@@ -246,6 +261,7 @@ def get_cache_progress(id):
 
     sr = get_slide_ref(id)
     progress = sr.get_download_progress('raw');
+    print("Progress: ", progress)
     return json.dumps({'progress':progress}), 200, {'ContentType':'application/json'} 
 
 

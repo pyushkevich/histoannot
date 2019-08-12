@@ -3,6 +3,10 @@
 {% block header %}
 {% endblock %}
 
+{% block title %}
+{{slide_info['specimen_name']}} {{slide_info['block_name']}} {{slide_info['section']}} {{slide_info['slide']}} {{slide_info['stain']}} - {{task['name']}}
+{% endblock %}
+
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
@@ -12,6 +16,7 @@
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-paperjs-overlay.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='mousetrap.min.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='js.cookie.js') }}"></script>
 
 {% if seg_mode == 'dltrain' %}
   {% include 'dbtrain/label_table_bare.html' %}
@@ -90,7 +95,7 @@ button.disabled, button.disabled:hover {
         <div id="div_dltrain_labels" style="padding-left: 1em">
         </div>
         <p></p>
-        <div id="div_dltrain_samples" style="padding-left: 1em; overflow-y: auto; display: block; height:420px;">
+        <div id="div_dltrain_samples" style="padding-left: 1em;">
         </div>
     </div>
 </div>
@@ -212,6 +217,9 @@ $(document).ready(function() {
     }
     else if (seg_mode == 'dltrain') {
       sample_api.refresh_samples();
+
+      // If initial sample specified, focus on it
+      setTimeout(function() { focus_on_initial_sample() }, 250);
     }
   }
 
@@ -234,6 +242,7 @@ $(document).ready(function() {
 
   // Get the progress of loading the current slide
   var check_cache_progress = function() {
+    console.log('Checking progress')
     $.ajax({
       url: "{{ url_for('slide.get_cache_progress', id=slide_id, resource='raw') }}",
       success: function(response_text) {
@@ -241,6 +250,7 @@ $(document).ready(function() {
         if(data.progress < 1.0) {
           progress_dialog.dialog("open");
           progress_bar.progressbar("value", Math.floor(data.progress * 100));
+          console.log('p = ', data.progress)
           setTimeout(check_cache_progress, 500);
         }
         else {
@@ -779,7 +789,7 @@ $(document).ready(function() {
         fill: false,
         tolerance: 3
       }
-      return paper.project.hitTest(ev_point(event), hit_test_options);
+      return paper.project.hitTest(point, hit_test_options);
     }
   }
 
@@ -993,7 +1003,7 @@ $(document).ready(function() {
     create_label_table_html($('#div_dltrain_labels'));
 
     // Create the samples table
-    create_samples_table_html($('#div_dltrain_samples'));
+    create_samples_table_withcontrols_html($('#div_dltrain_samples'), reload_label_and_sample_tables);
 
     // Initialize tables with data
     reload_label_and_sample_tables()
@@ -1014,13 +1024,34 @@ $(document).ready(function() {
     }
 
     // A callback function for when a sample is clicked
-    var sample_select_callback = function(id, cx, cy) {
-      console.log('Selected sample', id, cx, cy)
-      focus_on_sample(id, cx, cy)
+    var sample_select_callback = function(id, cx, cy, slide_id) {
+      if(slide_id == "{{slide_id}}") {
+        focus_on_sample(id, cx, cy)
+      }
+      else {
+        if(confirm("Are you sure you want to navigate to another slide?")) {
+          // Generate a URL for the new slide
+          var url="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=affine_mode)}}";
+          url = url.replace('999999', slide_id);
+          $('<form>').attr('method','post').attr('action',url).append(
+              $('<input type="hidden" name="sample_id">').attr("value", id),
+              $('<input type="hidden" name="sample_cx">').attr("value", cx),
+              $('<input type="hidden" name="sample_cy">').attr("value", cy)).appendTo('body').submit();
+        }
+      }
     }
 
     set_label_table_click_callback(label_select_callback)
     set_sample_table_click_callback(sample_select_callback)
+
+    // Check if we should be navigating to a specific sample
+    var focus_on_initial_sample = function() {
+      var focus_sample_id='{{sample_id}}';
+      if(focus_sample_id && focus_sample_id.length > 0) {
+        focus_on_sample(Number(focus_sample_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));A
+      }
+    }
+
   }
 
 

@@ -25,6 +25,12 @@
   line-height: 1em;
   user-select: none;
 }
+#stable_ctl {
+  font-size: 60%;
+}
+#stable_which {
+  margin-right: 1em;
+}
 </style>
 
 <!--
@@ -53,16 +59,77 @@ var set_sample_table_click_callback = function(f) {
 
 // Create HTML for the table 
 var create_samples_table_html = function(container) {
-  var table = $('<table id="stable">').addClass("pure-table");
-  var tbody = $('<tbody id="stablebody">');
-  tbody.appendTo(table);
-  table.appendTo(container);
+  $('<div id="stable_main" style="overflow-y: auto; display: block; height: 420px;">').append(
+      $('<table id="stable">').addClass("pure-table").append(
+        $('<tbody id="stablebody">'))).appendTo(container);
+}
+
+// Callback function for controls
+var cb_samples_table_control = function() {
+  Cookies.set('pref_samples_table_which', $("#stable_which").val(), { expires: 7, path: '/' });
+  Cookies.set('pref_samples_table_sort', $("#stable_sort").val(), { expires: 7, path: '/' });
+}
+
+// Create HTML for the table with controls
+var create_samples_table_withcontrols_html = function(container, fn_callback) {
+
+  // Create controls
+  var sel_which = $('<select id="stable_which">').append(
+      $('<option value="slide">').text('this slide'),
+      $('<option value="block">').text('this block'),
+      $('<option value="specimen">').text('this specimen'),
+      $('<option value="all">').text('all specimens')).change(function() {
+        cb_samples_table_control();
+        if(fn_callback) 
+          fn_callback()
+      });
+
+  var sel_sort = $('<select id="stable_sort">').append(
+      $('<option value="newest">').text('oldest'),
+      $('<option value="oldest">').text('newest'),
+      $('<option value="random">').text('random')).change(function() {
+        cb_samples_table_control();
+        if(fn_callback) 
+          fn_callback()
+      });
+
+  // Initialize with cookies
+  var c_which = Cookies.get('pref_samples_table_which')
+  var c_sort = Cookies.get('pref_samples_table_sort')
+  if(c_which && c_sort) {
+    sel_which.val(c_which);
+    sel_sort.val(c_sort);
+  }
+
+  var cdiv = $('<div id="stable_ctl">').append(
+      $('<form id="stable_ctl_frm">').append(
+        $('<label for="stable_which">').text('Examples from: '),
+        sel_which,
+        $('<label for="stable_sort">').text('Sort by: '),
+        sel_sort));
+
+  cdiv.appendTo(container);
+  $('<div id="stable_main" style="overflow-y: auto; display: block; height: 420px;">').append(
+      $('<table id="stable">').addClass("pure-table").append(
+        $('<tbody id="stablebody">'))).appendTo(container);
+}
+
+// Get the preferences for listing samples
+var get_sample_tables_config = function() {
+  var v_which = $("#stable_which").val();
+  var v_sort = $("#stable_sort").val();
+  if(v_which && v_sort) {
+    return { which : v_which, sort : v_sort }
+  }
+  else return null;
 }
 
 // Load the samples for a specific label
 var load_samples_table_ajax = function(label_id, callback_fn) {
   $.ajax({
     url: _samples_table_url_template.replace('999999', label_id.toString()),
+    type: "POST",
+    data: get_sample_tables_config(),
     success: function(response_text) {
       var data = JSON.parse(response_text);
       $('#stablebody').empty();
@@ -72,19 +139,29 @@ var load_samples_table_ajax = function(label_id, callback_fn) {
       $.each(data, function(i, item) {
         var imgurl = "{{url_for('dltrain.get_sample_png', id=9999)}}".replace('9999', item['id']);
 
+        // Create a tooltip
+        var tt = 
+          `Sample ${item['id']}\n` +
+          `Specimen ${item['specimen_name']}, block ${item['block_name']}\n` + 
+          `Section ${item['section']}, slide ${item['slide']}, stain ${item['stain']}\n` +
+          `Created by ${item['creator']} on ${item['dt_create']}\n` + 
+          `Modified by ${item['editor']} on ${item['dt_edit']}`
+
         // Trick to prevent caching when samples are updated
         var imgurl_full = imgurl + '?t_edit=' + item['t_edit'];
-        var img = $('<img>').attr('src', imgurl_full).attr('width', samples_table_imgwidth);
+        var img = $('<img>').attr('src', imgurl_full).attr('width', samples_table_imgwidth).attr('title', tt)
         var td = $('<td>').append(img).attr('sample-id', item['id']).addClass('valid');
         td.attr('center-x', (item['x0'] + item['x1']) / 2.0);
         td.attr('center-y', (item['y0'] + item['y1']) / 2.0);
+        td.attr('slide_id', item['slide_id']);
         td.click(function() {
           console.log($('#stablebody td'))
           $('#stablebody td').removeClass("selected");
           if($(this).attr('sample-id')) {
             $(this).addClass("selected");
             if(_sample_table_cb['click'])
-              _sample_table_cb['click']($(this).attr('sample-id'), $(this).attr('center-x'), $(this).attr('center-y'));
+              _sample_table_cb['click']($(this).attr('sample-id'), $(this).attr('center-x'), 
+                  $(this).attr('center-y'), $(this).attr('slide_id'));
           }
         });
         td.appendTo(tr);

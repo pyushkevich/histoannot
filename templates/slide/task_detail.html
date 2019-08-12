@@ -1,5 +1,10 @@
 {% extends 'base.html' %}
 
+{% block title %}
+Specimen Listing - {{task['name']}}
+{% endblock %}
+
+
 {% block content %}
 <a href="{{ url_for('slide.index')}}">Home</a> : 
 {{task['name']}}

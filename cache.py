@@ -8,10 +8,16 @@ from PIL import Image
 import mytest as m
 
 class AffineTransformedOpenSlide(object):
-    def __init__(self, c_tile_cache, slide_path, do_affine):
+    def __init__(self, c_tile_cache, slide_path, affine_path):
+
+        # Read the affine matrix into a tuple
+        self._affine = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+        if affine_path is not None:
+            with open(affine_path) as f:
+                self._affine = tuple(tuple(map(float, i.split(' '))) for i in f)
+
         # TODO: get this number
         self._osr = m.init_osr(c_tile_cache, slide_path, (0,0))
-        self._affine = do_affine
         n_levels = m.get_nlevels(self._osr)
 
         # If n_levels is 1 throw up
@@ -38,11 +44,7 @@ class AffineTransformedOpenSlide(object):
 
     def read_region(self, location, level, size):
         b=bytearray(4 * size[0] * size[1]);
-        if self._affine:
-            Amat = ((1.0, 0.1, 0.0), (-0.1, 1.0, 0.0), (0.0, 0.0, 1.0))
-        else:
-            Amat = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
-        m.read_region(self._osr, location, level, size, Amat, b)
+        m.read_region(self._osr, location, level, size, self._affine, b)
         img=Image.frombuffer('RGBA',size,str(b),'raw','BGRA',0,1)
         return img
 
@@ -54,9 +56,13 @@ class DeepZoomSource(object):
         self._cache = OrderedDict()
         self.c_tile_cache = m.init_cache(max_tiles)
 
-    def get(self, path, do_affine):
-        # Combine path and do_affine into a single hash
-        hashstr=path+':'+str(do_affine)
+    def get(self, path, affine_file):
+        # Combine path and affine into a single hash
+        hashstr=path
+        if affine_file is not None:
+            hashstr=hashstr + ':' + affine_file
+
+        print('get', path, affine_file)
 
         with self._lock:
             if hashstr in self._cache:
@@ -65,7 +71,7 @@ class DeepZoomSource(object):
                 self._cache[hashstr] = slide
                 return slide
 
-        osr = AffineTransformedOpenSlide(self.c_tile_cache, path, do_affine)
+        osr = AffineTransformedOpenSlide(self.c_tile_cache, path, affine_file)
         slide = DeepZoomGenerator(osr)
         try:
             mpp_x = osr.properties[openslide.PROPERTY_NAME_MPP_X]

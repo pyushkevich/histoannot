@@ -10,6 +10,7 @@ from io import BytesIO
 import os
 import json
 import time
+import numpy as np
 
 bp = Blueprint('slide', __name__)
 
@@ -241,11 +242,13 @@ def dzi(mode, id):
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
     sr = get_slide_ref(id)
-    tiff_file = sr.get_local_copy('raw')
+    tiff_file = sr.get_local_copy('raw', check_hash=True)
+
+    # Get an affine transform if that is an option
+    affine_file = sr.get_local_copy('affine', check_hash=True) if mode=='affine' else None
     
     try:
-        do_affine = (mode == 'affine')
-        slide = bp.cache.get(tiff_file, do_affine)
+        slide = bp.cache.get(tiff_file, affine_file)
         slide.filename = os.path.basename(tiff_file)
         resp = make_response(slide.get_dzi('jpeg'))
         resp.mimetype = 'application/xml'
@@ -288,22 +291,63 @@ def get_annot_json_file(task_id, slide_id):
     # Get the filename
     return os.path.join(json_dir, json_filename)
 
+import numpy
 
-# Receive updated json for the slide
-@bp.route('/task/<int:task_id>/slide/<int:slide_id>/annot/set', methods=('POST',))
-@login_required
-def update_annot_json(task_id, slide_id):
+# Get the affine matrix for a slide
+def get_affine_matrix(slide_id, mode):
 
-    # Get the raw json
-    data = json.loads(request.get_data())
+    if mode == 'affine':
+
+        sr = get_slide_ref(slide_id)
+        affine_fn = sr.get_local_copy('affine')
+        if affine_fn is not None:
+            M = np.loadtxt(affine_fn)
+            return M
+
+    return np.eye(3)
+
+
+# Transform a paper.js project using an affine matrix M. Also returns
+# statistics on the number of elements
+def transform_annot(data, M):
+    # Extract matrix components
+    (A,b) = (M[0:2,0:2], M[0:2,2])
 
     # Count the children
     n_paths = 0
     n_markers = 0
     if 'children' in data[0][1]:
         for x in data[0][1]['children']:
-            n_paths = n_paths + (1 if x[0] == 'Path' else 0)
-            n_markers = n_markers + (1 if x[0] == 'PointText' else 0)
+
+            # Handle paths
+            if x[0] == 'Path':
+                n_paths = n_paths + 1
+                for seg in x[1]['segments']:
+                    # Transform the segment (point and handles)
+                    for k in range(len(seg)):
+                        seg[k] = list(np.dot(A,seg[k]) + (b if k==0 else 0))
+
+            # Increment the counters
+            elif x[0] == 'PointText':
+                x[1]['matrix'][4:6] = list(np.dot(A,x[1]['matrix'][4:6])+b)
+                n_markers = n_markers + 1
+
+    return (data, {'n_paths' : n_paths, 'n_markers' : n_markers})
+
+
+# Receive updated json for the slide
+@bp.route('/task/<int:task_id>/slide/<mode>/<int:slide_id>/annot/set', methods=('POST',))
+@login_required
+def update_annot_json(task_id, mode, slide_id):
+
+    # Get the raw json
+    data = json.loads(request.get_data())
+
+    # Get the affine transform
+    M_inv = get_affine_matrix(slide_id, mode)
+
+    # Transform the data and count items
+    (data, stats) = transform_annot(data, M_inv)
 
     # See if an annotation already exists
     db = get_db()
@@ -319,7 +363,7 @@ def update_annot_json(task_id, slide_id):
         db.execute(
             'UPDATE annot SET json=?, n_paths=?, n_markers=? '
             'WHERE slide_id=? AND task_id=?', 
-            (json.dumps(data), n_paths, n_markers, slide_id, task_id))
+            (json.dumps(data), stats['n_paths'], stats['n_markers'], slide_id, task_id))
 
     else:
 
@@ -330,7 +374,7 @@ def update_annot_json(task_id, slide_id):
         db.execute(
             'INSERT INTO annot(json, meta_id, n_paths, n_markers, slide_id, task_id) '
             'VALUES (?,?,?,?,?,?)', 
-            (json.dumps(data), meta_id, n_paths, n_markers, slide_id, task_id))
+            (json.dumps(data), meta_id, stats['n_paths'], stats['n_markers'], slide_id, task_id))
 
     # Commit
     db.commit()
@@ -345,18 +389,23 @@ def update_annot_json(task_id, slide_id):
 
 
 # Send the json for the slide
-@bp.route('/task/<int:task_id>/slide/<int:slide_id>/annot/get', methods=('GET',))
+@bp.route('/task/<int:task_id>/slide/<mode>/<int:slide_id>/annot/get', methods=('GET',))
 @login_required
-def get_annot_json(task_id, slide_id):
+def get_annot_json(task_id, mode, slide_id):
 
     # Find the annotation in the database
     db = get_db()
     rc = db.execute('SELECT json FROM annot WHERE slide_id=? AND task_id=?',
                     (slide_id, task_id)).fetchone()
 
+    # Get the affine transform
+    M = np.linalg.inv(get_affine_matrix(slide_id, mode))
+
     # Return the data
     if rc is not None:
-        return rc['json'], 200, {'ContentType':'application/json'} 
+        data = json.loads(rc['json'])
+        (data,stats) = transform_annot(data, M)
+        return json.dumps(data), 200, {'ContentType':'application/json'} 
     else:
         return "", 200, {'ContentType':'application/json'} 
 
@@ -381,7 +430,8 @@ def tile(mode, id, level, col, row, format):
     # or else we will spend a minute here waiting with no response to user)
     sr = get_slide_ref(id)
     tiff_file = sr.get_local_copy('raw')
-    tile = bp.cache.get(tiff_file, (mode == 'affine')).get_tile(level, (col, row))
+    affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
+    tile = bp.cache.get(tiff_file, affine_file).get_tile(level, (col, row))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)

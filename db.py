@@ -331,7 +331,7 @@ my_histo_url_schema = {
     "pattern" : {
         "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
         "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16.png",
-        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/{slide_name}_affine.mat",
+        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
         "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff"
     },
 
@@ -627,7 +627,7 @@ def refresh_slide_db(manifest, bucket, single_specimen = None):
         for line in f_manifest:
 
             # Split into words
-            words = line.splot()
+            words = line.split()
             if len(words) != 2:
                 continue
 
@@ -1055,7 +1055,7 @@ def generate_sample_patch(slide_id, sample_id, rect):
     tiff_file = sr.get_local_copy('raw')
 
     # Get the openslide object corresponding to it
-    osr = slide_bp.cache.get(tiff_file, False)._osr;
+    osr = slide_bp.cache.get(tiff_file, None)._osr;
 
     # Read the region centered on the box of size 512x512
     ctr_x = int((rect[0] + rect[2])/2.0 + 0.5)

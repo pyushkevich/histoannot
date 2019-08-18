@@ -84,7 +84,8 @@ def task_detail(task_id):
         blocks = db.execute(
             'SELECT B.*, COUNT (S.id) as nslides, COUNT(A.slide_id) as nannot '
             'FROM slide S LEFT JOIN block B on S.block_id = B.id '
-            '             LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ?'
+            '             LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
+            '                                  AND A.n_paths+A.n_markers > 0 '
             'WHERE %s '
             'GROUP BY B.id ORDER BY specimen_name, block_name' % where[0], 
             (task_id,) + where[1]).fetchall()
@@ -93,7 +94,7 @@ def task_detail(task_id):
 
         # Join with the annotations table
         blocks = db.execute(
-            'SELECT B.*, COUNT (S.id) as nslides, COUNT(T.id) as nsamples '
+            'SELECT B.*, COUNT (DISTINCT S.id) as nslides, COUNT(T.id) as nsamples '
             'FROM slide S LEFT JOIN block B on S.block_id = B.id '
             '             LEFT JOIN training_sample T on T.slide = S.id AND T.task = ?'
             'WHERE %s '

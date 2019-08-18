@@ -5,13 +5,28 @@
 {% endblock %}
 
 {% block content %}
+<div>
   <form method="post">
-    <label for="username">Username</label>
-    <input name="username" id="username" required>
-    <label for="password">Password</label>
-    <input type="password" name="password" id="password" required>
-    <label for="password">System Password</label>
-    <input type="password" name="syspass" id="syspass" required>
-    <input type="submit" class="" value="Register">
+    <fieldset>
+      <div>
+      <label for="reg_username">Username</label>
+      <input name="username" id="username" required>
+      </div>
+
+      <div>
+      <label for="reg_password">Password</label>
+      <input type="password" name="password" id="password" required style="width=120px">
+      </div>
+
+      <div>
+      <label for="reg_syspass">Invitation Code</label>
+      <input type="password" name="syspass" id="syspass" required style="width=120px">
+      </div>
+
+      <div>
+        <button type="submit">Register</button>
+      </div>
+    </fieldset>
   </form>
+</div>
 {% endblock %}

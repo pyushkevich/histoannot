@@ -1,3 +1,20 @@
+/*
+    PICSL Histology Annotator
+    Copyright (C) 2019 Paul A. Yushkevich
+    
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+    
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
 #include <Python.h>
 
 // C++ API
@@ -10,19 +27,19 @@ extern double get_openslide_level_downsample(void *osw, int level);
 extern int get_openslide_best_level_for_downsample(void *osw, double downsample);
 
 static PyObject *
-mytest_init_cache(PyObject *self, PyObject *args)
+os_affine_init_cache(PyObject *self, PyObject *args)
 {
     int max_tiles;
     if (!PyArg_ParseTuple(args, "i", &max_tiles))
         return NULL;
 
     void *cache = make_tile_cache(max_tiles);
-    PyObject *capsule = PyCapsule_New((void *)cache, "mytest.cache", NULL);
+    PyObject *capsule = PyCapsule_New((void *)cache, "os_affine.cache", NULL);
     return Py_BuildValue("O", capsule);
 }
 
 static PyObject *
-mytest_init_osr(PyObject *self, PyObject *args)
+os_affine_init_osr(PyObject *self, PyObject *args)
 {
     const char *path;
     long canvas_x, canvas_y;
@@ -31,38 +48,38 @@ mytest_init_osr(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "Os(ll)", &cache_capsule, &path, &canvas_x, &canvas_y))
         return NULL;
 
-    void *tile_cache = PyCapsule_GetPointer(cache_capsule, "mytest.cache");
+    void *tile_cache = PyCapsule_GetPointer(cache_capsule, "os_affine.cache");
     void *osw = load_openslide(tile_cache, path, canvas_x, canvas_y);
 
-    PyObject *capsule = PyCapsule_New(osw, "mytest.osw", NULL);
+    PyObject *capsule = PyCapsule_New(osw, "os_affine.osw", NULL);
     return Py_BuildValue("O", capsule);
 }
 
 static PyObject *
-mytest_get_nlevels(PyObject *self, PyObject *args)
+os_affine_get_nlevels(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   if (!PyArg_ParseTuple(args, "O", &capsule))
       return NULL;
 
-  void *osw = PyCapsule_GetPointer(capsule, "mytest.osw");
+  void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   return Py_BuildValue("i", get_openslide_levels(osw));
 }
 
 static PyObject *
-mytest_get_downsample_level(PyObject *self, PyObject *args)
+os_affine_get_downsample_level(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   int level;
   if (!PyArg_ParseTuple(args, "Oi", &capsule, &level))
       return NULL;
 
-  void *osw = PyCapsule_GetPointer(capsule, "mytest.osw");
+  void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   return Py_BuildValue("d", get_openslide_level_downsample(osw, level));
 }
 
 static PyObject *
-mytest_get_level_dimensions(PyObject *self, PyObject *args)
+os_affine_get_level_dimensions(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   int level;
@@ -70,25 +87,25 @@ mytest_get_level_dimensions(PyObject *self, PyObject *args)
   if (!PyArg_ParseTuple(args, "Oi", &capsule, &level))
       return NULL;
 
-  void *osw = PyCapsule_GetPointer(capsule, "mytest.osw");
+  void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   get_openslide_level_dimensions(osw, level, &w, &h);
   return Py_BuildValue("(ll)", w, h);
 }
 
 static PyObject *
-mytest_get_best_level_for_downsample(PyObject *self, PyObject *args)
+os_affine_get_best_level_for_downsample(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   double downsample;
   if (!PyArg_ParseTuple(args, "Od", &capsule, &downsample))
       return NULL;
 
-  void *osw = PyCapsule_GetPointer(capsule, "mytest.osw");
+  void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   return Py_BuildValue("i", get_openslide_best_level_for_downsample(osw, downsample));
 }
 
 static PyObject *
-mytest_read_region(PyObject *self, PyObject *args)
+os_affine_read_region(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   PyObject *byte_array;
@@ -110,7 +127,7 @@ mytest_read_region(PyObject *self, PyObject *args)
   if (PyByteArray_Size(byte_array) < b_size)
       return NULL;
 
-  void *osw = PyCapsule_GetPointer(capsule, "mytest.osw");
+  void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   unsigned char *ba_bytes = (unsigned char *) PyByteArray_AsString(byte_array);
 
   printf("Reading from level %d location (%ld, %ld) a region of size (%ld, %ld)\n", 
@@ -125,21 +142,21 @@ mytest_read_region(PyObject *self, PyObject *args)
 
 // Methods table
 static PyMethodDef MyMethods[] = {
-    {"init_cache",  mytest_init_cache, METH_VARARGS, "Initialize a tile cache"},
-    {"init_osr",  mytest_init_osr, METH_VARARGS, "Load an openslide object"},
-    {"get_nlevels", mytest_get_nlevels, METH_VARARGS, "Get number of levels available"},
-    {"get_downsample_level", mytest_get_downsample_level, METH_VARARGS, "Get downsample for a level"},
-    {"get_level_dimensions", mytest_get_level_dimensions, METH_VARARGS, "Get dimensions for a level"},
-    {"get_best_level_for_downsample", mytest_get_best_level_for_downsample, METH_VARARGS, "Get best level for downsample"},
-    {"read_region", mytest_read_region, METH_VARARGS, "Read a region"},
+    {"init_cache",  os_affine_init_cache, METH_VARARGS, "Initialize a tile cache"},
+    {"init_osr",  os_affine_init_osr, METH_VARARGS, "Load an openslide object"},
+    {"get_nlevels", os_affine_get_nlevels, METH_VARARGS, "Get number of levels available"},
+    {"get_downsample_level", os_affine_get_downsample_level, METH_VARARGS, "Get downsample for a level"},
+    {"get_level_dimensions", os_affine_get_level_dimensions, METH_VARARGS, "Get dimensions for a level"},
+    {"get_best_level_for_downsample", os_affine_get_best_level_for_downsample, METH_VARARGS, "Get best level for downsample"},
+    {"read_region", os_affine_read_region, METH_VARARGS, "Read a region"},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
 
 PyMODINIT_FUNC
-initmytest(void)
+initos_affine(void)
 {
-    (void) Py_InitModule("mytest", MyMethods);
+    (void) Py_InitModule("os_affine", MyMethods);
 }
 
 int
@@ -152,5 +169,5 @@ main(int argc, char *argv[])
     Py_Initialize();
 
     /* Add a static module */
-    initmytest();
+    initos_affine();
 }

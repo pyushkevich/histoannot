@@ -1,3 +1,20 @@
+#
+#   PICSL Histology Annotator
+#   Copyright (C) 2019 Paul A. Yushkevich
+#
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
 import openslide
 from openslide import OpenSlide, OpenSlideError
 from openslide.deepzoom import DeepZoomGenerator
@@ -94,7 +111,7 @@ class DeepZoomSource(object):
 ###         self.dz_opts = dz_opts
 ###         self._lock = Lock()
 ###         self._cache = OrderedDict()
-### 
+###
 ###     def get(self, path):
 ###         with self._lock:
 ###             if path in self._cache:
@@ -102,7 +119,7 @@ class DeepZoomSource(object):
 ###                 slide = self._cache.pop(path)
 ###                 self._cache[path] = slide
 ###                 return slide
-### 
+###
 ###         osr = OpenSlide(path)
 ###         # slide = DeepZoomGenerator(osr, **self.dz_opts)
 ###         slide = DeepZoomGenerator(osr)
@@ -112,7 +129,7 @@ class DeepZoomSource(object):
 ###             slide.mpp = (float(mpp_x) + float(mpp_y)) / 2
 ###         except (KeyError, ValueError):
 ###             slide.mpp = 8
-### 
+###
 ###         with self._lock:
 ###             if path not in self._cache:
 ###                 if len(self._cache) == self.cache_size:

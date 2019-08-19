@@ -2,4 +2,4 @@
 *.pyc
 .*.sw?
 .DS_Store
-mytest_build
+libs/os_affine/build

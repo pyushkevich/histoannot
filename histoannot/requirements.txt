@@ -2,3 +2,5 @@ Flask >= 1.0.2
 Flask-Pure
 openslide-python
 jsonschema
+google-cloud-storage
+numpy

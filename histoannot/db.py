@@ -30,7 +30,7 @@ import time
 
 from PIL import Image
 
-from flaskr.slideref import SlideRef, my_histo_url_schema
+from histoannot.slideref import SlideRef, my_histo_url_schema
 
 def get_db():
     if 'db' not in g:
@@ -810,7 +810,7 @@ def samples_export_csv_command(task, output_file, header, metadata):
 
 
 # TODO: create a class for sample business logic
-from flaskr.slide import bp as slide_bp
+from histoannot.slide import bp as slide_bp
 
 # Get the filename where a sample should be saved
 def get_sample_patch_filename(sample_id):

@@ -26,7 +26,7 @@ import json
 import time
 import numpy as np
 
-from flaskr.slideref import SlideRef, my_histo_url_schema, get_gstor
+from histoannot.slideref import SlideRef, my_histo_url_schema, get_gstor
 
 bp = Blueprint('dzi', __name__)
 

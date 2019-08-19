@@ -23,7 +23,7 @@ from flask import (
 from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from flaskr.db import get_db
+from histoannot.db import get_db
 import os
 import click
 import hashlib

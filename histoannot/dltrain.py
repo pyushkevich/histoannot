@@ -19,8 +19,8 @@ from flask import (
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, abort
 )
 from werkzeug.exceptions import abort
-from flaskr.auth import login_required
-from flaskr.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta, create_sample_base, generate_sample_patch, get_sample_patch_filename
+from histoannot.auth import login_required
+from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta, create_sample_base, generate_sample_patch, get_sample_patch_filename
 
 
 import sqlite3

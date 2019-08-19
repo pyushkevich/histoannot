@@ -20,8 +20,8 @@ from flask import(
 )
 from werkzeug.exceptions import abort
 
-from flaskr.auth import login_required
-from flaskr.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
+from histoannot.auth import login_required
+from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
 from io import BytesIO
 
 import os

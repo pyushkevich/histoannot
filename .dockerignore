@@ -4,3 +4,4 @@
 .DS_Store
 libs/os_affine/build
 instance
+docker

@@ -40,23 +40,23 @@ ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 # Copy our module
 RUN mkdir /tk/node_dzi && chown user:user /tk/node_dzi
 WORKDIR /tk/node_dzi
-COPY --chown=user . /tk/node_dzi/flaskr
+COPY --chown=user . /tk/node_dzi/
 
 # Compile the python module
 USER user
-RUN mkdir -p flaskr/mytest_build \
- && cd flaskr/mytest_build \
+RUN mkdir -p libs/os_affine/build \
+ && cd libs/os_affine/build \
  && cmake \
     -G Ninja \
     -DITK_DIR:PATH=/tk/itk_build \
-    ../mytest \
+    ../src \
  && ninja \
- && ln -s libmytest.so mytest.so
+ && ln -s libos_affine.so os_affine.so
 
 # Install requirements
-RUN pip install -r flaskr/requirements.txt
+RUN pip install -r histoannot/requirements.txt
 
 # Env for Flask
-ENV FLASK_APP "flaskr:create_mini_app()"
-ENV PYTHONPATH $PYTHONPATH:/tk/node_dzi/flaskr/mytest_build
+ENV FLASK_APP "histoannot:create_mini_app()"
+ENV PYTHONPATH $PYTHONPATH:/tk/node_dzi/libs/os_affine/build
 ENV PATH $PATH:/home/user/.local/bin

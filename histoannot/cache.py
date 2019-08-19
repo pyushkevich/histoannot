@@ -22,7 +22,7 @@ from threading import Lock
 from collections import OrderedDict
 from PIL import Image
 
-import mytest as m
+import os_affine as m
 
 class AffineTransformedOpenSlide(object):
     def __init__(self, c_tile_cache, slide_path, affine_path):

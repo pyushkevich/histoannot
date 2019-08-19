@@ -21,6 +21,7 @@ from openslide.deepzoom import DeepZoomGenerator
 from threading import Lock
 from collections import OrderedDict
 from PIL import Image
+from flask import g
 
 import os_affine as m
 
@@ -103,6 +104,20 @@ class DeepZoomSource(object):
                     self._cache.popitem(last=False)
                 self._cache[hashstr] = slide
         return slide
+
+
+def get_slide_cache():
+
+    if 'cache' not in g:
+        config_map = {
+            'DEEPZOOM_TILE_SIZE': 254,
+            'DEEPZOOM_OVERLAP': 1,
+            'DEEPZOOM_LIMIT_BOUNDS': True
+        }
+        g.cache = DeepZoomSource(2000, 5, config_map)
+
+    return g.cache
+    
 
 
 ### class SlideCache(object):

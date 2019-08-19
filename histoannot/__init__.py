@@ -25,14 +25,29 @@ from . import slide
 from . import dltrain
 from . import dzi
 
-def create_app(test_config=None):
+# The default naming schema for slide objects
+_default_histo_url_schema = {
+    # The filename patterns
+    "pattern" : {
+        "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
+        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16.png",
+        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
+        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff"
+    },
+
+    # The maximum number of bytes that may be cached locally for 'raw' data
+    "cache_capacity" : 32 * 1024 ** 3
+}
+
+# Common configuration code
+def _create_app_common(test_config):
 
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True)
-    app.config.from_mapping(
-        SECRET_KEY='dev',
-        DATABASE=os.path.join(app.instance_path, 'histoannot.sqlite'),
-    )
+
+    # Handle configurtion
+    app.config['SECRET_KEY'] = 'dev'
+    app.config['HISTO_URL_SCHEMA'] = _default_histo_url_schema
 
     if test_config is None:
         # load the instance config, if it exists, when not testing
@@ -47,10 +62,20 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    # a simple page that says hello
-    @app.route('/hello')
-    def hello():
-        return 'Hello, World!'
+    # Dump config
+    if 'HISTO_URL_BASE' not in app.config:
+        raise ValueError('Missing HISTO_URL_BASE in config')
+
+    return app
+
+
+def create_app(test_config=None):
+
+    # Common configuration code
+    app = _create_app_common(test_config)
+
+    # Configure database
+    app.config['DATABASE'] = os.path.join(app.instance_path, 'histoannot.sqlite')
 
     # Database connection
     db.init_app(app)
@@ -63,18 +88,12 @@ def create_app(test_config=None):
 
     # Slide blueprint
     app.register_blueprint(slide.bp)
-    app.add_url_rule('/', endpoint='index')
 
     # DLTrain blueprint
     app.register_blueprint(dltrain.bp);
 
-    # Initialize the image cache
-    config_map = {
-        'DEEPZOOM_TILE_SIZE': 254,
-        'DEEPZOOM_OVERLAP': 1,
-        'DEEPZOOM_LIMIT_BOUNDS': True
-    }
-    slide.bp.cache = cache.DeepZoomSource(2000, 5, config_map)
+    # DZI blueprint
+    app.register_blueprint(dzi.bp)
 
     # Pure CSS
     app.config['PURECSS_RESPONSIVE_GRIDS'] = True
@@ -82,43 +101,22 @@ def create_app(test_config=None):
     app.config['PURECSS_USE_MINIFIED'] = True
     Pure(app)
 
+    app.add_url_rule('/', endpoint='index')
+
     return app
 
 
 def create_mini_app(test_config=None):
 
-    # create and configure the app
-    app = Flask(__name__, instance_relative_config=True)
-    app.config.from_mapping(
-        SECRET_KEY='dev',
-    )
-    if test_config is None:
-        # load the instance config, if it exists, when not testing
-        app.config.from_pyfile('config.py', silent=True)
-    else:
-        # load the test config if passed in
-        app.config.from_mapping(test_config)
-
-    # ensure the instance folder exists
-    try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
+    # Common configuration code
+    app = _create_app_common(test_config)
 
     # DZI blueprint
     app.register_blueprint(dzi.bp)
 
-    # a simple page that says hello
+    # a simple page that says hello. This is needed for load balancers
     @app.route('/')
     def hello():
         return 'HISTOANNOT DZI NODE'
-
-    # Initialize the image cache
-    config_map = {
-        'DEEPZOOM_TILE_SIZE': 254,
-        'DEEPZOOM_OVERLAP': 1,
-        'DEEPZOOM_LIMIT_BOUNDS': True
-    }
-    dzi.bp.cache = cache.DeepZoomSource(2000, 5, config_map)
 
     return app

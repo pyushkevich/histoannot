@@ -20,6 +20,7 @@ import os
 import re
 import csv
 import sys
+import traceback
 
 import click
 from flask import current_app, g
@@ -27,10 +28,12 @@ from flask.cli import with_appcontext
 
 import openslide
 import time
+import urllib2
 
 from PIL import Image
 
-from histoannot.slideref import SlideRef, my_histo_url_schema
+from histoannot.slideref import SlideRef, get_slideref_by_info
+from histoannot.cache import get_slide_cache
 
 def get_db():
     if 'db' not in g:
@@ -400,9 +403,6 @@ def refresh_slide_db(manifest, bucket, single_specimen = None):
     # Database cursor
     db = get_db()
 
-    # Handler for Google Cloud Storage
-    gstor = get_gstor()
-
     # Read from the manifest file
     with open(manifest) as f_manifest:
         for line in f_manifest:
@@ -447,10 +447,7 @@ def refresh_slide_db(manifest, bucket, single_specimen = None):
                         # coded anywhere in the manifests, so we dynamically check for multiple extensions
                         for slide_ext in ('svs', 'tif', 'tiff'):
 
-                            slide_info = {
-                                "specimen" : specimen, "block" : block, "slide_name": slide_name, "slide_ext" : slide_ext }
-
-                            sr = SlideRef(my_histo_url_schema, "gs://mtl_histology", gstor, slide_info)
+                            sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
 
                             if sr.resource_exists('raw', False):
 
@@ -496,11 +493,8 @@ def get_slide_ref(slice_id):
         return None
 
     # Create the sliceref
-    slide_info = {
-        "specimen" : row['specimen_name'], "block" : row['block_name'], 
-        "slide_name": row['slide_name'], "slide_ext" : row['slide_ext'] }
-
-    return SlideRef(my_histo_url_schema, "gs://mtl_histology", get_gstor(), slide_info)
+    return get_slideref_by_info(
+            row['specimen_name'], row['block_name'], row['slide_name'], row['slide_ext'])
 
 
 
@@ -809,9 +803,6 @@ def samples_export_csv_command(task, output_file, header, metadata):
             fout.write(','.join(vals) + '\n')
 
 
-# TODO: create a class for sample business logic
-from histoannot.slide import bp as slide_bp
-
 # Get the filename where a sample should be saved
 def get_sample_patch_filename(sample_id):
 
@@ -836,7 +827,8 @@ def generate_sample_patch(slide_id, sample_id, rect):
     tiff_file = sr.get_local_copy('raw')
 
     # Get the openslide object corresponding to it
-    osr = slide_bp.cache.get(tiff_file, None)._osr;
+    cache = get_slide_cache()
+    osr = cache.get(tiff_file, None)._osr;
 
     # Read the region centered on the box of size 512x512
     ctr_x = int((rect[0] + rect[2])/2.0 + 0.5)

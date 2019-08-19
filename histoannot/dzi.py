@@ -26,7 +26,8 @@ import json
 import time
 import numpy as np
 
-from histoannot.slideref import SlideRef, my_histo_url_schema, get_gstor
+from histoannot.slideref import SlideRef, get_slideref_by_info
+from histoannot.cache import get_slide_cache
 
 bp = Blueprint('dzi', __name__)
 
@@ -37,11 +38,7 @@ def dzi(mode, specimen, block, slide_name, slide_ext):
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    slide_info = {
-        "specimen" : specimen, "block" : block, 
-        "slide_name": slide_name, "slide_ext" : slide_ext }
-
-    sr = SlideRef(my_histo_url_schema, "gs://mtl_histology", get_gstor(), slide_info)
+    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
 
     tiff_file = sr.get_local_copy('raw', check_hash=True)
 
@@ -49,7 +46,7 @@ def dzi(mode, specimen, block, slide_name, slide_ext):
     affine_file = sr.get_local_copy('affine', check_hash=True) if mode=='affine' else None
     
     try:
-        slide = bp.cache.get(tiff_file, affine_file)
+        slide = get_slide_cache().get(tiff_file, affine_file)
         slide.filename = os.path.basename(tiff_file)
         resp = make_response(slide.get_dzi('jpeg'))
         resp.mimetype = 'application/xml'
@@ -101,15 +98,12 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    slide_info = {
-        "specimen" : specimen, "block" : block, 
-        "slide_name": slide_name, "slide_ext" : slide_ext }
-
-    sr = SlideRef(my_histo_url_schema, "gs://mtl_histology", get_gstor(), slide_info)
-
+    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy('raw')
     affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
-    tile = bp.cache.get(tiff_file, affine_file).get_tile(level, (col, row))
+
+    cache = get_slide_cache()
+    tile = cache.get(tiff_file, affine_file).get_tile(level, (col, row))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)

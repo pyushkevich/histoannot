@@ -3,10 +3,17 @@ RUN apt-get update -y
 RUN apt-get install -y python-pip python-dev build-essential
 RUN apt-get install -y wget cmake ninja-build
 
-# Create user to run as not root
-RUN useradd -ms /bin/bash user
-RUN mkdir /tk && chown user:user /tk
-USER user
+# Install NGINX
+RUN apt-get install -y software-properties-common \
+ && add-apt-repository ppa:nginx/stable \
+ && apt-get install -y nginx \
+ && rm /etc/nginx/sites-enabled/default
+
+# Install openslide
+RUN apt-get install -y libopenslide-dev python-openslide
+
+# Base directory 
+RUN mkdir /tk
 WORKDIR /tk
 
 # Install ITK
@@ -23,10 +30,6 @@ RUN mkdir itk_build && cd itk_build \
     /tk/InsightToolkit-4.12.2 \
  && ninja
 
-# Install openslide
-USER root
-RUN apt-get install -y libopenslide-dev python-openslide
-
 # Downloading gcloud package
 RUN wget -q https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz
 
@@ -38,17 +41,17 @@ RUN mkdir -p /usr/local/gcloud \
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
 # Copy our module
-RUN mkdir /tk/node_dzi && chown user:user /tk/node_dzi
+RUN mkdir /tk/node_dzi
 WORKDIR /tk/node_dzi
-COPY --chown=user . /tk/node_dzi/
+COPY . /tk/node_dzi/
 
 # Compile the python module
-USER user
 RUN mkdir -p libs/os_affine/build \
  && cd libs/os_affine/build \
  && cmake \
     -G Ninja \
     -DITK_DIR:PATH=/tk/itk_build \
+    -DCMAKE_BUILD_TYPE:STRING=Release \
     ../src \
  && ninja \
  && ln -s libos_affine.so os_affine.so
@@ -59,4 +62,16 @@ RUN pip install -r histoannot/requirements.txt
 # Env for Flask
 ENV FLASK_APP "histoannot:create_mini_app()"
 ENV PYTHONPATH $PYTHONPATH:/tk/node_dzi/libs/os_affine/build
-ENV PATH $PATH:/home/user/.local/bin
+ENV PATH $PATH:/root/.local/bin
+
+# Install nginx
+USER root
+
+# Install uwsgi
+RUN pip install uwsgi && mkdir -p /var/log/uwsgi  
+
+# Configure nginx
+RUN ln -s /tk/node_dzi/docker/dzi_node/histoannot_nginx.conf /etc/nginx/conf.d/
+
+# Copy the runme script
+RUN cp docker/dzi_node/runme.sh .

@@ -28,19 +28,6 @@ import os
 from flask import g, current_app
 
 
-# This is our current default mapping of resources to remote URLs and local files
-my_histo_url_schema = {
-    # The filename patterns
-    "pattern" : {
-        "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
-        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16.png",
-        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
-        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff"
-    },
-
-    # The maximum number of bytes that may be cached locally for 'raw' data
-    "cache_capacity" : 32 * 1024 ** 3
-}
 
 # This class handles remote URLs for Google cloud. The remote URLs must have format
 # "gs://bucket/path/to/blob.ext" 
@@ -255,3 +242,25 @@ class SlideRef:
         # Get the ratio
         return sz_local * 1.0 / sz_remote
 
+
+# Get a slide reference for slide specified by detailed information
+def get_slideref_by_info(specimen, block, slide_name, slide_ext):
+
+    # Get the current schema
+    schema=current_app.config['HISTO_URL_SCHEMA']
+
+    # Get the current URL base
+    url_base=current_app.config['HISTO_URL_BASE']
+
+    # Check the url_base
+    if url_base.startswith('gs://'):
+        handler = get_gstor()
+    else:
+        handler = None
+
+    slide_info = {
+        "specimen" : specimen, "block" : block, 
+        "slide_name": slide_name, "slide_ext" : slide_ext }
+
+    sr = SlideRef(schema, url_base, handler, slide_info)
+    return sr

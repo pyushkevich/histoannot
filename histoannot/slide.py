@@ -22,6 +22,7 @@ from werkzeug.exceptions import abort
 
 from histoannot.auth import login_required
 from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
+from histoannot.cache import get_slide_cache
 from io import BytesIO
 
 import os
@@ -266,7 +267,8 @@ def dzi(mode, id):
     affine_file = sr.get_local_copy('affine', check_hash=True) if mode=='affine' else None
     
     try:
-        slide = bp.cache.get(tiff_file, affine_file)
+        cache = get_slide_cache()
+        slide = cache.get(tiff_file, affine_file)
         slide.filename = os.path.basename(tiff_file)
         resp = make_response(slide.get_dzi('jpeg'))
         resp.mimetype = 'application/xml'
@@ -449,7 +451,8 @@ def tile(mode, id, level, col, row, format):
     sr = get_slide_ref(id)
     tiff_file = sr.get_local_copy('raw')
     affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
-    tile = bp.cache.get(tiff_file, affine_file).get_tile(level, (col, row))
+    cache = get_slide_cache()
+    tile = cache.get(tiff_file, affine_file).get_tile(level, (col, row))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)

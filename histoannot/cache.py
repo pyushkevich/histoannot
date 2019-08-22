@@ -50,10 +50,6 @@ class AffineTransformedOpenSlide(object):
             dims = m.get_level_dimensions(self._osr, i);
             self.level_dimensions += (dims, )
 
-        print("LEVEL DIMS")
-        print(self.level_downsamples)
-        print(self.level_dimensions)
-
         # TODO:
         self.properties = {}
 

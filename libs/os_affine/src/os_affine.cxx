@@ -130,8 +130,8 @@ os_affine_read_region(PyObject *self, PyObject *args)
   void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   unsigned char *ba_bytes = (unsigned char *) PyByteArray_AsString(byte_array);
 
-  printf("Reading from level %d location (%ld, %ld) a region of size (%ld, %ld)\n", 
-    level, loc_x, loc_y, sz_x, sz_y);
+  // printf("Reading from level %d location (%ld, %ld) a region of size (%ld, %ld)\n", 
+  //  level, loc_x, loc_y, sz_x, sz_y);
 
   load_region(osw, level, loc_x, loc_y, sz_x, sz_y, A, (char *)ba_bytes);
 

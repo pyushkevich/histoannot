@@ -99,6 +99,7 @@ button.disabled, button.disabled:hover {
 <!-- A dialog showing slide loading progress -->
 <div id="progress_dialog_container" title="Downloading Slide from Cloud Storage">
     Download progress: <div id="progress_bar"></div>
+    <div id="progress_comment" style="font-size:80%; color:red;" ></div>
 </div>
 
 {% if seg_mode == 'annot' %}
@@ -249,6 +250,18 @@ $(document).ready(function() {
   // Paper default settings
   paper.settings.handleSize = 10;
 
+  // Add the tiled image to the viewer and when successful, initialize the overlay
+  var init_viewer = function() {
+    viewer.addTiledImage({
+      tileSource: "{{ dzi_url + url_for('dzi.dzi', mode=affine_mode,  specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext']) }}",
+      x: 0,
+      y: 0,
+      success: init_paperjs,
+      error: function() { window.alert("Slide failed to load"); }
+    });
+  }
+
+
   // A dialog to display slide cache progress
   var progress_dialog = $("#progress_dialog_container").dialog({
     autoOpen: false,
@@ -264,36 +277,47 @@ $(document).ready(function() {
   });
 
   // Get the progress of loading the current slide
-  var check_cache_progress = function() {
-    console.log('Checking progress')
+  var check_preload_progress = function(job_id) {
+    var myurl = 
     $.ajax({
-      url: "{{ url_for('slide.get_cache_progress', id=slide_id, resource='raw') }}",
+      url: "{{ dzi_url + url_for('dzi.dzi_job_status', job_id=999999) }}".replace("999999",job_id),
       success: function(response_text) {
+        console.log(response_text);
         data = JSON.parse(response_text);
-        if(data.progress < 1.0) {
+        if(data.status == 'queued' || data.status == 'started') {
           progress_dialog.dialog("open");
-          progress_bar.progressbar("value", Math.floor(data.progress * 100));
-          console.log('p = ', data.progress)
-          setTimeout(check_cache_progress, 500);
+          if(data.progress) {
+            progress_bar.progressbar("value", Math.floor(data.progress * 100));
+            $("#progress_comment").text("")
+          }
+          else {
+            $("#progress_comment").text("Waiting for other downloads to complete")
+          }
+          setTimeout(function() { check_preload_progress(job_id) }, 500);
         }
         else {
           progress_dialog.dialog("close");
+          init_viewer();
         }
       }
     })
   }
 
-  // Request a progress check
-  setTimeout(check_cache_progress(), 500);
-
-  // Add the tiled image to the viewer and when successful, initialize the overlay
-  viewer.addTiledImage({
-    tileSource: "{{ url_for('slide.dzi', mode=affine_mode, id=slide_id) }}",
-    x: 0,
-    y: 0,
-    success: init_paperjs,
+  // Prefetch the slide
+  $.ajax({
+    url: "{{ dzi_url + url_for('dzi.dzi_preload', specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext']) }}",
+    success: function(response_text) {
+      data = JSON.parse(response_text);
+      if(data.status == 'finished') {
+        init_viewer();
+      }
+      else {
+        job_id = data.job_id;
+        check_preload_progress(job_id)
+      }
+    },
     error: function() { window.alert("Slide failed to load"); }
-  });
+  })
 
   // Current interaction mode
   var curr_mode = 'NAV'

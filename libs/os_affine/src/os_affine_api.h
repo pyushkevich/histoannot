@@ -130,7 +130,7 @@ public:
   void FindTile(int level, double ds, double ts, double x, double y, const Mat &A,
     TileCache::InterpType **interp, long *tx, long *ty, float *cix, int *nskip)
     {
-    double t_start_method = 0.0;
+    double t_start_method = clock();
 
     // Apply affine transform to the coordinates
     double Sx = A(0,0) * x + A(0,1) * y + A(0, 2);
@@ -208,7 +208,7 @@ public:
 
         // Remove from list
         tile_cache->tiles.erase(tile_cache->tiles.begin() + oldest_index);
-        printf("Erasing tile %d (%d %d)\n", oldest_tr.level, oldest_tr.ti_x, oldest_tr.ti_y);
+        // printf("Erasing tile %d (%d %d)\n", oldest_tr.level, oldest_tr.ti_x, oldest_tr.ti_y);
         }
 
       // Now that there is room for a new tile, we can load it
@@ -224,7 +224,7 @@ public:
       double t_start_openslide = clock();
       openslide_read_region(osr, (uint32_t *) q, *tx, *ty, level, actual_size, actual_size);
       t_oslide += clock() - t_start_openslide;
-      printf("Loading tile %d (%ld %ld) (%ld %ld)\n", level, *tx, *ty, actual_size, actual_size);
+      // printf("Loading tile %d (%ld %ld) (%ld %ld)\n", level, *tx, *ty, actual_size, actual_size);
 
       // Update the counter
       tile_info.TimeStamp = ++tile_cache->counter;
@@ -314,8 +314,10 @@ public:
       }
 
     double t_total = (clock() - t_start) / CLOCKS_PER_SEC;
-    printf("TIME ELAPSED %f IN OPENSLIDE %f  FindTile Calls %d Time %f \n", t_total, t_oslide / CLOCKS_PER_SEC, n_find_calls, t_findtile / CLOCKS_PER_SEC);
-
+    printf("TIMING: Total = %06d ms,  OpenSlide = %06d ms,  FindTile = %06d ms\n",
+        (int)(0.5 + t_total * 1000), 
+        (int)(0.5 + t_oslide * 1000 / CLOCKS_PER_SEC),
+        (int)(0.5 + t_findtile * 1000 / CLOCKS_PER_SEC));
     }
 
 

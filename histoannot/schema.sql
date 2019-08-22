@@ -70,3 +70,17 @@ CREATE TABLE annot (
   FOREIGN KEY (meta_id) REFERENCES edit_meta (id),
   PRIMARY KEY (slide_id,task_id)
 );
+
+DROP TABLE IF EXISTS dzi_node;
+CREATE TABLE dzi_node (
+  url TEXT PRIMARY KEY,
+  t_ping INTEGER,
+  cpu_percent INTEGER
+);
+
+DROP TABLE IF EXISTS slide_dzi_node;
+CREATE TABLE slide_dzi_node (
+  slide_id INTEGER PRIMARY KEY,
+  url TEXT,
+  FOREIGN KEY (slide_id) REFERENCES slide (id)
+);

@@ -4,3 +4,5 @@ openslide-python
 jsonschema
 google-cloud-storage
 numpy
+rq
+psutil

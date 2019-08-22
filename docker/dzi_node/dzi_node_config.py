@@ -1,0 +1,7 @@
+import os
+
+# Get the base
+HISTOANNOT_URL_BASE=os.environ.get("HISTOANNOT_URL_BASE")
+SECRET_KEY=os.environ.get("HISTOANNOT_SECRET_KEY", "dev")
+HISTOANNOT_SERVER_MODE=os.environ.get("HISTOANNOT_SERVER_MODE", "dzi_node")
+HISTOANNOT_MASTER_URL=os.environ.get("HISTOANNOT_MASTER_URL")

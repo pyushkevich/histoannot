@@ -29,6 +29,7 @@ import os
 import json
 import time
 import numpy as np
+import urllib2
 
 bp = Blueprint('slide', __name__)
 
@@ -220,16 +221,84 @@ def get_slide_info(task_id, slide_id):
     return (slide_info, prev_slide, next_slide)
 
 
+# Check if a node is alive
+def check_dzi_node_alive(url):
+
+    db=get_db()
+
+    try:
+        # Try to open the URL
+        resp = urllib2.urlopen(url, timeout=5).read()
+
+        # Check against expected string
+        if resp == 'HISTOANNOT DZI NODE':
+            return True
+
+    except Exception as e:
+        print(e)
+
+    # If we are here, the check failed.
+    return False
+
+
 
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<affine_mode>', methods=('GET', 'POST'))
 @login_required
 def slide_view(task_id, slide_id, affine_mode):
+
     # Get the current task data
     task = get_task_data(task_id)
 
     # Get the next/previous slides for this task
     (slide_info, prev_slide, next_slide) = get_slide_info(task_id, slide_id)
+
+    # Are we delegating DZI service to separate nodes?
+    delegate=current_app.config['HISTOANNOT_DELEGATE_DZI']
+    del_url = None
+    if delegate:
+
+        db=get_db()
+
+        # Check if the slide is already being delegated
+        t_test = time.time() - 120
+        rc = db.execute(
+                "SELECT DN.* FROM slide_dzi_node SDN "
+                "LEFT JOIN dzi_node DN on SDN.url = DN.url "
+                "WHERE SDN.slide_id=? AND DN.t_ping > ?", (slide_id,t_test)).fetchone()
+
+        # Check if delegation node is present
+        del_url = rc['url'] if rc is not None else None
+
+        # Check if the delegation node is alive
+        if del_url is None or not check_dzi_node_alive(del_url):
+
+            # Need to assign a new url to the slide
+            rc_all = db.execute(
+                    "SELECT * FROM dzi_node WHERE t_ping > ? "
+                    "ORDER BY RANDOM()", (t_test,)).fetchall()
+
+            for row in rc_all:
+                if check_dzi_node_alive(row['url']):
+                    del_url = row['url']
+                    break
+
+        # If we found a delegate, store it with the node
+        if del_url is not None:
+            print('DELEGATING slide %d to %s' % (slide_id, del_url))
+            rc_upd = db.execute(
+                    "UPDATE slide_dzi_node SET url=? WHERE slide_id=?",
+                    (del_url, slide_id))
+            if rc_upd.rowcount != 1:
+                db.execute(
+                        "INSERT INTO slide_dzi_node(url,slide_id) VALUES (?,?)",
+                        (del_url, slide_id))
+        else:
+            print('NOT DELEGATING slide %d', (slide_id, del_url))
+            db.execute("DELETE FROM slide_dzi_node WHERE slide_id=?", (slide_id,));
+
+        db.commit()
+
 
     # Build a dictionary to call
     context = {
@@ -240,54 +309,16 @@ def slide_view(task_id, slide_id, affine_mode):
             'affine_mode':affine_mode, 
             'seg_mode':task['mode'], 
             'task_id': task_id, 
+            'dzi_url': del_url if del_url is not None else '',
             'task':task }
 
     # Add optional fields to context
-    print(json.dumps(request.form, indent=4))
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
         if field in request.form:
             context[field] = request.form[field]
 
     # Render the template
     return render_template('slide/slide_view.html', **context)
-
-
-# Get the DZI for a slide
-@bp.route('/slide/<mode>/<int:id>.dzi', methods=('GET', 'POST'))
-@login_required
-def dzi(mode, id):
-    format = 'jpeg'
-
-    # Get the raw SVS/tiff file for the slide (the resource should exist, 
-    # or else we will spend a minute here waiting with no response to user)
-    sr = get_slide_ref(id)
-    tiff_file = sr.get_local_copy('raw', check_hash=True)
-
-    # Get an affine transform if that is an option
-    affine_file = sr.get_local_copy('affine', check_hash=True) if mode=='affine' else None
-    
-    try:
-        cache = get_slide_cache()
-        slide = cache.get(tiff_file, affine_file)
-        slide.filename = os.path.basename(tiff_file)
-        resp = make_response(slide.get_dzi('jpeg'))
-        resp.mimetype = 'application/xml'
-        return resp
-    except (KeyError, ValueError):
-        # Unknown slug
-        abort(404)
-
-# What percentage of the slide is available locally (in the cache)
-@bp.route('/slide/api/<int:id>/cache_progress', methods=('GET', ))
-@login_required
-def get_cache_progress(id):
-
-    sr = get_slide_ref(id)
-    progress = sr.get_download_progress('raw');
-    print("Progress: ", progress)
-    return json.dumps({'progress':progress}), 200, {'ContentType':'application/json'} 
-
-
 
 
 # Get an annotation filename for slide
@@ -436,30 +467,6 @@ class PILBytesIO(BytesIO):
         '''Classic PIL doesn't understand io.UnsupportedOperation.'''
         raise AttributeError('Not supported')
 
-# Get the tiles for a slide
-@bp.route('/slide/<mode>/<int:id>_files/<int:level>/<int:col>_<int:row>.<format>',  methods=('GET', 'POST'))
-@login_required
-def tile(mode, id, level, col, row, format):
-    format = format.lower()
-    if format != 'jpeg' and format != 'png':
-        # Not supported by Deep Zoom
-        return 'bad format'
-        abort(404)
-
-    # Get the raw SVS/tiff file for the slide (the resource should exist, 
-    # or else we will spend a minute here waiting with no response to user)
-    sr = get_slide_ref(id)
-    tiff_file = sr.get_local_copy('raw')
-    affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
-    cache = get_slide_cache()
-    tile = cache.get(tiff_file, affine_file).get_tile(level, (col, row))
-
-    buf = PILBytesIO()
-    tile.save(buf, format, quality=75)
-    resp = make_response(buf.getvalue())
-    resp.mimetype = 'image/%s' % format
-    return resp
-
 
 # Serve up thumbnails
 @bp.route('/slide/<int:id>/thumb', methods=('GET',))
@@ -467,3 +474,6 @@ def thumb(id):
     thumb_dir = os.path.join(current_app.instance_path, 'thumb')
     thumb_fn = "thumb%08d.png" % (id,)
     return send_from_directory(thumb_dir, thumb_fn, as_attachment=False)
+
+
+

@@ -25,11 +25,77 @@ import os
 import json
 import time
 import numpy as np
+import urllib
+import urllib2
+import psutil
+
+from rq import Queue, Connection, Worker
+from rq.job import Job, JobStatus
+from redis import Redis
 
 from histoannot.slideref import SlideRef, get_slideref_by_info
 from histoannot.cache import get_slide_cache
 
 bp = Blueprint('dzi', __name__)
+
+import click
+import numpy
+from flask.cli import with_appcontext
+
+
+# The function that is enqueued in RQ
+def do_preload_file(specimen, block, slide_name, slide_ext):
+
+    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    print('Fetching %s %s %s.%s' % (specimen, block, slide_name, slide_ext))
+    tiff_file = sr.get_local_copy('raw', check_hash=True)
+    print('Fetched to %s' % tiff_file)
+    return tiff_file
+
+
+# Prepare the DZI for a slide. Must be called first
+@bp.route('/dzi/preload/<specimen>/<block>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+def dzi_preload(specimen, block, slide_name, slide_ext):
+
+    # Check if the file exists locally. If so, there is no need to queue a worker
+    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    tiff_file = sr.get_local_copy('raw', check_hash=True, dry_run=True)
+    if tiff_file is not None:
+        return json.dumps({ "status" : JobStatus.FINISHED })
+
+    # Get a redis queue
+    q = Queue("preload", connection=Redis())
+    job = q.enqueue(do_preload_file, specimen, block, slide_name, slide_ext,
+            job_timeout="120s", result_ttl="60s")
+
+    # Stick the properties into the job
+    job.meta['args']=(specimen, block, slide_name, slide_ext, 'raw')
+    job.save_meta()
+
+    # Return the job id
+    return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
+
+
+# Check the status of a job
+@bp.route('/dzi/job/<job_id>/status', methods=('GET', 'POST'))
+def dzi_job_status(job_id):
+    q = Queue("preload", connection=Redis())
+    j = q.fetch_job(job_id)
+
+    if j is None:
+        return 'bad job'
+        abort(404)
+
+    res = { 'status' : j.get_status() }
+
+    if j.get_status() == JobStatus.STARTED:
+        (specimen, block, slide_name, slide_ext, resource) = j.meta['args']
+        sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+        res['progress'] = sr.get_download_progress(resource)
+
+    return json.dumps(res)
+
+
 
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<specimen>/<block>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
@@ -65,7 +131,6 @@ def get_cache_progress(id):
     return json.dumps({'progress':progress}), 200, {'ContentType':'application/json'} 
 
 
-import numpy
 
 # Get the affine matrix for a slide
 def get_affine_matrix(slide_id, mode):
@@ -103,10 +168,61 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
     affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
 
     cache = get_slide_cache()
+    t0 = time.time()
     tile = cache.get(tiff_file, affine_file).get_tile(level, (col, row))
+    t1 = time.time()
+    print('Elapsed: %f' % (t1-t0,))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
     return resp
+
+# Command to run preload worker
+@click.command('preload-worker-run')
+@with_appcontext
+def run_preload_worker_cmd():
+    with Connection():
+        w = Worker("preload")
+        w.work()
+
+# Command to ping master
+@click.command('dzi-node-ping-master')
+@with_appcontext
+def delegate_dzi_ping_command():
+    """Ping the master continuously to let it know we exist"""
+
+    if current_app.config['HISTOANNOT_SERVER_MODE'] != 'dzi_node':
+        print('Ping process terminating, not in dzi_mode')
+        return 0
+
+    if 'HISTOANNOT_MASTER_URL' not in current_app.config:
+        print('Missing HISTOANNOT_MASTER_URL in config')
+        return 2
+
+    # Get the external IP address (GCP-specific)
+    opener = urllib2.build_opener()
+    opener.addheaders = [('Metadata-Flavor','Google')]
+    external_ip = opener.open(
+            'http://metadata/computeMetadata/v1/instance'
+            '/network-interfaces/0/access-configs/0/external-ip').read()
+
+    # Store our URL (TODO: read port from config)
+    node_url = 'http://%s:5000' % (external_ip,)
+    master_url = current_app.config['HISTOANNOT_MASTER_URL'] + '/delegate/ping'
+
+    while True:
+        try:
+            cpu_percent=psutil.cpu_percent()
+            urllib2.urlopen(master_url, 
+                    urllib.urlencode([('url', node_url), ('cpu_percent',str(cpu_percent))]), timeout=10)
+        except:
+            pass
+        time.sleep(30)
+
+
+# CLI stuff
+def init_app(app):
+    app.cli.add_command(run_preload_worker_cmd)
+    app.cli.add_command(delegate_dzi_ping_command)

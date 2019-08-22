@@ -152,7 +152,7 @@ class SlideRef:
             return self._url_handler.exists(f)
 
     # Get a local copy of the resource, copying it if necessary
-    def get_local_copy(self, resource, check_hash=False):
+    def get_local_copy(self, resource, check_hash=False, dry_run=False):
 
         # Get the local URL
         f_local = self.get_resource_url(resource, True)
@@ -190,6 +190,10 @@ class SlideRef:
                         return f_local
                     else:
                         print('File %s HAS changed relative to remote %s' % (f_local, f_remote))
+
+        # If dry-run, don't actually download the thing
+        if dry_run:
+            return None
 
         # Clean up the cache
         if resource == 'raw':
@@ -247,10 +251,10 @@ class SlideRef:
 def get_slideref_by_info(specimen, block, slide_name, slide_ext):
 
     # Get the current schema
-    schema=current_app.config['HISTO_URL_SCHEMA']
+    schema=current_app.config['HISTOANNOT_URL_SCHEMA']
 
     # Get the current URL base
-    url_base=current_app.config['HISTO_URL_BASE']
+    url_base=current_app.config['HISTOANNOT_URL_BASE']
 
     # Check the url_base
     if url_base.startswith('gs://'):

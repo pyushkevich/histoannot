@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import os
-from flask import Flask
+from flask import Flask, request
 from flask_pure import Pure
 from . import cache
 from . import db
@@ -24,6 +24,7 @@ from . import auth
 from . import slide
 from . import dltrain
 from . import dzi
+from . import delegate
 
 # The default naming schema for slide objects
 _default_histo_url_schema = {
@@ -39,15 +40,26 @@ _default_histo_url_schema = {
     "cache_capacity" : 32 * 1024 ** 3
 }
 
+# Needed for AJAX redirects to DZI nodes
+def _add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    if request.method == 'OPTIONS':
+        response.headers['Access-Control-Allow-Methods'] = 'DELETE, GET, POST, PUT'
+        headers = request.headers.get('Access-Control-Request-Headers')
+        if headers:
+            response.headers['Access-Control-Allow-Headers'] = headers
+    return response
+
 # Common configuration code
-def _create_app_common(test_config):
+def create_app(test_config = None):
 
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True)
 
     # Handle configurtion
     app.config['SECRET_KEY'] = 'dev'
-    app.config['HISTO_URL_SCHEMA'] = _default_histo_url_schema
+    app.config['HISTOANNOT_URL_SCHEMA'] = _default_histo_url_schema
+    app.config['HISTOANNOT_DELEGATE_DZI'] = False
 
     if test_config is None:
         # load the instance config, if it exists, when not testing
@@ -63,60 +75,59 @@ def _create_app_common(test_config):
         pass
 
     # Dump config
-    if 'HISTO_URL_BASE' not in app.config:
-        raise ValueError('Missing HISTO_URL_BASE in config')
+    if 'HISTOANNOT_URL_BASE' not in app.config:
+        raise ValueError('Missing HISTOANNOT_URL_BASE in config')
 
-    return app
-
-
-def create_app(test_config=None):
-
-    # Common configuration code
-    app = _create_app_common(test_config)
-
-    # Configure database
-    app.config['DATABASE'] = os.path.join(app.instance_path, 'histoannot.sqlite')
-
-    # Database connection
-    db.init_app(app)
-
-    # Auth commands
-    auth.init_app(app)
-
-    # Auth blueprint
-    app.register_blueprint(auth.bp)
-
-    # Slide blueprint
-    app.register_blueprint(slide.bp)
-
-    # DLTrain blueprint
-    app.register_blueprint(dltrain.bp);
-
-    # DZI blueprint
+    # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)
+    dzi.init_app(app)
 
-    # Pure CSS
-    app.config['PURECSS_RESPONSIVE_GRIDS'] = True
-    app.config['PURECSS_USE_CDN'] = True
-    app.config['PURECSS_USE_MINIFIED'] = True
-    Pure(app)
+    # Server mode determines what we do next
+    if app.config['HISTOANNOT_SERVER_MODE'] == "master":
 
-    app.add_url_rule('/', endpoint='index')
+        # Configure database
+        app.config['DATABASE'] = os.path.join(app.instance_path, 'histoannot.sqlite')
+
+        # Database connection
+        db.init_app(app)
+
+        # Auth commands
+        auth.init_app(app)
+
+        # Auth blueprint
+        app.register_blueprint(auth.bp)
+
+        # Slide blueprint
+        app.register_blueprint(slide.bp)
+
+	# Delegation blueprint
+	app.register_blueprint(delegate.bp)
+	delegate.init_app(app)
+
+        # DLTrain blueprint
+        app.register_blueprint(dltrain.bp);
+        # Pure CSS
+        app.config['PURECSS_RESPONSIVE_GRIDS'] = True
+        app.config['PURECSS_USE_CDN'] = True
+        app.config['PURECSS_USE_MINIFIED'] = True
+        Pure(app)
+
+        app.add_url_rule('/', endpoint='index')
+
+    # Supporting 'dzi' node (serves images/tiles but no database)
+    elif app.config['HISTOANNOT_SERVER_MODE'] == "dzi_node":
+
+        # a simple page that says hello. This is needed for load balancers
+        @app.route('/')
+        def hello():
+            return 'HISTOANNOT DZI NODE'
+
+        # Allow CORS headers
+	app.after_request(_add_cors_headers)
+
+    else:
+        raise ValueError('Missing or unknown HISTOANNOT_SERVER_MODE')
+
 
     return app
 
-
-def create_mini_app(test_config=None):
-
-    # Common configuration code
-    app = _create_app_common(test_config)
-
-    # DZI blueprint
-    app.register_blueprint(dzi.bp)
-
-    # a simple page that says hello. This is needed for load balancers
-    @app.route('/')
-    def hello():
-        return 'HISTOANNOT DZI NODE'
-
-    return app

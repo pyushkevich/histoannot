@@ -26,7 +26,8 @@ from flask import g
 import os_affine as m
 
 class AffineTransformedOpenSlide(object):
-    def __init__(self, c_tile_cache, slide_path, affine_path):
+
+    def __init__(self, slide_path, affine_path):
 
         # Read the affine matrix into a tuple
         self._affine = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -34,8 +35,8 @@ class AffineTransformedOpenSlide(object):
             with open(affine_path) as f:
                 self._affine = tuple(tuple(map(float, i.split(' '))) for i in f)
 
-        # TODO: get this number
-        self._osr = m.init_osr(c_tile_cache, slide_path, (0,0))
+        # Initialize the C code
+        self._osr = m.init_osr(slide_path, (0,0))
         n_levels = m.get_nlevels(self._osr)
 
         # If n_levels is 1 throw up
@@ -64,6 +65,8 @@ class AffineTransformedOpenSlide(object):
         m.read_region(self._osr, location, level, size, self._affine, b)
         img=Image.frombuffer('RGBA',size,str(b),'raw','BGRA',0,1)
         return img
+
+"""
 
 class DeepZoomSource(object):
     def __init__(self, max_tiles, max_dzi, dz_opts):
@@ -120,7 +123,7 @@ def get_slide_cache():
 
     return g.cache
     
-
+"""
 
 ### class SlideCache(object):
 ###     def __init__(self, cache_size, dz_opts):

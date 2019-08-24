@@ -18,58 +18,28 @@
 #include <Python.h>
 
 // C++ API
-extern void *make_tile_cache(unsigned int max_tiles);
-extern void *load_openslide(void *tile_cache, const char *path, long canvas_x, long canvas_y);
-extern void release_cache(void *cache);
+extern void *load_openslide(const char *path, int canvas_x, int canvas_y);
 extern void release_openslide(void *osw);
 extern int get_openslide_levels(void *osw);
-extern void get_openslide_level_dimensions(void *osw, int level, long *w, long *h); 
-extern void *load_region(void *osr, int level, long x, long y, long w, long h, double A[3][3], char *data);
+extern void get_openslide_level_dimensions(void *osw, int level, int *w, int *h); 
+extern void *load_region(void *osr, int level, int x, int y, int w, int h, double A[3][3], char *data);
 extern double get_openslide_level_downsample(void *osw, int level);
 extern int get_openslide_best_level_for_downsample(void *osw, double downsample);
-
-static PyObject *
-os_affine_init_cache(PyObject *self, PyObject *args)
-{
-    int max_tiles;
-    if (!PyArg_ParseTuple(args, "i", &max_tiles))
-        return NULL;
-
-    void *cache = make_tile_cache(max_tiles);
-    PyObject *capsule = PyCapsule_New((void *)cache, "os_affine.cache", NULL);
-    return Py_BuildValue("O", capsule);
-}
 
 static PyObject *
 os_affine_init_osr(PyObject *self, PyObject *args)
 {
     const char *path;
-    long canvas_x, canvas_y;
+    int canvas_x, canvas_y;
 
-    PyObject *cache_capsule;
-    if (!PyArg_ParseTuple(args, "Os(ll)", &cache_capsule, &path, &canvas_x, &canvas_y))
+    if (!PyArg_ParseTuple(args, "s(ii)", &path, &canvas_x, &canvas_y))
         return NULL;
 
-    void *tile_cache = PyCapsule_GetPointer(cache_capsule, "os_affine.cache");
-    void *osw = load_openslide(tile_cache, path, canvas_x, canvas_y);
+    void *osw = load_openslide(path, canvas_x, canvas_y);
 
     PyObject *capsule = PyCapsule_New(osw, "os_affine.osw", NULL);
     return Py_BuildValue("O", capsule);
 }
-
-static PyObject *
-os_affine_release_cache(PyObject *self, PyObject *args)
-{
-  PyObject *capsule;
-  if (!PyArg_ParseTuple(args, "O", &capsule))
-      return NULL;
-
-  void *cache = PyCapsule_GetPointer(capsule, "os_affine.cache");
-  release_cache(cache);
-
-  return Py_None;
-}
-
 
 static PyObject *
 os_affine_release_osr(PyObject *self, PyObject *args)
@@ -112,13 +82,13 @@ os_affine_get_level_dimensions(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   int level;
-  long w = 0l, h = 0l;
+  int w = 0, h = 0;
   if (!PyArg_ParseTuple(args, "Oi", &capsule, &level))
       return NULL;
 
   void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
   get_openslide_level_dimensions(osw, level, &w, &h);
-  return Py_BuildValue("(ll)", w, h);
+  return Py_BuildValue("(ii)", w, h);
 }
 
 static PyObject *
@@ -138,10 +108,10 @@ os_affine_read_region(PyObject *self, PyObject *args)
 {
   PyObject *capsule;
   PyObject *byte_array;
-  long loc_x, loc_y, sz_x, sz_y;
+  int loc_x, loc_y, sz_x, sz_y;
   int level;
   double A[3][3];
-  if (!PyArg_ParseTuple(args, "O(ll)i(ll)((ddd)(ddd)(ddd))O", 
+  if (!PyArg_ParseTuple(args, "O(ii)i(ii)((ddd)(ddd)(ddd))O", 
       &capsule, &loc_x, &loc_y, &level, &sz_x, &sz_y, 
       &A[0][0], &A[0][1], &A[0][2],
       &A[1][0], &A[1][1], &A[1][2],
@@ -167,13 +137,9 @@ os_affine_read_region(PyObject *self, PyObject *args)
   return Py_None;
 }
 
-
-
 // Methods table
 static PyMethodDef MyMethods[] = {
-    {"init_cache",  os_affine_init_cache, METH_VARARGS, "Initialize a tile cache"},
     {"init_osr",  os_affine_init_osr, METH_VARARGS, "Load an openslide object"},
-    {"release_cache",  os_affine_release_cache, METH_VARARGS, "Deallocate tile cache"},
     {"release_osr",  os_affine_release_osr, METH_VARARGS, "Deallocate openslide object"},
     {"get_nlevels", os_affine_get_nlevels, METH_VARARGS, "Get number of levels available"},
     {"get_downsample_level", os_affine_get_downsample_level, METH_VARARGS, "Get downsample for a level"},

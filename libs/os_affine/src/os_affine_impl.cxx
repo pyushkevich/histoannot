@@ -18,29 +18,14 @@
 #include "os_affine_api.h"
 
 
-void *make_tile_cache(unsigned int max_tiles) 
+void *load_openslide(const char *path, int canvas_x, int canvas_y)
 {
-  TileCache *cache = new TileCache(max_tiles);
-  printf("### new TileCache ###\n");
-  return cache;
-}
-
-void *load_openslide(void *tile_cache, const char *path, long canvas_x, long canvas_y)
-{
-  OpenSlideWrapper *osw = new OpenSlideWrapper((TileCache *)tile_cache, path, canvas_x, canvas_y);
-  printf("### new OpenSlideWrapper ###\n");
+  OpenSlideWrapper *osw = new OpenSlideWrapper(path, canvas_x, canvas_y);
   return osw;
-}
-
-void release_cache(void *cache)
-{
-  printf("### delete TileCache ###\n");
-  delete (TileCache *) cache;
 }
 
 void release_openslide(void *osw)
 {
-  printf("### delete OpenSlideWrapper ###\n");
   delete (OpenSlideWrapper *) osw;
 }
 
@@ -54,7 +39,7 @@ double get_openslide_level_downsample(void *osw, int level)
   return static_cast<OpenSlideWrapper *>(osw)->GetLevelDownsample(level);
 }
 
-void get_openslide_level_dimensions(void *osw, int level, long *w, long *h) 
+void get_openslide_level_dimensions(void *osw, int level, int *w, int *h) 
 {
   static_cast<OpenSlideWrapper *>(osw)->GetLevelDimensions(level, w, h);
 }
@@ -64,7 +49,7 @@ int get_openslide_best_level_for_downsample(void *osw, double downsample)
   return static_cast<OpenSlideWrapper *>(osw)->GetBestLevelForDownsample(downsample);
 }
 
-void *load_region(void *osr, int level, long x, long y, long w, long h, double A[3][3], char *data)
+void *load_region(void *osr, int level, int x, int y, int w, int h, double A[3][3], char *data)
 {
   vnl_matrix_fixed<double, 3, 3> Amat;
   for(unsigned int a = 0; a < 3; a++)

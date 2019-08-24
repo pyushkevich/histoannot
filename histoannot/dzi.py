@@ -112,9 +112,10 @@ def dzi(mode, specimen, block, slide_name, slide_ext):
     affine_file = sr.get_local_copy('affine', check_hash=True) if mode=='affine' else None
     
     try:
-        slide = get_slide_cache().get(tiff_file, affine_file)
-        slide.filename = os.path.basename(tiff_file)
-        resp = make_response(slide.get_dzi('jpeg'))
+        osa = AffineTransformedOpenSlide(tiff_file, affine_file)
+        dz = DeepZoomGenerator(osa)
+        dz.filename = os.path.basename(tiff_file)
+        resp = make_response(dz.get_dzi('jpeg'))
         resp.mimetype = 'application/xml'
         return resp
     except (KeyError, ValueError):
@@ -168,9 +169,10 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
     tiff_file = sr.get_local_copy('raw')
     affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
 
-    cache = get_slide_cache()
     t0 = time.time()
-    tile = cache.get(tiff_file, affine_file).get_tile(level, (col, row))
+    osa = AffineTransformedOpenSlide(tiff_file, affine_file)
+    dz = DeepZoomGenerator(osa)
+    tile = dz.get_tile(level, (col, row))
     t1 = time.time()
     print('Elapsed: %f' % (t1-t0,))
 
@@ -197,11 +199,8 @@ def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy('raw')
     
-    # Get the openslide object corresponding to it
-    cache = get_slide_cache()
-    osr = cache.get(tiff_file, None)._osr;
-
     # Read the region centered on the box of size 512x512
+    os = OpenSlide(tiff_file)
     tile = osr.read_region((x, y), 0, (512, 512));
 
     # Convert to PNG

@@ -33,8 +33,10 @@ from rq import Queue, Connection, Worker
 from rq.job import Job, JobStatus
 from redis import Redis
 
+from openslide import OpenSlide, OpenSlideError
+from openslide.deepzoom import DeepZoomGenerator
 from histoannot.slideref import SlideRef, get_slideref_by_info
-from histoannot.cache import get_slide_cache
+from histoannot.cache import AffineTransformedOpenSlide
 
 bp = Blueprint('dzi', __name__)
 

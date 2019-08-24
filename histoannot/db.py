@@ -33,7 +33,6 @@ import urllib2
 from PIL import Image
 
 from histoannot.slideref import SlideRef, get_slideref_by_info
-from histoannot.cache import get_slide_cache
 from histoannot.dzi import get_patch
 
 def get_db():

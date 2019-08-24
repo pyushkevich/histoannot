@@ -101,32 +101,37 @@ public:
     // Output array of floats
     float rgba[4];
 
-    // Get the source coordinates of the four corners of the tile
+    // Get the corners of the request in level 0 space
+    double rx0 = x, ry0 = y;
+    double rx1 = x + w * ds, ry1 = y + h * ds;
+
+    // Get the source coordinates of the four corners of the tile in level 0 space
     double x_cor[4], y_cor[4];
-    x_cor[0] = A(0,0) * x + A(0,1) * y + A(0,2);
-    x_cor[1] = A(0,0) * (x+w) + A(0,1) * y + A(0,2);
-    x_cor[2] = A(0,0) * (x+w) + A(0,1) * (y+h) + A(0,2);
-    x_cor[3] = A(0,0) * x + A(0,1) * (y+h) + A(0,2);
-    y_cor[0] = A(1,0) * x + A(1,1) * y + A(1,2);
-    y_cor[1] = A(1,0) * (x+w) + A(1,1) * y + A(1,2);
-    y_cor[2] = A(1,0) * (x+w) + A(1,1) * (y+h) + A(1,2);
-    y_cor[3] = A(1,0) * x + A(1,1) * (y+h) + A(1,2);
+    x_cor[0] = A(0,0) * rx0 + A(0,1) * ry0 + A(0,2);
+    x_cor[1] = A(0,0) * rx1 + A(0,1) * ry0 + A(0,2);
+    x_cor[2] = A(0,0) * rx1 + A(0,1) * ry1 + A(0,2);
+    x_cor[3] = A(0,0) * rx0 + A(0,1) * ry1 + A(0,2);
+    y_cor[0] = A(1,0) * rx0 + A(1,1) * ry0 + A(1,2);
+    y_cor[1] = A(1,0) * rx1 + A(1,1) * ry0 + A(1,2);
+    y_cor[2] = A(1,0) * rx1 + A(1,1) * ry1 + A(1,2);
+    y_cor[3] = A(1,0) * rx0 + A(1,1) * ry1 + A(1,2);
 
     double x_cor_min = x_cor[0], x_cor_max = x_cor[0], y_cor_min = y_cor[0], y_cor_max = y_cor[0];
     for(int i = 1; i < 4; i++)
       {
       x_cor_min = std::min(x_cor_min, x_cor[i]);
-      x_cor_max = std::max(x_cor_min, x_cor[i]);
+      x_cor_max = std::max(x_cor_max, x_cor[i]);
       y_cor_min = std::min(y_cor_min, y_cor[i]);
-      y_cor_max = std::max(y_cor_min, y_cor[i]);
+      y_cor_max = std::max(y_cor_max, y_cor[i]);
       }
 
-    // These are the source corners to read from OS
-    int sx0 = (int)(x_cor_min) - 1;
-    int sy0 = (int)(y_cor_min) - 1;
-    int sx1 = (int)(ceil(x_cor_max) + 1);
-    int sy1 = (int)(ceil(y_cor_max) + 1);
-    int sw = sx1 - sx0, sh = sy1 - sy0;
+    // Corner of the region to be read from OS (in level 0 space)
+    int sx = (int)(x_cor_min - ds);
+    int sy = (int)(y_cor_min - ds);
+
+    // Dimensions to be read (in level K pixels)
+    int sw = ceil((x_cor_max - x_cor_min) / ds) + 2;
+    int sh = ceil((y_cor_max - y_cor_min) / ds) + 2;
 
     // Allocate and read the source image
     ImageType::Pointer iSrc = ImageType::New();
@@ -138,7 +143,7 @@ public:
 
     unsigned char *q = iSrc->GetBufferPointer();
     double t_start_openslide = clock();
-    openslide_read_region(osr, (uint32_t *) q, sx0, sy0, level, sw, sh);
+    openslide_read_region(osr, (uint32_t *) q, sx, sy, level, sw, sh);
     double t_oslide = (clock() - t_start_openslide) / CLOCKS_PER_SEC;
 
     // Allocate output image
@@ -154,8 +159,8 @@ public:
     for(int py = 0; py < h; py++)
       {
       // Initialize the index
-      cix[0] = A(0,0) * x + A(0,1) * (y+py) + A(0,2) - sx0;
-      cix[1] = A(1,0) * x + A(1,1) * (y+py) + A(1,2) - sy1;
+      cix[0] = (A(0,0) * x + A(0,1) * (y+py*ds) + A(0,2) - sx) / ds;
+      cix[1] = (A(1,0) * x + A(1,1) * (y+py*ds) + A(1,2) - sy) / ds;
 
       // Compute the current sampling coordinate
       for(int px = 0; px < w; px++)

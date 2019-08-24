@@ -22,7 +22,6 @@ from werkzeug.exceptions import abort
 
 from histoannot.auth import login_required
 from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
-from histoannot.cache import get_slide_cache
 from histoannot.delegate import find_delegate_for_slide
 from io import BytesIO
 

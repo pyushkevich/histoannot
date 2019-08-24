@@ -169,14 +169,16 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
     # or else we will spend a minute here waiting with no response to user)
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy('raw')
-    affine_file = sr.get_local_copy('affine') if mode == 'affine' else None
 
-    t0 = time.time()
-    osa = AffineTransformedOpenSlide(tiff_file, affine_file)
-    dz = DeepZoomGenerator(osa)
+    os = None
+    if mode == 'affine':
+        affine_file = sr.get_local_copy('affine')
+        os = AffineTransformedOpenSlide(tiff_file, affine_file)
+    else:
+        os = OpenSlide(tiff_file)
+
+    dz = DeepZoomGenerator(os)
     tile = dz.get_tile(level, (col, row))
-    t1 = time.time()
-    print('Elapsed: %f' % (t1-t0,))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)

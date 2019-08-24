@@ -147,7 +147,11 @@ var load_samples_table_ajax = function(label_id, callback_fn) {
           `Modified by ${item['editor']} on ${item['dt_edit']}`
 
         // Trick to prevent caching when samples are updated
-        var imgurl_full = imgurl + '?t_edit=' + item['t_edit'];
+          var imgurl_full = (Number(item['have_patch']) > 0) ? 
+          imgurl + '?t_edit=' + item['t_edit'] :
+          "{{url_for('static', filename='icons/dummy_patch.png')}}";
+
+        // var imgurl_full = imgurl + '?t_edit=' + item['t_edit'];
         var img = $('<img>').attr('src', imgurl_full).attr('width', samples_table_imgwidth).attr('title', tt)
         var td = $('<td>').append(img).attr('sample-id', item['id']).addClass('valid');
         td.attr('center-x', (item['x0'] + item['x1']) / 2.0);

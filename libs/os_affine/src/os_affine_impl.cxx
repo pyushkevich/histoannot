@@ -21,13 +21,27 @@
 void *make_tile_cache(unsigned int max_tiles) 
 {
   TileCache *cache = new TileCache(max_tiles);
+  printf("### new TileCache ###\n");
   return cache;
 }
 
 void *load_openslide(void *tile_cache, const char *path, long canvas_x, long canvas_y)
 {
   OpenSlideWrapper *osw = new OpenSlideWrapper((TileCache *)tile_cache, path, canvas_x, canvas_y);
+  printf("### new OpenSlideWrapper ###\n");
   return osw;
+}
+
+void release_cache(void *cache)
+{
+  printf("### delete TileCache ###\n");
+  delete (TileCache *) cache;
+}
+
+void release_openslide(void *osw)
+{
+  printf("### delete OpenSlideWrapper ###\n");
+  delete (OpenSlideWrapper *) osw;
 }
 
 int get_openslide_levels(void *osw) 

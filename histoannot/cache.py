@@ -53,6 +53,9 @@ class AffineTransformedOpenSlide(object):
         # TODO:
         self.properties = {}
 
+    def __del__(self):
+        m.release_osr(self._osr)
+
     def get_best_level_for_downsample(self, d):
         return m.get_best_level_for_downsample(self._osr, d)
 
@@ -69,6 +72,9 @@ class DeepZoomSource(object):
         self._lock = Lock()
         self._cache = OrderedDict()
         self.c_tile_cache = m.init_cache(max_tiles)
+
+    def __del__(self):
+        m.release_cache(self.c_tile_cache)
 
     def get(self, path, affine_file):
         # Combine path and affine into a single hash

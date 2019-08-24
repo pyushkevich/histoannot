@@ -20,15 +20,24 @@ from flask import (
 )
 from werkzeug.exceptions import abort
 from histoannot.auth import login_required
-from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta, create_sample_base, generate_sample_patch, get_sample_patch_filename
-
+from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta
+from histoannot.delegate import find_delegate_for_slide
+from histoannot.dzi import get_patch
 
 import sqlite3
 import json
 import time
 import os
+import urllib2
 
 from . import slide
+
+from rq import Queue, Connection, Worker
+from rq.job import Job, JobStatus
+from redis import Redis
+
+import click
+from flask.cli import with_appcontext
 
 bp = Blueprint('dltrain', __name__)
 
@@ -117,7 +126,7 @@ def get_samples_for_label(task_id, slide_id, label_id):
         where_arg = (label_id, task_id)
 
     # Run query
-    query = '''SELECT T.id,x0,y0,x1,y1,
+    query = '''SELECT T.id,T.have_patch,x0,y0,x1,y1,
                       UC.username as creator, t_create,
                       UE.username as editor, t_edit,
                       datetime(t_create,'unixepoch','localtime') as dt_create,
@@ -130,7 +139,6 @@ def get_samples_for_label(task_id, slide_id, label_id):
                                       LEFT JOIN user UE on UE.id = M.editor 
                WHERE %s 
                ORDER BY %s LIMIT 48''' % (where_clause, order)
-    print(query)
     rc = db.execute(query, where_arg)
     return json.dumps([dict(row) for row in rc.fetchall()])
 
@@ -197,9 +205,8 @@ def create_sample(task_id, slide_id):
     data = json.loads(request.get_data())
     rect = data['geometry']
     label_id = data['label_id']
-    sample_id = create_sample_base(task_id, slide_id, label_id, rect)
+    return create_sample_base(task_id, slide_id, label_id, rect)
 
-    return json.dumps({"id":sample_id})
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/samples', methods=('GET',))
 @login_required
@@ -245,7 +252,6 @@ def update_sample():
     data = json.loads(request.get_data())
     rect = data['geometry']
     sample_id = data['id'];
-    print('UPDATE REQUEST', data)
     db = get_db()
 
     # Update the metadata
@@ -255,7 +261,9 @@ def update_sample():
 
     # Update the main record
     db.execute(
-        'UPDATE training_sample SET x0=?, y0=?, x1=?, y1=?, label=? WHERE id=?',
+        'UPDATE training_sample '
+        'SET x0=?, y0=?, x1=?, y1=?, label=?, have_patch=0 '
+        'WHERE id=?',
         (rect[0], rect[1], rect[2], rect[3], data['label_id'], sample_id))
 
     db.commit()
@@ -279,5 +287,214 @@ def get_sample_png(id):
     return send_file(fn)
     
 
+# Get the filename where a sample should be saved
+def get_sample_patch_filename(sample_id):
+
+    # Create a directory
+    patch_dir = os.path.join(current_app.instance_path, 'dltrain/patches')
+    if not os.path.exists(patch_dir):
+        os.makedirs(patch_dir)
+
+    # Generate the filename
+    patch_fn = "sample_%08d.png" % (sample_id,)
+
+    # Get the full path
+    return os.path.join(patch_dir, patch_fn)
 
 
+# Generate an image patch for a sample
+def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512)):
+
+    # Find out which machine the slide is currently being served from
+    # Get the tiff image from which to sample the region of interest
+    db = get_db()
+    sr = get_slide_ref(slide_id)
+
+    # Get the identifiers for the slide
+    (specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+
+    # Are we de this slide to a different node?
+    del_url = find_delegate_for_slide(slide_id)
+
+    # Compute the parameters
+    ctr_x = int((rect[0] + rect[2])/2.0 + 0.5)
+    ctr_y = int((rect[1] + rect[3])/2.0 + 0.5)
+    (w,h) = dims
+    x = ctr_x - ((w - int(w/2.0)) - 1)
+    y = ctr_y - ((h - int(h/2.0)) - 1)
+
+    # If local, call the method directly
+    rawbytes = None
+    if del_url is None:
+        rawbytes = get_patch(specimen,block,slide_name,slide_ext,x,y,w,h,'png').data
+    else:
+        subs = (del_url, specimen, block, slide_name, slide_ext, x, y, w, h)
+        url = '%s/dzi/patch/%s/%s/%s.%s/%d_%d_%d_%d.png' % subs
+        print(url)
+        rawbytes = urllib2.urlopen(url).read()
+
+    # Save as PNG
+    with open(get_sample_patch_filename(sample_id), 'wb') as f:
+        f.write(rawbytes)
+
+    # Record that patch has been written
+    db.execute('UPDATE training_sample SET have_patch=1 where id=?', (sample_id,))
+    db.commit()
+
+
+# Callable function for creating a sample
+def create_sample_base(task_id, slide_id, label_id, rect):
+
+    db = get_db()
+
+    # Create a meta record
+    meta_id = create_edit_meta()
+
+    # Create the main record
+    sample_id = db.execute(
+        'INSERT INTO training_sample (meta_id,x0,y0,x1,y1,label,slide,task) VALUES (?,?,?,?,?,?,?,?)',
+        (meta_id, rect[0], rect[1], rect[2], rect[3], label_id, slide_id, task_id)
+    ).lastrowid
+
+    # Create a job that will sample the patch from the image. The reason we do this in a queue
+    # is that a server hosting the slide might have gone down and the slide would need to be
+    # downloaded again, and we don't want to hold up returning to the user for so long
+    q = Queue("preload", connection=Redis())
+    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, job_timeout="120s", result_ttl="60s")
+
+    # Stick the properties into the job
+    job.meta['args']=(slide_id, sample_id, rect)
+    job.save_meta()
+
+    # Only commit once this has been saved
+    db.commit()
+
+    # Return the sample id and the patch generation job id
+    return json.dumps({ 'id' : sample_id, 'patch_job_id' : job.id })
+
+
+
+
+# --------------------------------
+# Sample import and export
+# --------------------------------
+@click.command('samples-export-csv')
+@click.argument('task')
+@click.argument('output_file')
+@click.option('--header/--no-header', default=False, help='Include header in output CSV file')
+@click.option('--metadata/--no-metadata', default=False, help='Include metadata in output CSV file')
+@with_appcontext
+def samples_export_csv_command(task, output_file, header, metadata):
+    """Export all training samples in a task to a CSV file"""
+    db = get_db()
+
+    if metadata:
+        rc = db.execute(
+                'SELECT L.name as label_name, S.slide_name, '
+                '       x0 as x, y0 as y, x1-x0 as w, y1-y0 as h, '
+                        'M.t_create, M.t_edit, '
+                '       UC.username as creator, UE.username as editor '
+                'FROM training_sample TS '
+                '  LEFT JOIN label L on L.id = TS.label '
+                '  LEFT JOIN slide S on S.id = TS.slide '
+                '  LEFT JOIN edit_meta M on M.id = TS.meta_id '
+                '  LEFT JOIN user UC on M.creator = UC.id '
+                '  LEFT JOIN user UE on M.editor = UE.id '
+                'WHERE TS.task = ?', (task,))
+        keys=('slide_name','label_name','x','y','w','h','t_create','creator','t_edit','editor')
+
+    else:
+        rc = db.execute(
+                'SELECT L.name as label_name, S.slide_name, '
+                '       x0 as x, y0 as y, x1-x0 as w, y1-y0 as h '
+                'FROM training_sample TS '
+                '  LEFT JOIN label L on L.id = TS.label '
+                '  LEFT JOIN slide S on S.id = TS.slide '
+                'WHERE TS.task = ?', (task,))
+        keys=('slide_name','label_name','x','y','w','h')
+
+    with open(output_file, 'wt') as fout:
+        if header:
+            fout.write(','.join(keys) + '\n')
+
+        for row in rc.fetchall():
+            vals = map(lambda a : str(row[a]), keys)
+            fout.write(','.join(vals) + '\n')
+
+
+@click.command('samples-import-csv')
+@click.argument('task')
+@click.argument('input_file', type=click.File('rt'))
+@click.option('-u','--user', help='User name under which to insert samples')
+@with_appcontext
+def samples_import_csv_command(task, input_file, user):
+    """Import training samples from a CSV file"""
+    db = get_db()
+
+    # Look up the labelset for the current task
+    tdata = get_task_data(task)
+    if not 'dltrain' in tdata:
+        print('Task %s is not the right type for importing samples' % tdata['name'])
+        return -1
+
+    lsid = db.execute('SELECT id FROM labelset WHERE name = ?',
+            (tdata['dltrain']['labelset'],)).fetchone()['id']
+
+    # Look up the user
+    g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()
+    if g.user is None:
+        print('User %s is not in the system' % user)
+        return -1
+
+    lines = input_file.read().splitlines()
+    for line in lines:
+        fields = line.split(',')
+        if len(fields) < 6:
+            print('skipping ill-formatted line "%s"' % (line,))
+            continue
+
+        (slide_name,label_name,x,y,w,h) = fields[0:6]
+
+        # Look up the slide
+        rcs = db.execute('SELECT id FROM slide WHERE slide_name=?', (slide_name,)).fetchone()
+        if rcs is None:
+            print('Slide %s does not exist, skipping line %s' % (slide_name, line))
+            continue
+
+        # Look up the label
+        rcl = db.execute('SELECT id FROM label WHERE name=? AND labelset=?',
+                (label_name, lsid)).fetchone()
+        if rcl is None:
+            print('Label %s does not exist, skipping line %s' % (label_name, line))
+            continue
+
+        # Create a data record
+        rect = (float(x),float(y),float(x)+float(w),float(y)+float(h))
+
+        # Check for overlapping samples
+        rc_intercept = db.execute(
+                'SELECT max(x0,?) as p0, min(x1,?) as p1, '
+                '       max(y0,?) as q0, min(y1,?) as q1, * '
+                'FROM training_sample '
+                'WHERE p0 < p1 AND q0 < q1 AND task=? and slide=?', 
+                (rect[0], rect[2], rect[1], rect[3], task, rcs['id'])).fetchall() 
+
+        if len(rc_intercept) > 0:
+            # for row in rc_intercept:
+            #    print(row)
+            print('There are %d overlapping samples for sample "%s"' %
+                    (len(rc_intercept), line))
+            continue
+
+        # Create the sample
+        result = json.loads(create_sample_base(task, rcs['id'], rcl['id'], rect))
+
+        # Success 
+        print('Imported new sample %d from line "%s"' % (result['id'], line))
+        
+        
+
+        
+def init_app(app):
+    app.cli.add_command(samples_import_csv_command)
+    app.cli.add_command(samples_export_csv_command)

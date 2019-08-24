@@ -30,6 +30,7 @@ CREATE TABLE training_sample (
   slide INTEGER NOT NULL,
   task INTEGER NOT NULL,
   meta_id INTEGER NOT NULL,
+  have_patch BOOLEAN DEFAULT FALSE NOT NULL,
   FOREIGN KEY (label) REFERENCES label(id),
   FOREIGN KEY (slide) REFERENCES slide(id),
   FOREIGN KEY (task) REFERENCES task(id),

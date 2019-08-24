@@ -132,6 +132,10 @@ class SlideRef:
         if not os.path.exists(self._local_baseurl):
             os.makedirs(self._local_baseurl)
 
+    # Get a tuple identifying the slide
+    def get_id_tuple(self):
+        return (self._specimen, self._block, self._slide_name, self._slide_ext)
+
     # Generate the filename for the resource (local or remote)
     def get_resource_url(self, resource, local = True):
 

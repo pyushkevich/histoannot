@@ -40,11 +40,19 @@ RUN mkdir -p /usr/local/gcloud \
 
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
-# Copy our module
+# Configure REDIS and Supervisor
+RUN apt-get install -y redis supervisor
+
+# Build App
 RUN mkdir /tk/node_dzi
 WORKDIR /tk/node_dzi
+
+# Install requirements
+COPY histoannot/requirements.txt histoannot/requirements.txt
+RUN pip install -r histoannot/requirements.txt
+
+# Copy our module
 COPY libs/os_affine libs/os_affine
-RUN ls -l
 
 # Compile the python module
 RUN mkdir -p libs/os_affine/build \
@@ -56,10 +64,6 @@ RUN mkdir -p libs/os_affine/build \
     ../src \
  && ninja \
  && ln -s libos_affine.so os_affine.so
-
-# Install requirements
-COPY histoannot/requirements.txt histoannot/requirements.txt
-RUN pip install -r histoannot/requirements.txt
 
 # Env for Flask
 ENV FLASK_APP "histoannot"
@@ -75,19 +79,19 @@ COPY docker/dzi_node/histoannot_nginx.conf /etc/nginx/conf.d/
 # Configure worker services
 COPY docker/dzi_node/histoannot_uwsgi.ini .
 
-# Configure REDIS
-RUN apt-get install -y redis
-
 # Configure Supervisor
-RUN apt-get install -y supervisor
-COPY docker/dzi_node/histoannot_supervisor.conf /etc/supervisor/conf.d/supervisord.conf
+ARG SERVER_MODE=master
+COPY docker/dzi_node/${SERVER_MODE}_supervisor.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Copy the actual code (at the end of Dockerfile for faster builds)
 COPY histoannot histoannot
 
 # Copy the config file
-ARG SERVER_MODE=master
 COPY docker/dzi_node/${SERVER_MODE}_config.py instance/config.py
+
+# This is absolutely horrible, but we have a memory leak I can't figure out
+RUN echo "*/4 * * * * /usr/bin/supervisorctl restart uwsgi" > /tmp/cronfile \
+ && crontab /tmp/cronfile
 
 # Entrypoint
 CMD "supervisord"

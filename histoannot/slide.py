@@ -23,6 +23,7 @@ from werkzeug.exceptions import abort
 from histoannot.auth import login_required
 from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
 from histoannot.cache import get_slide_cache
+from histoannot.delegate import find_delegate_for_slide
 from io import BytesIO
 
 import os
@@ -221,27 +222,6 @@ def get_slide_info(task_id, slide_id):
     return (slide_info, prev_slide, next_slide)
 
 
-# Check if a node is alive
-def check_dzi_node_alive(url):
-
-    db=get_db()
-
-    try:
-        # Try to open the URL
-        resp = urllib2.urlopen(url, timeout=5).read()
-
-        # Check against expected string
-        if resp == 'HISTOANNOT DZI NODE':
-            return True
-
-    except Exception as e:
-        print(e)
-
-    # If we are here, the check failed.
-    return False
-
-
-
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<affine_mode>', methods=('GET', 'POST'))
 @login_required
@@ -254,51 +234,7 @@ def slide_view(task_id, slide_id, affine_mode):
     (slide_info, prev_slide, next_slide) = get_slide_info(task_id, slide_id)
 
     # Are we delegating DZI service to separate nodes?
-    delegate=current_app.config['HISTOANNOT_DELEGATE_DZI']
-    del_url = None
-    if delegate:
-
-        db=get_db()
-
-        # Check if the slide is already being delegated
-        t_test = time.time() - 120
-        rc = db.execute(
-                "SELECT DN.* FROM slide_dzi_node SDN "
-                "LEFT JOIN dzi_node DN on SDN.url = DN.url "
-                "WHERE SDN.slide_id=? AND DN.t_ping > ?", (slide_id,t_test)).fetchone()
-
-        # Check if delegation node is present
-        del_url = rc['url'] if rc is not None else None
-
-        # Check if the delegation node is alive
-        if del_url is None or not check_dzi_node_alive(del_url):
-
-            # Need to assign a new url to the slide
-            rc_all = db.execute(
-                    "SELECT * FROM dzi_node WHERE t_ping > ? "
-                    "ORDER BY RANDOM()", (t_test,)).fetchall()
-
-            for row in rc_all:
-                if check_dzi_node_alive(row['url']):
-                    del_url = row['url']
-                    break
-
-        # If we found a delegate, store it with the node
-        if del_url is not None:
-            print('DELEGATING slide %d to %s' % (slide_id, del_url))
-            rc_upd = db.execute(
-                    "UPDATE slide_dzi_node SET url=? WHERE slide_id=?",
-                    (del_url, slide_id))
-            if rc_upd.rowcount != 1:
-                db.execute(
-                        "INSERT INTO slide_dzi_node(url,slide_id) VALUES (?,?)",
-                        (del_url, slide_id))
-        else:
-            print('NOT DELEGATING slide %d', (slide_id, del_url))
-            db.execute("DELETE FROM slide_dzi_node WHERE slide_id=?", (slide_id,));
-
-        db.commit()
-
+    del_url = find_delegate_for_slide(slide_id)
 
     # Build a dictionary to call
     context = {

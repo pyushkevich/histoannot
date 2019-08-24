@@ -68,7 +68,7 @@ button.disabled, button.disabled:hover {
       <td>
         <a href="{{ url_for('slide.index')}}">Home</a> : 
         <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
-        <a href="{{ url_for('slide.block_detail', block_id=slide_info['block_id'], task_id = task_id) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }}  
+        <a href="{{ url_for('slide.block_detail', block_id=slide_info['block_id'], task_id = task_id) }}">{{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}</a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }} &nbsp {{dzi_url}} 
       </td>
       <td>
         &nbsp
@@ -202,7 +202,6 @@ $(document).ready(function() {
     var viewportZoom = viewer.viewport.getZoom(true);
     if(last_zoom != viewportZoom) {
       var paperZoom = get_image_zoomlevel();
-      console.log("Zoom updated: ", viewportZoom, paperZoom)
       if(paper.project) {
         adjust_paperjs_scaling(paperZoom)
       }
@@ -493,8 +492,6 @@ $(document).ready(function() {
           data = JSON.parse(response_text);
           box.data.id = data.id;
           self.boxmap.set(data.id, box);
-          console.log("AJAX reponse"); console.log(response_text) 
-
           if(cb_success)
             cb_success();
         }
@@ -514,7 +511,6 @@ $(document).ready(function() {
         $.post("{{ url_for('dltrain.update_sample') }}", 
           JSON.stringify(box.data), 
           function(response_text) { 
-            console.log("AJAX reponse"); console.log(response_text) 
             if(cb_success)
               cb_success();
           }
@@ -528,7 +524,7 @@ $(document).ready(function() {
 
       // If we are in a middle of a movement action, do not perform updates
       if((moving_object && moving_object_moved) || curr_box) {
-        setTimeout(self.refresh_samples, 5000);
+        do_delay(self.refresh_samples, 10000);
         return;
       }
 
@@ -577,7 +573,7 @@ $(document).ready(function() {
           paper.view.draw();
         },
         complete: function(data) {
-          setTimeout(self.refresh_samples, 5000)
+          do_delay(self.refresh_samples, 10000)
         }
       });
     }
@@ -738,6 +734,14 @@ $(document).ready(function() {
     }
   }
 
+  // Something to do about overlapping timers
+  var timer_map = {}
+  var do_delay = function(fn, t_wait) {
+    if(timer_map[fn.name])
+      clearTimeout(timer_map[fn.name])
+    timer_map[fn.name] = setTimeout(fn, t_wait)
+  }
+
   var dragEnd_handler = function(event) {
     if(curr_mode == 'DRAW') {
       curr_path.simplify(10)
@@ -748,7 +752,7 @@ $(document).ready(function() {
     else if(curr_mode == 'BOX') {
       // Send the completed marker to the server
       sample_api.upload_new_sample(curr_box, function() {
-        reload_label_and_sample_tables()
+        do_delay(reload_label_and_sample_tables, 1000)
       });
       curr_box = undefined;
       nav_pressed_handler();
@@ -761,7 +765,7 @@ $(document).ready(function() {
         }
         else if(seg_mode == 'dltrain') {
           sample_api.modify_sample(moving_object, function() {
-            reload_label_and_sample_tables()
+            do_delay(reload_label_and_sample_tables, 1000)
           });
         }
       }
@@ -1040,10 +1044,11 @@ $(document).ready(function() {
 
     // Function to reload labels in a loop
     var reload_label_and_sample_tables = function() {
+      console.log('RELOAD:', new Date())
       load_label_table_ajax(function() {
         var id = get_current_label_id();
         load_samples_table_ajax(id, function() {
-          setTimeout(reload_label_and_sample_tables, 50000);
+          do_delay(reload_label_and_sample_tables, 10000);
         });
       });
     }

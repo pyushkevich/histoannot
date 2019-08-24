@@ -106,6 +106,8 @@ def create_app(test_config = None):
 
         # DLTrain blueprint
         app.register_blueprint(dltrain.bp);
+        dltrain.init_app(app)
+
         # Pure CSS
         app.config['PURECSS_RESPONSIVE_GRIDS'] = True
         app.config['PURECSS_USE_CDN'] = True

@@ -151,6 +151,7 @@ class PILBytesIO(BytesIO):
         '''Classic PIL doesn't understand io.UnsupportedOperation.'''
         raise AttributeError('Not supported')
 
+
 # Get the tiles for a slide
 @bp.route('/dzi/<mode>/<specimen>/<block>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
@@ -178,6 +179,38 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
     return resp
+
+
+# Get an image patch at level 0 from the raw image
+@bp.route('/dzi/patch/<specimen>/<block>/<slide_name>.<slide_ext>/<int:x>_<int:y>_<int:w>_<int:h>.<format>',
+        methods=('GET','POST'))
+def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
+
+    format = format.lower()
+    if format != 'jpeg' and format != 'png':
+        # Not supported by Deep Zoom
+        return 'bad format'
+        abort(404)
+
+    # Get the raw SVS/tiff file for the slide (the resource should exist, 
+    # or else we will spend a minute here waiting with no response to user)
+    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    tiff_file = sr.get_local_copy('raw')
+    
+    # Get the openslide object corresponding to it
+    cache = get_slide_cache()
+    osr = cache.get(tiff_file, None)._osr;
+
+    # Read the region centered on the box of size 512x512
+    tile = osr.read_region((x, y), 0, (512, 512));
+
+    # Convert to PNG
+    buf = PILBytesIO()
+    tile.save(buf, format)
+    resp = make_response(buf.getvalue())
+    resp.mimetype = 'image/%s' % format
+    return resp
+
 
 # Command to run preload worker
 @click.command('preload-worker-run')

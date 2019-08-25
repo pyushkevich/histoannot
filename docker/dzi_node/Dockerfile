@@ -89,9 +89,5 @@ COPY histoannot histoannot
 # Copy the config file
 COPY docker/dzi_node/${SERVER_MODE}_config.py instance/config.py
 
-# This is absolutely horrible, but we have a memory leak I can't figure out
-RUN echo "*/4 * * * * /usr/bin/supervisorctl restart uwsgi" > /tmp/cronfile \
- && crontab /tmp/cronfile
-
 # Entrypoint
 CMD "supervisord"

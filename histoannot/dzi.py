@@ -205,7 +205,7 @@ def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
     
     # Read the region centered on the box of size 512x512
     os = OpenSlide(tiff_file)
-    tile = osr.read_region((x, y), 0, (512, 512));
+    tile = os.read_region((x, y), 0, (512, 512));
 
     # Convert to PNG
     buf = PILBytesIO()

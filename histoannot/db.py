@@ -546,6 +546,8 @@ task_schema = {
             "type" : "object",
             "properties" : {
                 "labelset" : { "type" : "string" },
+                "min-size" : { "type" : "integer" },
+                "max-size" : { "type" : "integer" }
             },
             "required" : ["labelset"]
         },

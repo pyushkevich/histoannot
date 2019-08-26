@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, abort
+    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, abort, Response
 )
 from werkzeug.exceptions import abort
 from histoannot.auth import login_required
@@ -27,6 +27,7 @@ from histoannot.dzi import get_patch
 import sqlite3
 import json
 import time
+import datetime
 import os
 import urllib2
 
@@ -198,6 +199,27 @@ def get_annot_json_file(id):
     return os.path.join(json_dir, json_filename)
 
 
+# Check sample validity
+def check_rect(task_id, rect):
+
+    t_data = get_task_data(task_id)
+    min_size = t_data['dltrain'].get('min-size')
+    max_size = t_data['dltrain'].get('max-size')
+
+    w = abs(rect[2] - rect[0])
+    h = abs(rect[3] - rect[1])
+
+    print('Checking %d %d against %d %d' % (w,h,min_size,max_size))
+
+    if min_size is not None and (w < min_size or h < min_size):
+        abort(Response('Box is too small', 401))
+
+    if max_size is not None and (w > max_size or h > max_size):
+        abort(Response('Box is too large', 401))
+
+
+    
+
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/create', methods=('POST',))
 @login_required
 def create_sample(task_id, slide_id):
@@ -205,6 +227,9 @@ def create_sample(task_id, slide_id):
     data = json.loads(request.get_data())
     rect = data['geometry']
     label_id = data['label_id']
+
+    check_rect(task_id, rect)
+
     return create_sample_base(task_id, slide_id, label_id, rect)
 
 
@@ -252,12 +277,16 @@ def update_sample():
     data = json.loads(request.get_data())
     rect = data['geometry']
     sample_id = data['id'];
+
     db = get_db()
 
     # Update the metadata
-    meta_id = db.execute('SELECT meta_id FROM training_sample WHERE id=?', 
-                         (sample_id,)).fetchone()['meta_id']
-    update_edit_meta(meta_id)
+    # Get existing properties
+    rc = db.execute('SELECT meta_id,task FROM training_sample WHERE id=?',
+            (sample_id,)).fetchone()
+
+    check_rect(rc['task'], rect)
+    update_edit_meta(rc['meta_id'])
 
     # Update the main record
     db.execute(
@@ -492,9 +521,96 @@ def samples_import_csv_command(task, input_file, user):
         # Success 
         print('Imported new sample %d from line "%s"' % (result['id'], line))
         
-        
+
+@click.command('samples-delete')
+@click.argument('task')
+@click.option('--creator', help='Only delete samples created by user username')
+@click.option('--editor', help='Only delete samples edited by user username')
+@click.option('--specimen', help='Specify a specimen name whose samples to delete')
+@click.option('--block', help='Specify a block name whose samples to delete')
+@click.option('--slide', help='Specify a slide id whose samples to delete')
+@click.option('--label', help='Specify a label name whose samples to delete')
+@click.option('--newer', help='Only delete samples created after date', type=click.DateTime())
+@click.option('--older', help='Only delete samples created before date', type=click.DateTime())
+@click.option('-y','--yes', help='Do not prompt before deleting', is_flag=True)
+@with_appcontext
+def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, newer, older, yes):
+    """Delete training samples for TASK"""
+
+    # Create a temporary view of the big join table
+    db=get_db()
+    db.execute("""CREATE TEMP VIEW v_del AS
+                  SELECT T.*, B.specimen_name, B.block_name, L.name as label_name,
+                         UC.username as creator_name, UE.username as editor_name,
+                         EM.t_create
+                  FROM training_sample T
+                      LEFT JOIN edit_meta EM on EM.id = T.meta_id
+                      LEFT JOIN user UC on UC.id = EM.creator
+                      LEFT JOIN user UE on UE.id = EM.editor
+                      LEFT JOIN slide S on T.slide = S.id
+                      LEFT JOIN block B on S.block_id = B.id
+                      LEFT JOIN label L on T.label = L.id""")
+
+    # Build up a where clause
+    w = [('creator_name LIKE ?', creator),
+         ('editor_name LIKE ?', editor),
+         ('specimen_name LIKE ?', specimen),
+         ('block_name LIKE ?', block),
+         ('slide = ?', slide),
+         ('label_name = ?', label),
+         ('task = ?', task),
+         ('t_create > ?', time.mktime(newer.timetuple()) if newer is not None else None),
+         ('t_create < ?', time.mktime(older.timetuple()) if older is not None else None)]
+
+    # Filter out the missing entries
+    w = filter(lambda (a,b): b is not None, w)
+
+    # Get the pieces 
+    (w_sql,w_prm) = zip(*w)
+
+    # List the ids we would select
+    rc=db.execute('SELECT * FROM v_del WHERE %s' % ' AND '.join(w_sql), w_prm)
+    result = rc.fetchall()
+    if len(result) == 0:
+        print('No entries can be deleted')
+        return
+
+    ids = zip(*result)[0]
+
+    # Prompt for confirmation
+    if not yes:
+        while True:
+            reply = str(raw_input('%d samples would be deleted. Are you sure? [Y/n]: ' % len(ids))).strip();
+            if reply == 'n':
+                return
+            elif reply == 'Y':
+                break
+
+    # Delete all the meta entries
+    rc = db.execute("""DELETE FROM edit_meta WHERE id IN 
+                       (SELECT meta_id FROM v_del WHERE %s)""" % ' AND '.join(w_sql), w_prm)
+    print('Removed %d rows from edit_meta' % rc.rowcount)
+
+    # Delete all the sample entries
+    rc = db.execute("""DELETE FROM training_sample WHERE id IN
+                       (SELECT id FROM v_del WHERE %s)""" % ' AND '.join(w_sql), w_prm)
+    print('Removed %d rows from training_sample' % rc.rowcount)
+
+    # Delete all the image samples
+    for sample_id in ids:
+        try:
+            os.remove(get_sample_patch_filename(sample_id))
+        except:
+            print('Error removing file %s' % (get_sample_patch_filename(sample_id),))
+
+    # Commit
+    db.commit()
+                
+
+
 
         
 def init_app(app):
     app.cli.add_command(samples_import_csv_command)
     app.cli.add_command(samples_export_csv_command)
+    app.cli.add_command(samples_delete_cmd)

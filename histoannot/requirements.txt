@@ -6,3 +6,4 @@ google-cloud-storage
 numpy
 rq
 psutil
+Click >= 7.0

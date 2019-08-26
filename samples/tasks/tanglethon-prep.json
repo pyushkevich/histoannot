@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Tanglethon Prep 2019", 
+    "stains": [
+        "tau"
+    ], 
+    "dltrain": {
+        "labelset": "tangles",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize neurofibrillary tangles"
+}

@@ -357,8 +357,10 @@ $(document).ready(function() {
     var n = 0;
     for (var i = 0; i < selected.length; i++) {
       var item = selected[i];
-      if (item instanceof paper.Path || item instanceof paper.PointText)
+      if (item instanceof paper.Path || item instanceof paper.PointText) {
+        console.log('seleted on ', item)
         n++;
+      }
     }
     return n;
   }
@@ -486,16 +488,23 @@ $(document).ready(function() {
     this.upload_new_sample = function(box, cb_success) {
 
       // Send the completed marker to the server
-      $.post("{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}", 
-        JSON.stringify(box.data), 
-        function(response_text) { 
+      $.ajax({
+        url: "{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}", 
+        type: 'post',
+        data: JSON.stringify(box.data),
+        success: function(response_text) { 
           data = JSON.parse(response_text);
           box.data.id = data.id;
           self.boxmap.set(data.id, box);
           if(cb_success)
             cb_success();
+        },
+        error: function (xhr, ajaxOptions, thrownError) {
+          box.remove();
+          paper.view.draw();
+          alert(xhr.responseText);
         }
-      );
+      });
     }
 
     // Modify an existing sample (e.g., as a result of dragging, resizing)
@@ -584,12 +593,12 @@ $(document).ready(function() {
       // Tell the server to delete this sample
       console.log('Deleting ', box.data)
       if(box.data.id) {
+        box.remove();
         $.ajax({
           url: "{{ url_for('dltrain.delete_sample') }}",
           data: { id: box.data.id },
           type: 'post',
           success: function(data) {
-            box.remove();
             self.boxmap.delete(box.data.id);
             paper.view.draw();
           }
@@ -909,6 +918,7 @@ $(document).ready(function() {
   // Update button active state
   var fn_update_button_state = function() {
     // Is there an active selection
+    console.log('SELECTED: ', get_number_selected_manipulables())
     if(get_number_selected_manipulables() > 0)
       document.getElementById("del_button").className = 
         document.getElementById("del_button").className.replace(" disabled", " enabled");
@@ -1035,11 +1045,24 @@ $(document).ready(function() {
     // Function to focus on a specific sample
     var focus_on_sample = function(id, cx, cy) {
 
+      // Navigate there
       pt_im = new OpenSeadragon.Point(Number(cx), Number(cy));
       pt_vp = viewer.world.getItemAt(0).imageToViewportCoordinates(pt_im);
       zoom_vp = viewer.world.getItemAt(0).imageToViewportZoom(0.2);
       viewer.viewport.zoomTo(zoom_vp, false);
       viewer.viewport.panTo(pt_vp, false);
+
+      // Select the sample with this id
+      var items = paper.project.getItems({
+        data: { id: Number(id) }
+      })
+
+      // Select the sample
+      deselect_all_manipulables()
+      items[0].selected = true;
+      select_label(items[0].data.label_id);
+      load_samples_table_ajax(items[0].data.label_id);
+      fn_update_button_state();
     }
 
     // Function to reload labels in a loop

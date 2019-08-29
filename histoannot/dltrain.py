@@ -30,6 +30,7 @@ import time
 import datetime
 import os
 import urllib2
+from PIL import Image
 
 from . import slide
 
@@ -306,7 +307,6 @@ def update_sample():
 
 
 @bp.route('/dltrain/api/sample/<int:id>/image.png', methods=('GET',))
-@login_required
 def get_sample_png(id):
 
     # Get the local filename
@@ -407,40 +407,49 @@ def create_sample_base(task_id, slide_id, label_id, rect):
 # --------------------------------
 # Sample import and export
 # --------------------------------
+
+# A function to create a temporary view of the samples
+def make_dbview_full():
+    db=get_db()
+    db.execute("""CREATE TEMP VIEW v_full AS
+                  SELECT T.*, B.specimen_name, B.block_name, L.name as label_name,
+                         UC.username as creator, UE.username as editor,
+                         EM.t_create, EM.t_edit, S.slide_name 
+                  FROM training_sample T
+                      LEFT JOIN edit_meta EM on EM.id = T.meta_id
+                      LEFT JOIN user UC on UC.id = EM.creator
+                      LEFT JOIN user UE on UE.id = EM.editor
+                      LEFT JOIN slide S on T.slide = S.id
+                      LEFT JOIN block B on S.block_id = B.id
+                      LEFT JOIN label L on T.label = L.id""")
+
+
+
 @click.command('samples-export-csv')
 @click.argument('task')
 @click.argument('output_file')
 @click.option('--header/--no-header', default=False, help='Include header in output CSV file')
 @click.option('--metadata/--no-metadata', default=False, help='Include metadata in output CSV file')
+@click.option('--ids/--no-ids', default=False, help='Include sample database ids in output CSV file')
 @with_appcontext
-def samples_export_csv_command(task, output_file, header, metadata):
+def samples_export_csv_command(task, output_file, header, metadata, ids):
     """Export all training samples in a task to a CSV file"""
     db = get_db()
 
-    if metadata:
-        rc = db.execute(
-                'SELECT L.name as label_name, S.slide_name, '
-                '       x0 as x, y0 as y, x1-x0 as w, y1-y0 as h, '
-                        'M.t_create, M.t_edit, '
-                '       UC.username as creator, UE.username as editor '
-                'FROM training_sample TS '
-                '  LEFT JOIN label L on L.id = TS.label '
-                '  LEFT JOIN slide S on S.id = TS.slide '
-                '  LEFT JOIN edit_meta M on M.id = TS.meta_id '
-                '  LEFT JOIN user UC on M.creator = UC.id '
-                '  LEFT JOIN user UE on M.editor = UE.id '
-                'WHERE TS.task = ?', (task,))
-        keys=('slide_name','label_name','x','y','w','h','t_create','creator','t_edit','editor')
+    # Create the full view
+    make_dbview_full()
 
-    else:
-        rc = db.execute(
-                'SELECT L.name as label_name, S.slide_name, '
-                '       x0 as x, y0 as y, x1-x0 as w, y1-y0 as h '
-                'FROM training_sample TS '
-                '  LEFT JOIN label L on L.id = TS.label '
-                '  LEFT JOIN slide S on S.id = TS.slide '
-                'WHERE TS.task = ?', (task,))
-        keys=('slide_name','label_name','x','y','w','h')
+    # Select keys to export
+    keys = ('slide_name','label_name','x','y','w','h')
+    if metadata:
+        keys = keys + ('t_create','creator','t_edit','editor')
+    if ids:
+        keys = ('id',) + keys
+
+    # Run query
+    rc = db.execute(
+            'SELECT *, x0 as x, y0 as y, x1-x0 as w, y1-y0 as h FROM v_full '
+            'WHERE task=? ORDER BY id', (task,))
 
     with open(output_file, 'wt') as fout:
         if header:
@@ -539,21 +548,11 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
 
     # Create a temporary view of the big join table
     db=get_db()
-    db.execute("""CREATE TEMP VIEW v_del AS
-                  SELECT T.*, B.specimen_name, B.block_name, L.name as label_name,
-                         UC.username as creator_name, UE.username as editor_name,
-                         EM.t_create
-                  FROM training_sample T
-                      LEFT JOIN edit_meta EM on EM.id = T.meta_id
-                      LEFT JOIN user UC on UC.id = EM.creator
-                      LEFT JOIN user UE on UE.id = EM.editor
-                      LEFT JOIN slide S on T.slide = S.id
-                      LEFT JOIN block B on S.block_id = B.id
-                      LEFT JOIN label L on T.label = L.id""")
+    make_dbview_full()
 
     # Build up a where clause
-    w = [('creator_name LIKE ?', creator),
-         ('editor_name LIKE ?', editor),
+    w = [('creator LIKE ?', creator),
+         ('editor LIKE ?', editor),
          ('specimen_name LIKE ?', specimen),
          ('block_name LIKE ?', block),
          ('slide = ?', slide),
@@ -569,7 +568,7 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
     (w_sql,w_prm) = zip(*w)
 
     # List the ids we would select
-    rc=db.execute('SELECT * FROM v_del WHERE %s' % ' AND '.join(w_sql), w_prm)
+    rc=db.execute('SELECT * FROM v_full WHERE %s' % ' AND '.join(w_sql), w_prm)
     result = rc.fetchall()
     if len(result) == 0:
         print('No entries can be deleted')
@@ -588,12 +587,12 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
 
     # Delete all the meta entries
     rc = db.execute("""DELETE FROM edit_meta WHERE id IN 
-                       (SELECT meta_id FROM v_del WHERE %s)""" % ' AND '.join(w_sql), w_prm)
+                       (SELECT meta_id FROM v_full WHERE %s)""" % ' AND '.join(w_sql), w_prm)
     print('Removed %d rows from edit_meta' % rc.rowcount)
 
     # Delete all the sample entries
     rc = db.execute("""DELETE FROM training_sample WHERE id IN
-                       (SELECT id FROM v_del WHERE %s)""" % ' AND '.join(w_sql), w_prm)
+                       (SELECT id FROM v_full WHERE %s)""" % ' AND '.join(w_sql), w_prm)
     print('Removed %d rows from training_sample' % rc.rowcount)
 
     # Delete all the image samples
@@ -607,6 +606,35 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
     db.commit()
                 
 
+# Fix missing pngs for samples
+@click.command('samples-fix-missing-patches')
+@click.argument('task')
+@with_appcontext
+def samples_fix_patches_cmd(task):
+    """Generate missing patches for the samples in the database"""
+
+    # Get a list of all patches relevant to us, sorted by slide so we don't have to
+    # sample slides out of order
+    make_dbview_full()
+    db=get_db()
+    rc = db.execute(
+            'SELECT * FROM v_full '
+            'WHERE task=? ORDER BY slide_name', (task,)).fetchall()
+
+    # For each patch check if it is there
+    for row in rc:
+        id=row['id']
+        fn=get_sample_patch_filename(id)
+        if os.path.exists(fn):
+            w,h = Image.open(fn).size
+            if w == 512 and h == 512:
+                continue
+        print('Missing or corrupt patch for sample %d' % id)
+
+        rect=(float(row['x0']), float(row['y0']), float(row['x1']), float(row['y1']))
+
+        # Generate the patch
+        generate_sample_patch(row['slide'], id, rect)
 
 
         
@@ -614,3 +642,4 @@ def init_app(app):
     app.cli.add_command(samples_import_csv_command)
     app.cli.add_command(samples_export_csv_command)
     app.cli.add_command(samples_delete_cmd)
+    app.cli.add_command(samples_fix_patches_cmd)

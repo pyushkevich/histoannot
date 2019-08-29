@@ -5,7 +5,9 @@
         "tau"
     ], 
     "dltrain": {
-        "labelset": "tangles"
+        "labelset": "tangles",
+	"min-size": 32,
+	"max-size": 512
     }, 
     "mode": "dltrain", 
     "desc": "Training a deep learning classifier to recognize neurofibrillary tangles"

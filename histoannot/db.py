@@ -398,7 +398,7 @@ def update_slide_derived_data(slide_id):
 # and URLs to Google Sheet spreadsheets in which individual slides are matched to the
 # block/section/slice/stain information. Checks if the corresponding files exist in 
 # the Google cloud and creates slide identifiers as needed
-def refresh_slide_db(manifest, bucket, single_specimen = None):
+def refresh_slide_db(manifest, single_specimen = None):
 
     # Database cursor
     db = get_db()
@@ -445,6 +445,7 @@ def refresh_slide_db(manifest, bucket, single_specimen = None):
 
                         # Create a slideref for this object. The way we have set all of this up, the extension is not
                         # coded anywhere in the manifests, so we dynamically check for multiple extensions
+                        found=False
                         for slide_ext in ('svs', 'tif', 'tiff'):
 
                             sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
@@ -459,11 +460,12 @@ def refresh_slide_db(manifest, bucket, single_specimen = None):
 
                                 # Update thumbnail and such
                                 update_slide_derived_data(sid)
-
+                                found=True
                                 break
 
                         # We are here because no URL was found
-                        print('Raw image was not found for slide %s' % slide_name)
+                        if not found:
+                            print('Raw image was not found for slide %s' % slide_name)
 
                     except:
 
@@ -516,7 +518,7 @@ def load_raw_slide_to_cache(slide_id, resource):
 @with_appcontext
 def refresh_slides_command(manifest, specimen):
     """Refresh the slide database using manifest file MANIFEST that lists specimens and GDrive links"""
-    refresh_slide_db(manifest, "gs://mtl_histology", specimen);
+    refresh_slide_db(manifest, specimen);
     click.echo('Scanning complete')
 
 

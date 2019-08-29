@@ -11,5 +11,8 @@
   { "name" : "vessel_tau", "color" : "#394a63", "description" : "Dense tau around vessels"},
   { "name" : "tau_fold", "color" : "#ee4068", "description" : "Tau stain in a fold"},
   { "name" : "artifact", "color" : "#01c12a", "description" : "Various unexpected areas other than dirt"},
-  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"}
+  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"},
+  { "name" : "pretangle", "color" : "#b095b8", "description" : "Pretangle, not a tangle yet"},
+  { "name" : "coil_body", "color" : "#dd0215", "description" : "Coil body, oligodendrocytes in white matter"},
+  { "name" : "edge_tau", "color" : "#02dd15", "description" : "Tau staining along tissue edges"}
 ]

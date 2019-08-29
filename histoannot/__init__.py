@@ -116,6 +116,11 @@ def create_app(test_config = None):
 
         app.add_url_rule('/', endpoint='index')
 
+        # Enable hello world
+        @app.route('/hello')
+        def hello():
+            return 'HISTOANNOT MASTER'
+
     # Supporting 'dzi' node (serves images/tiles but no database)
     elif app.config['HISTOANNOT_SERVER_MODE'] == "dzi_node":
 

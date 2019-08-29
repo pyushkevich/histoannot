@@ -918,13 +918,19 @@ $(document).ready(function() {
   // Update button active state
   var fn_update_button_state = function() {
     // Is there an active selection
-    console.log('SELECTED: ', get_number_selected_manipulables())
     if(get_number_selected_manipulables() > 0)
       document.getElementById("del_button").className = 
         document.getElementById("del_button").className.replace(" disabled", " enabled");
     else
       document.getElementById("del_button").className = 
         document.getElementById("del_button").className.replace(" enabled", " disabled");
+
+  }
+
+  // Give focus to the viewer. Call this at the beginning and when done interacting
+  // with other elements
+  var fn_focus_on_viewer = function() {
+    document.getElementById('view').querySelector('.openseadragon-canvas').focus();
   }
 
 
@@ -950,6 +956,7 @@ $(document).ready(function() {
     curr_mode = 'NAV';
     fn_active_button(document.getElementById('nav_button'))
     document.getElementById("view").style.cursor = "default";
+    fn_focus_on_viewer()
   }
 
   var marker_pressed_handler = function(options) {
@@ -966,6 +973,7 @@ $(document).ready(function() {
     curr_mode = 'BOX';
     fn_active_button(document.getElementById('box_button'))
     document.getElementById("view").style.cursor = "crosshair";
+    fn_focus_on_viewer()
   }
 
   var del_pressed_handler = function(options) {
@@ -991,6 +999,8 @@ $(document).ready(function() {
           fn_update_button_state()
         });
       }
+
+      fn_focus_on_viewer();
     }
   }
 
@@ -1025,7 +1035,6 @@ $(document).ready(function() {
     Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
   }
 
-
   // Sometimes the scrolling is messed up
   document.body.scrollTop = document.documentElement.scrollTop = 0;
 
@@ -1035,9 +1044,19 @@ $(document).ready(function() {
     overlay.resizecanvas(); }
 
   // Disable viewer keyboard
-  viewer.innerTracker.keyDownHandler = null;
-  viewer.innerTracker.keyPressHandler = null;
-  viewer.innerTracker.keyHandler = null;
+  var default_osd_keyDownHandler = viewer.innerTracker.keyDownHandler;
+  viewer.innerTracker.keyDownHandler = function(event) {
+    if((event.keyCode == 'R'.charCodeAt(0) && !event.ctrl && !event.meta) 
+        || (event.keyCode == 'F'.charCodeAt(0) && !event.ctrl && !event.meta)) {
+      return null;
+    }
+
+    return default_osd_keyDownHandler(event)
+  };
+
+  // viewer.innerTracker.keyDownHandler = null;
+  // viewer.innerTracker.keyPressHandler = null;
+  // viewer.innerTracker.keyHandler = null;
 
   // Initialize the parts of the UI corresponding to labels
   if (seg_mode == 'dltrain') {
@@ -1063,6 +1082,7 @@ $(document).ready(function() {
       select_label(items[0].data.label_id);
       load_samples_table_ajax(items[0].data.label_id);
       fn_update_button_state();
+      fn_focus_on_viewer()
     }
 
     // Function to reload labels in a loop
@@ -1098,12 +1118,14 @@ $(document).ready(function() {
       else {
         load_samples_table_ajax(id);
       }
+      fn_focus_on_viewer()
     }
 
     // A callback function for when a sample is clicked
     var sample_select_callback = function(id, cx, cy, slide_id) {
       if(slide_id == "{{slide_id}}") {
         focus_on_sample(id, cx, cy)
+        fn_focus_on_viewer()
       }
       else {
         if(confirm("Are you sure you want to navigate to another slide?")) {
@@ -1128,6 +1150,8 @@ $(document).ready(function() {
         focus_on_sample(Number(focus_sample_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));A
       }
     }
+
+    fn_focus_on_viewer();
 
   }
   // Initialize parts of UI related to annotation

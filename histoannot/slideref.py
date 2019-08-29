@@ -127,10 +127,15 @@ class SlideRef:
         # Store the schema
         self._schema = schema
 
-        # Create a local directory for caching the content from the remote URL
-        self._local_baseurl = os.path.join(current_app.instance_path, 'slidecache')
-        if not os.path.exists(self._local_baseurl):
-            os.makedirs(self._local_baseurl)
+        # If there is a remote handler, we need a local cache directory. If not,
+        # files are from the same filesystem and no local path is needed
+        if remote_handler is not None:
+            # Create a local directory for caching the content from the remote URL
+            self._local_baseurl = os.path.join(current_app.instance_path, 'slidecache')
+            if not os.path.exists(self._local_baseurl):
+                os.makedirs(self._local_baseurl)
+        else:
+            self._local_baseurl = self._remote_baseurl
 
     # Get a tuple identifying the slide
     def get_id_tuple(self):
@@ -150,7 +155,7 @@ class SlideRef:
     # Check whether a resource exists (locally or remotely)
     def resource_exists(self, resource, local = True):
         f = self.get_resource_url(resource, local)
-        if local is True:
+        if local is True or self._url_handler is None:
             return os.path.exists(f) and os.path.isfile(f)
         else:
             return self._url_handler.exists(f)
@@ -160,15 +165,21 @@ class SlideRef:
 
         # Get the local URL
         f_local = self.get_resource_url(resource, True)
-        f_local_md5 = f_local + '.md5'
-        f_remote = self.get_resource_url(resource, False)
 
         # If it already exists, make sure it matches the remote file
         have_local = os.path.exists(f_local) and os.path.isfile(f_local)
 
+        # If no remote, then we are done
+        if self._url_handler is None:
+            return f_local if have_local else None
+
         # If we are not checking hashes, and local file exists, we can return it
         if have_local and not check_hash:
             return f_local
+
+        # Get ready to check the remote
+        f_local_md5 = f_local + '.md5'
+        f_remote = self.get_resource_url(resource, False)
 
         # If we are here, we will need to access the remote url. Let's check if
         # it actually exists. If not, we must return None. But we should also 
@@ -238,6 +249,9 @@ class SlideRef:
 
     # Get the download progress (fraction of local file size to remote)
     def get_download_progress(self, resource):
+
+        if self._url_handler is None:
+            return 1.0
 
         # Get the local file and remote blob
         f_local = self.get_resource_url(resource, True)

@@ -82,6 +82,9 @@ def create_app(test_config = None):
     app.register_blueprint(dzi.bp)
     dzi.init_app(app)
 
+    # Set the default queues
+    app.config['PRELOAD_QUEUE'] = "%s_preload" % (app.config.get('HISTOANNOT_REDIS_PREFIX',''),)
+
     # Server mode determines what we do next
     if app.config['HISTOANNOT_SERVER_MODE'] == "master":
 
@@ -121,9 +124,6 @@ def create_app(test_config = None):
         @app.route('/hello')
         def hello():
             return 'HISTOANNOT MASTER'
-
-        # Set the default queues
-        app.config['PRELOAD_QUEUE'] = "%s_preload" % (app.config.get('HISTOANNOT_REDIS_PREFIX',''),)
 
     # Supporting 'dzi' node (serves images/tiles but no database)
     elif app.config['HISTOANNOT_SERVER_MODE'] == "dzi_node":

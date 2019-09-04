@@ -23,6 +23,7 @@ from werkzeug.exceptions import abort
 from histoannot.auth import login_required
 from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
+from histoannot.dzi import get_affine_matrix
 from io import BytesIO
 
 import os
@@ -261,15 +262,29 @@ def get_slide_info(task_id, slide_id):
 
 
 # The slide view
-@bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<affine_mode>', methods=('GET', 'POST'))
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<resolution>/<affine_mode>', methods=('GET', 'POST'))
 @login_required
-def slide_view(task_id, slide_id, affine_mode):
+def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the current task data
     task = get_task_data(task_id)
 
     # Get the next/previous slides for this task
     (slide_info, prev_slide, next_slide) = get_slide_info(task_id, slide_id)
+
+    # Check that the affine mode and resolution requested are available
+    sr = get_slide_ref(slide_id)
+    have_affine = sr.resource_exists('affine', True) or sr.resource_exists('affine', False)
+    have_x16 = sr.resource_exists('x16', True) or sr.resource_exists('x16', False)
+
+    # If one is missing, we need a redirect
+    rd_affine_mode = affine_mode if have_affine else 'raw'
+    rd_resolution = resolution if have_x16 else 'raw'
+
+    if (affine_mode == 'affine' and not have_affine) or (resolution == 'x16' and not have_x16):
+        return redirect(url_for('slide.slide_view', 
+            task_id=task_id, slide_id=slide_id,
+            resolution=rd_resolution, affine_mode=rd_affine_mode))
 
     # Are we delegating DZI service to separate nodes?
     del_url = find_delegate_for_slide(slide_id)
@@ -280,7 +295,10 @@ def slide_view(task_id, slide_id, affine_mode):
             'slide_info': slide_info, 
             'next_slide':next_slide, 
             'prev_slide':prev_slide, 
-            'affine_mode':affine_mode, 
+            'affine_mode':affine_mode,
+            'have_affine':have_affine,
+            'have_x16':have_x16,
+            'resolution':resolution,
             'seg_mode':task['mode'], 
             'task_id': task_id, 
             'dzi_url': del_url if del_url is not None else '',
@@ -318,17 +336,10 @@ def get_annot_json_file(task_id, slide_id):
 
 
 # Get the affine matrix for a slide
-def get_affine_matrix(slide_id, mode):
+def get_affine_matrix_by_slideid(slide_id, mode, resolution='raw'):
 
-    if mode == 'affine':
-
-        sr = get_slide_ref(slide_id)
-        affine_fn = sr.get_local_copy('affine')
-        if affine_fn is not None:
-            M = np.loadtxt(affine_fn)
-            return M
-
-    return np.eye(3)
+    sr = get_slide_ref(slide_id)
+    return get_affine_matrix(sr, mode, resolution)
 
 
 # Transform a paper.js project using an affine matrix M. Also returns
@@ -405,15 +416,15 @@ def _do_update_annot(task_id, slide_id, annot, stats):
 
 
 # Receive updated json for the slide
-@bp.route('/task/<int:task_id>/slide/<mode>/<int:slide_id>/annot/set', methods=('POST',))
+@bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/set', methods=('POST',))
 @login_required
-def update_annot_json(task_id, mode, slide_id):
+def update_annot_json(task_id, mode, resolution, slide_id):
 
     # Get the raw json
     data = json.loads(request.get_data())
 
     # Get the affine transform
-    M_inv = get_affine_matrix(slide_id, mode)
+    M_inv = get_affine_matrix_by_slideid(slide_id, mode, resolution)
 
     # Transform the data and count items
     (data, stats) = transform_annot(data, M_inv)
@@ -425,9 +436,9 @@ def update_annot_json(task_id, mode, slide_id):
 
 
 # Send the json for the slide
-@bp.route('/task/<int:task_id>/slide/<mode>/<int:slide_id>/annot/get', methods=('GET',))
+@bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/get', methods=('GET',))
 @login_required
-def get_annot_json(task_id, mode, slide_id):
+def get_annot_json(task_id, mode, resolution, slide_id):
 
     # Find the annotation in the database
     db = get_db()
@@ -435,7 +446,7 @@ def get_annot_json(task_id, mode, slide_id):
                     (slide_id, task_id)).fetchone()
 
     # Get the affine transform
-    M = np.linalg.inv(get_affine_matrix(slide_id, mode))
+    M = np.linalg.inv(get_affine_matrix_by_slideid(slide_id, mode, resolution))
 
     # Return the data
     if rc is not None:

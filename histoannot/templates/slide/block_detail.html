@@ -37,10 +37,10 @@
           {% else %}
             <td>0</td>
           {% endif %}
-          <td><a class="action" href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide['id'], affine_mode='affine') }}">Annotate</a></td>
+          <td><a class="action" href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide['id'], affine_mode='affine', resolution='x16') }}">Annotate</a></td>
         {% elif task['mode'] == 'dltrain' %}
           <td>{{slide['n_samples']}}</td>
-          <td><a class="action" href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide['id'], affine_mode='raw') }}">Train</a></td>
+          <td><a class="action" href="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide['id'], affine_mode='raw', resolution='raw') }}">Train</a></td>
         {% endif %}
       </tr>
   {% endfor %}

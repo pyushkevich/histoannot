@@ -22,19 +22,17 @@ from threading import Lock
 from collections import OrderedDict
 from PIL import Image
 from flask import g
+import numpy as np
 
 import os_affine as m
 
 class AffineTransformedOpenSlide(object):
 
-    def __init__(self, slide_path, affine_path):
+    def __init__(self, slide_path, affine_matrix = np.eye(3)):
 
         # Read the affine matrix into a tuple
-        self._affine = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
-        if affine_path is not None:
-            with open(affine_path) as f:
-                self._affine = tuple(tuple(map(float, i.split(' '))) for i in f)
-
+        self._affine = tuple(map(tuple, affine_matrix))
+        
         # Initialize the C code
         self._osr = m.init_osr(slide_path, (0,0))
         n_levels = m.get_nlevels(self._osr)

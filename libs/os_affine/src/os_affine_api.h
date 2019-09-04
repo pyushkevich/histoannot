@@ -165,12 +165,15 @@ public:
       // Compute the current sampling coordinate
       for(int px = 0; px < w; px++)
         {
+        interp.Interpolate(cix, rgba);
+        /*
         if(interp.Interpolate(cix, rgba) != InterpType::INSIDE)
           {
           printf("Unable to sample at (%d,%d) at level %d\n", x + px, y + py, level);
           printf("CIX = (%f,%f)\n", cix[0], cix[1]);
           throw std::exception();
           }
+        */
 
         // Update the sampling position
         cix[0] += dx; cix[1] += dy;

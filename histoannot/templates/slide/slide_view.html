@@ -75,7 +75,7 @@ button.disabled, button.disabled:hover {
       </td>
       <td align="right">
         {% if prev_slide %}
-            <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode)}}">Previous Slide</a>
+            <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">Previous Slide</a>
         {% endif %}
         &nbsp
         <!-- affine or raw mode -->
@@ -83,14 +83,26 @@ button.disabled, button.disabled:hover {
         <form id="form_mode" "target=#" style="display: inline;">
           <label for="form_mode_select">Transform:<label>
             <select id="form_mode_select" style="font-size: 80%">
-            <option value="affine">Aligned to MRI</option>
+            {% if have_affine  %}
+              <option value="affine">Aligned to MRI</option>
+            {% endif %}
             <option value="raw">Native Space</option>
+          </select>
+        </form>
+        &nbsp
+        <form id="form_res" "target=#" style="display: inline;">
+          <label for="form_res_select">Resolution:<label>
+            <select id="form_res_select" style="font-size: 80%">
+            {% if have_x16  %}
+              <option value="x16">1:16</option>
+            {% endif %}
+            <option value="raw">1:1</option>
           </select>
         </form>
         &nbsp
         {% endif %}
         {% if next_slide  %}
-            <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode)}}">Next Slide</a>
+            <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode,resolution=resolution)}}">Next Slide</a>
         {% endif %}
       </td>
   </tr></table>
@@ -186,14 +198,21 @@ $(document).ready(function() {
   adjust_paperjs_scaling = function(paperZoom) {
 
     // Handle paths
-    var items = paper.project.getItems({class: paper.Path});
-    for (var i = 0; i < items.length; i++) {
-      if(items[i].data.rawStrokeWidth) {
-        items[i].strokeWidth = zoom_paperjs_scaling_fn(items[i].data.rawStrokeWidth, 0, paperZoom);
+    var paths = paper.project.getItems({class: paper.Path});
+    for (var i = 0; i < paths.length; i++) {
+      if(paths[i].data.rawStrokeWidth) {
+        paths[i].strokeWidth = zoom_paperjs_scaling_fn(paths[i].data.rawStrokeWidth, 0, paperZoom);
       }
     }
-    paper.view.draw();
 
+    // Handle markers
+    var markers = paper.project.getItems({class: paper.PointText});
+    for (var i = 0; i < markers.length; i++) {
+      markers[i].style.fontSize = get_width_in_canvas_units(10)
+      markers[i].style.leading = markers[i].style.fontSize * 1.2
+    }
+
+    paper.view.draw();
   }
 
   // Handle display zoom, adjusting the styling of displayed items
@@ -252,7 +271,7 @@ $(document).ready(function() {
   // Add the tiled image to the viewer and when successful, initialize the overlay
   var init_viewer = function() {
     viewer.addTiledImage({
-      tileSource: "{{ dzi_url + url_for('dzi.dzi', mode=affine_mode,  specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext']) }}",
+      tileSource: "{{ dzi_url + url_for('dzi.dzi', mode=affine_mode,  specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext'], resource=resolution) }}",
       x: 0,
       y: 0,
       success: init_paperjs,
@@ -304,7 +323,7 @@ $(document).ready(function() {
 
   // Prefetch the slide
   $.ajax({
-    url: "{{ dzi_url + url_for('dzi.dzi_preload', specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext']) }}",
+    url: "{{ dzi_url + url_for('dzi.dzi_preload', specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext'], resource=resolution) }}",
     success: function(response_text) {
       data = JSON.parse(response_text);
       if(data.status == 'finished') {
@@ -378,7 +397,7 @@ $(document).ready(function() {
   }
 
   var upload_annot = function() {
-    var url="{{url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode)}}"
+    var url="{{url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution)}}"
     payload = paper.project.exportJSON();
     $.post(url , payload, 
         function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
@@ -406,7 +425,7 @@ $(document).ready(function() {
 
 
   var download_annot = function() {
-    $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode) }}", 
+    $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution) }}", 
         function(data, status) {
           if(status=='success' && data.length) {
             paper.project.importJSON(data);
@@ -1131,7 +1150,7 @@ $(document).ready(function() {
       else {
         if(confirm("Are you sure you want to navigate to another slide?")) {
           // Generate a URL for the new slide
-          var url="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=affine_mode)}}";
+          var url="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=affine_mode, resolution=resolution)}}";
           url = url.replace('999999', slide_id);
           $('<form>').attr('method','post').attr('action',url).append(
               $('<input type="hidden" name="sample_id">').attr("value", id),
@@ -1163,9 +1182,18 @@ $(document).ready(function() {
 
     // Listen to changes on the form
     $("#form_mode_select").change(function() {
-      tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode="XXXX") }}"
+      tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='XXXX', resolution=resolution) }}"
       url = tmpl.replace('XXXX', $("#form_mode_select").val())
       $("#form_mode").attr("method","post").attr("action", url).submit()
+    });
+
+    // Populate the trasform form
+    $("#form_res_select").val("{{resolution}}");
+
+    $("#form_res_select").change(function() {
+      tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}"
+      url = tmpl.replace('XXXX', $("#form_res_select").val())
+      $("#form_res").attr("method","post").attr("action", url).submit()
     });
   }
 

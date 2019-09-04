@@ -31,7 +31,7 @@ _default_histo_url_schema = {
     # The filename patterns
     "pattern" : {
         "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
-        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16.png",
+        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
         "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
         "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff"
     },
@@ -121,6 +121,9 @@ def create_app(test_config = None):
         @app.route('/hello')
         def hello():
             return 'HISTOANNOT MASTER'
+
+        # Set the default queues
+        app.config['PRELOAD_QUEUE'] = "%s_preload" % (app.config.get('HISTOANNOT_REDIS_PREFIX',''),)
 
     # Supporting 'dzi' node (serves images/tiles but no database)
     elif app.config['HISTOANNOT_SERVER_MODE'] == "dzi_node":

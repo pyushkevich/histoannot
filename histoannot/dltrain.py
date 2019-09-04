@@ -388,7 +388,7 @@ def create_sample_base(task_id, slide_id, label_id, rect):
     # Create a job that will sample the patch from the image. The reason we do this in a queue
     # is that a server hosting the slide might have gone down and the slide would need to be
     # downloaded again, and we don't want to hold up returning to the user for so long
-    q = Queue("preload", connection=Redis())
+    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, job_timeout="120s", result_ttl="60s")
 
     # Stick the properties into the job

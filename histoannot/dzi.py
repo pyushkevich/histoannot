@@ -46,32 +46,32 @@ from flask.cli import with_appcontext
 
 
 # The function that is enqueued in RQ
-def do_preload_file(specimen, block, slide_name, slide_ext):
+def do_preload_file(specimen, block, resource, slide_name, slide_ext):
 
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
     print('Fetching %s %s %s.%s' % (specimen, block, slide_name, slide_ext))
-    tiff_file = sr.get_local_copy('raw', check_hash=True)
+    tiff_file = sr.get_local_copy(resource, check_hash=True)
     print('Fetched to %s' % tiff_file)
     return tiff_file
 
 
 # Prepare the DZI for a slide. Must be called first
-@bp.route('/dzi/preload/<specimen>/<block>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
-def dzi_preload(specimen, block, slide_name, slide_ext):
+@bp.route('/dzi/preload/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+def dzi_preload(specimen, block, resource, slide_name, slide_ext):
 
     # Check if the file exists locally. If so, there is no need to queue a worker
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
-    tiff_file = sr.get_local_copy('raw', check_hash=True, dry_run=True)
+    tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
     if tiff_file is not None:
         return json.dumps({ "status" : JobStatus.FINISHED })
 
     # Get a redis queue
-    q = Queue("preload", connection=Redis())
-    job = q.enqueue(do_preload_file, specimen, block, slide_name, slide_ext,
-            job_timeout="120s", result_ttl="60s")
+    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
+    job = q.enqueue(do_preload_file, specimen, block, resource, slide_name, slide_ext,
+            job_timeout="300s", result_ttl="60s")
 
     # Stick the properties into the job
-    job.meta['args']=(specimen, block, slide_name, slide_ext, 'raw')
+    job.meta['args']=(specimen, block, resource, slide_name, slide_ext)
     job.save_meta()
 
     # Return the job id
@@ -81,7 +81,7 @@ def dzi_preload(specimen, block, slide_name, slide_ext):
 # Check the status of a job
 @bp.route('/dzi/job/<job_id>/status', methods=('GET', 'POST'))
 def dzi_job_status(job_id):
-    q = Queue("preload", connection=Redis())
+    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     j = q.fetch_job(job_id)
 
     if j is None:
@@ -91,7 +91,7 @@ def dzi_job_status(job_id):
     res = { 'status' : j.get_status() }
 
     if j.get_status() == JobStatus.STARTED:
-        (specimen, block, slide_name, slide_ext, resource) = j.meta['args']
+        (specimen, block, resource, slide_name, slide_ext) = j.meta['args']
         sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
         res['progress'] = sr.get_download_progress(resource)
 
@@ -99,22 +99,48 @@ def dzi_job_status(job_id):
 
 
 
+# Get affine matrix corresponding to affine mode and resolution
+def get_affine_matrix(slide_ref, mode, resolution='raw', target='annot'):
+
+    M_aff=np.eye(3)
+    M_res=np.eye(3)
+    if mode == 'affine':
+
+        affine_fn = slide_ref.get_local_copy('affine')
+        if affine_fn is not None:
+            M_aff = np.loadtxt(affine_fn)
+
+    if resolution == 'x16':
+
+        M_res[0,0] = 16.0
+        M_res[1,1] = 16.0
+
+    if target == 'annot':
+        M = np.dot(M_aff, M_res)
+    elif target == 'image':
+        M_res_inv = np.linalg.inv(M_res)
+        M = np.dot(np.dot(M_res_inv,M_aff),M_res)
+        #M = np.dot(np.dot(M_res,M_aff),np.linalg.inv(M_res))
+
+    return M
+
+
 # Get the DZI for a slide
-@bp.route('/dzi/<mode>/<specimen>/<block>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
-def dzi(mode, specimen, block, slide_name, slide_ext):
+@bp.route('/dzi/<mode>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+def dzi(mode, specimen, block, resource, slide_name, slide_ext):
     format = 'jpeg'
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
 
-    tiff_file = sr.get_local_copy('raw', check_hash=True)
+    tiff_file = sr.get_local_copy(resource, check_hash=True)
 
     # Get an affine transform if that is an option
-    affine_file = sr.get_local_copy('affine', check_hash=True) if mode=='affine' else None
+    A = get_affine_matrix(sr, mode, resource, 'image')
     
     try:
-        osa = AffineTransformedOpenSlide(tiff_file, affine_file)
+        osa = AffineTransformedOpenSlide(tiff_file, A)
         dz = DeepZoomGenerator(osa)
         dz.filename = os.path.basename(tiff_file)
         resp = make_response(dz.get_dzi('jpeg'))
@@ -124,29 +150,6 @@ def dzi(mode, specimen, block, slide_name, slide_ext):
         # Unknown slug
         abort(404)
 
-# What percentage of the slide is available locally (in the cache)
-@bp.route('/dzi/api/<int:id>/cache_progress', methods=('GET', ))
-def get_cache_progress(id):
-
-    sr = get_slide_ref(id)
-    progress = sr.get_download_progress('raw');
-    print("Progress: ", progress)
-    return json.dumps({'progress':progress}), 200, {'ContentType':'application/json'} 
-
-
-
-# Get the affine matrix for a slide
-def get_affine_matrix(slide_id, mode):
-
-    if mode == 'affine':
-
-        sr = get_slide_ref(slide_id)
-        affine_fn = sr.get_local_copy('affine')
-        if affine_fn is not None:
-            M = np.loadtxt(affine_fn)
-            return M
-
-    return np.eye(3)
 
 
 class PILBytesIO(BytesIO):
@@ -156,9 +159,9 @@ class PILBytesIO(BytesIO):
 
 
 # Get the tiles for a slide
-@bp.route('/dzi/<mode>/<specimen>/<block>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
+@bp.route('/dzi/<mode>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
-def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
+def tile(mode, specimen, block, resource, slide_name, slide_ext, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
@@ -168,12 +171,11 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
-    tiff_file = sr.get_local_copy('raw')
+    tiff_file = sr.get_local_copy(resource)
 
     os = None
     if mode == 'affine':
-        affine_file = sr.get_local_copy('affine')
-        os = AffineTransformedOpenSlide(tiff_file, affine_file)
+        os = AffineTransformedOpenSlide(tiff_file, get_affine_matrix(sr, 'affine', resource, 'image'))
     else:
         os = OpenSlide(tiff_file)
 
@@ -188,7 +190,7 @@ def tile(mode, specimen, block, slide_name, slide_ext, level, col, row, format):
 
 
 # Get an image patch at level 0 from the raw image
-@bp.route('/dzi/patch/<specimen>/<block>/<slide_name>.<slide_ext>/<int:x>_<int:y>_<int:w>_<int:h>.<format>',
+@bp.route('/dzi/patch/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:x>_<int:y>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
 def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
 
@@ -201,7 +203,7 @@ def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
     sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
-    tiff_file = sr.get_local_copy('raw')
+    tiff_file = sr.get_local_copy(resource)
     
     # Read the region centered on the box of size 512x512
     os = OpenSlide(tiff_file)
@@ -220,7 +222,7 @@ def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
 @with_appcontext
 def run_preload_worker_cmd():
     with Connection():
-        w = Worker("preload")
+        w = Worker(current_app.config['PRELOAD_QUEUE'])
         w.work()
 
 # Command to ping master

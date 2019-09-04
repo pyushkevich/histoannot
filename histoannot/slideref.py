@@ -211,12 +211,12 @@ class SlideRef:
             return None
 
         # Clean up the cache
-        if resource == 'raw':
+        if resource == 'raw' or resource == 'x16':
 
             # Generate a wildcard pattern to list all 'raw' format files 
             d = {"baseurl" : self._local_baseurl,
                  "specimen" : "*", "block" : "*", "slide_name": "*", "slide_ext" : "*" }
-            wildcard_str =  self._schema["pattern"]['raw'].format(**d)
+            wildcard_str =  self._schema["pattern"][resource].format(**d)
 
             # For each of the files, use os.stat to get information
             f_heap = []

@@ -34,41 +34,68 @@ bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 @bp.route('/register', methods=('GET', 'POST'))
 def register():
+    error = None
+    print("WTF ", request.form)
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        syspass = request.form['syspass']
-        db = get_db()
-        error = None
 
-        if not username:
-            error = 'Username is required.'
-        elif not password:
-            error = 'Password is required.'
-        elif not syspass:
-            error = 'System password is required'
+        if session.get('is_invited', False) is False:
+
+            # Handle the invitation portion
+            syspass = request.form['syspass']
+            if not syspass:
+                error = 'Invitation code is required'
+            else:
+                # Read system password 
+                passfile=os.path.join(current_app.instance_path,'password.txt')
+                target=''
+                with open(passfile, 'r') as infile:  
+                    target=infile.read().replace('\n','')
+                    if target != hashlib.md5(syspass.encode()).hexdigest():
+                        error = 'Invalid invitation code'
+
+            if error is None:
+                session['is_invited'] = True
+
         else:
-            passfile=os.path.join(current_app.instance_path,'password.txt')
-            target=''
-            with open(passfile, 'r') as infile:  
-                target=infile.read().replace('\n','')
+            print('HERE ', session.get('is_invited', False))
 
-            if target != hashlib.md5(syspass.encode()).hexdigest():
-                error = 'Wrong system password: "' + hashlib.md5(syspass.encode()).hexdigest() + '" vs "' + target + '"'
-            elif db.execute('SELECT id FROM user WHERE username = ?', (username,)).fetchone() is not None:
-                error = 'User {} is already registered.'.format(username)
+            # Invited user, get the registration info
+            username = request.form['username']
+            password = request.form['password']
 
-        if error is None:
-            db.execute(
-                'INSERT INTO user (username, password) VALUES (?, ?)',
-                (username, generate_password_hash(password))
-            )
-            db.commit()
-            return redirect(url_for('auth.login'))
+            db = get_db()
+            error = None
 
+            if not username:
+                error = 'Username is required.'
+            elif not password:
+                error = 'Password is required.'
+            else:
+                rc = db.execute('SELECT username FROM user WHERE username=?',(username,))
+                if rc.fetchone() is not None:
+                    error = 'Username "%s" is already taken' % (username,)
+                else:
+                    # Process user
+                    db.execute(
+                        'INSERT INTO user (username, password) VALUES (?, ?)',
+                        (username, generate_password_hash(password))
+                    )
+                    db.commit()
+
+                    # Take user to main page
+                    user = db.execute('SELECT * FROM user WHERE username = ?', (username,)).fetchone()
+                    session.clear()
+                    session['user_id'] = user['id']
+                    return redirect(url_for('index'))
+
+    else:
+        session.clear()
+
+    if error is not None:
         flash(error)
 
-    return render_template('auth/register.html')
+    return render_template('auth/register.html', invited=session.get('is_invited', False))
+
 
 def set_system_password():
     syspass=getpass.getpass("System password:")

@@ -1,32 +1,67 @@
 {% extends 'base.html' %}
 
 {% block header %}
-  {% block title %}Register{% endblock %}
+  {% block title %}Register as a New User{% endblock %}
 {% endblock %}
 
 {% block content %}
-<div>
-  <form method="post">
-    <fieldset>
-      <div>
-      <label for="reg_username">Username</label>
-      <input name="username" id="username" required>
-      </div>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
 
-      <div>
-      <label for="reg_password">Password</label>
-      <input type="password" name="password" id="password" required style="width=120px">
-      </div>
+<div class="pure-g">
+  <div class="pure-u-1 pure-u-md-3-5">
 
-      <div>
-      <label for="reg_syspass">Invitation Code</label>
-      <input type="password" name="syspass" id="syspass" required style="width=120px">
-      </div>
+    {% if not invited %}
+      <p>To use this website, you need an invitation code. An invitation code should have been sent to you by email.</p>
+      <form method="post" class="pure-form pure-form-stacked">
+        <fieldset>
+          <label for="syspass">Invitation Code</label>
+          <input type="password" name="syspass" id="syspass" required>
+          <button type="submit" class="pure-button pure-button-primary">Submit</button>
+        </fieldset>
+      </form>
+    {% else %}
+      <p>Welcome to the PICSL Histology Annotation System. Please provide the information below to register as a new user</p>
+      <form method="post" class="pure-form pure-form-stacked">
+        <fieldset>
+          <label for="username">Choose a username:</label>
+          <input name="username" id="username" required style="width:100%">
 
-      <div>
-        <button type="submit">Register</button>
-      </div>
-    </fieldset>
-  </form>
+          <label for="password">Choose a password:</label>
+          <input type="password" name="password" id="password" required>
+
+          <label for="confirm_password">Reenter the password:</label>
+          <input type="password" name="confirm_password" id="confirm_password" required>
+
+          <button type="submit" class="pure-button pure-button-primary">Register</button>
+        </fieldset>
+      </form>
+    {% endif %}
+  </div>
 </div>
+
+<div style="display:none">
+</div>
+
+<script type="text/javascript">
+
+$(document).ready(function() {
+  var password = document.getElementById("password");
+  var confirm_password = document.getElementById("confirm_password");
+
+  if(password) {
+    function validatePassword() {
+      if (password.value != confirm_password.value) {
+        confirm_password.setCustomValidity("Passwords Don't Match");
+      } else {
+        confirm_password.setCustomValidity('');
+      }
+    }
+
+    password.onchange = validatePassword;
+    confirm_password.onkeyup = validatePassword;
+  }
+})
+
+</script>
 {% endblock %}
+

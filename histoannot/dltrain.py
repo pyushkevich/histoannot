@@ -409,9 +409,9 @@ def create_sample_base(task_id, slide_id, label_id, rect):
 # --------------------------------
 
 # A function to create a temporary view of the samples
-def make_dbview_full():
+def make_dbview_full(view_name):
     db=get_db()
-    db.execute("""CREATE TEMP VIEW v_full AS
+    db.execute("""CREATE TEMP VIEW %s AS
                   SELECT T.*, B.specimen_name, B.block_name, L.name as label_name,
                          UC.username as creator, UE.username as editor,
                          EM.t_create, EM.t_edit, S.slide_name 
@@ -421,7 +421,7 @@ def make_dbview_full():
                       LEFT JOIN user UE on UE.id = EM.editor
                       LEFT JOIN slide S on T.slide = S.id
                       LEFT JOIN block B on S.block_id = B.id
-                      LEFT JOIN label L on T.label = L.id""")
+                      LEFT JOIN label L on T.label = L.id""" % (view_name,))
 
 
 
@@ -437,7 +437,7 @@ def samples_export_csv_command(task, output_file, header, metadata, ids):
     db = get_db()
 
     # Create the full view
-    make_dbview_full()
+    make_dbview_full('v_full')
 
     # Select keys to export
     keys = ('slide_name','label_name','x','y','w','h')
@@ -463,7 +463,7 @@ def samples_export_csv_command(task, output_file, header, metadata, ids):
 @click.command('samples-import-csv')
 @click.argument('task')
 @click.argument('input_file', type=click.File('rt'))
-@click.option('-u','--user', help='User name under which to insert samples')
+@click.option('-u','--user', help='User name under which to insert samples', required=True)
 @with_appcontext
 def samples_import_csv_command(task, input_file, user):
     """Import training samples from a CSV file"""
@@ -548,7 +548,7 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
 
     # Create a temporary view of the big join table
     db=get_db()
-    make_dbview_full()
+    make_dbview_full('v_full')
 
     # Build up a where clause
     w = [('creator LIKE ?', creator),
@@ -615,7 +615,7 @@ def samples_fix_patches_cmd(task):
 
     # Get a list of all patches relevant to us, sorted by slide so we don't have to
     # sample slides out of order
-    make_dbview_full()
+    make_dbview_full('v_full')
     db=get_db()
     rc = db.execute(
             'SELECT * FROM v_full '

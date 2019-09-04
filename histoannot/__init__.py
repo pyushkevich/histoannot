@@ -99,6 +99,7 @@ def create_app(test_config = None):
 
         # Slide blueprint
         app.register_blueprint(slide.bp)
+        slide.init_app(app)
 
 	# Delegation blueprint
 	app.register_blueprint(delegate.bp)

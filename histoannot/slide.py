@@ -30,6 +30,9 @@ import json
 import time
 import numpy as np
 import urllib2
+import click
+from flask.cli import with_appcontext
+import pandas
 
 bp = Blueprint('slide', __name__)
 
@@ -143,6 +146,42 @@ def task_detail(task_id):
                            blocks=blocks, task=task, task_id=task_id, clr = oddevenmap)
 
 
+# Generate a db view for slides specific to a mode (annot, dltrain)
+def make_slide_dbview(task_id, view_name):
+
+    db=get_db()
+
+    task = get_task_data(task_id)
+
+    # Create a where clause
+    wcl = ''
+    if 'stains' in task:
+        col = ','.join('"{0}"'.format(x) for x in task['stains'])
+        wcl = "WHERE S.stain COLLATE NOCASE IN (%s)" % col
+
+    if task['mode'] == 'annot':
+
+        db.execute("""CREATE TEMP VIEW %s AS
+                      SELECT S.*, 
+                      IFNULL(SUM(A.n_paths),0) as n_paths, 
+                      IFNULL(SUM(A.n_markers),0) as n_markers,
+                      B.specimen_name, B.block_name
+                      FROM slide S LEFT JOIN block B on S.block_id = B.id
+                                   LEFT JOIN annot A on A.slide_id = S.id AND A.task_id=%d
+                      %s
+                      GROUP BY S.id
+                      ORDER BY specimen_name, block_name, section, slide""" % (view_name,task_id,wcl))
+
+    elif task['mode'] == 'dltrain':
+
+        db.execute("""CREATE TEMP VIEW %s AS
+                      SELECT S.*, COUNT(T.id) as n_samples, 
+                      B.specimen_name, B.block_name
+                      FROM slide S LEFT JOIN training_sample T on T.slide = S.id AND T.task=%d
+                                   LEFT JOIN block B on S.block_id = B.id
+                      %s
+                      GROUP BY S.id
+                      ORDER BY specimen_name, block_name, section, slide""" % (view_name,task_id,wcl))
 
 
 # The block detail listing
@@ -277,7 +316,6 @@ def get_annot_json_file(task_id, slide_id):
     # Get the filename
     return os.path.join(json_dir, json_filename)
 
-import numpy
 
 # Get the affine matrix for a slide
 def get_affine_matrix(slide_id, mode):
@@ -311,14 +349,59 @@ def transform_annot(data, M):
                 for seg in x[1]['segments']:
                     # Transform the segment (point and handles)
                     for k in range(len(seg)):
-                        seg[k] = list(np.dot(A,seg[k]) + (b if k==0 else 0))
+                        z = np.dot(A,seg[k]) + (b if k==0 else 0)
+                        seg[k] = z.tolist()
+                        if k==0:
+                            print(z)
 
             # Increment the counters
             elif x[0] == 'PointText':
-                x[1]['matrix'][4:6] = list(np.dot(A,x[1]['matrix'][4:6])+b)
+                x[1]['matrix'][4:6] = (np.dot(A,x[1]['matrix'][4:6])+b).tolist()
                 n_markers = n_markers + 1
 
     return (data, {'n_paths' : n_paths, 'n_markers' : n_markers})
+
+
+
+# Update annotation for a slide, the annotation assumed to be already transformed
+# into raw slide space. Parameter annot is a dict loaded from JSON
+def _do_update_annot(task_id, slide_id, annot, stats):
+
+    # See if an annotation already exists
+    db = get_db()
+    a_row = db.execute('SELECT * FROM annot WHERE slide_id=? AND task_id=?',
+                       (slide_id, task_id)).fetchone()
+
+    if a_row is not None:
+
+        # Update the timestamp
+        update_edit_meta(a_row['meta_id'])
+        
+        # Update the row
+        db.execute(
+            'UPDATE annot SET json=?, n_paths=?, n_markers=? '
+            'WHERE slide_id=? AND task_id=?', 
+            (json.dumps(annot), stats['n_paths'], stats['n_markers'], slide_id, task_id))
+
+    else:
+
+        # Create a new timestamp
+        meta_id = create_edit_meta()
+
+        # Insert a new row
+        db.execute(
+            'INSERT INTO annot(json, meta_id, n_paths, n_markers, slide_id, task_id) '
+            'VALUES (?,?,?,?,?,?)', 
+            (json.dumps(annot), meta_id, stats['n_paths'], stats['n_markers'], slide_id, task_id))
+
+    # Commit
+    db.commit()
+
+    # Also generate a file, just for backup purposes
+    json_filename = get_annot_json_file(task_id, slide_id)
+
+    with open(json_filename, 'w') as outfile:  
+        json.dump(annot, outfile)
 
 
 # Receive updated json for the slide
@@ -335,41 +418,8 @@ def update_annot_json(task_id, mode, slide_id):
     # Transform the data and count items
     (data, stats) = transform_annot(data, M_inv)
 
-    # See if an annotation already exists
-    db = get_db()
-    a_row = db.execute('SELECT * FROM annot WHERE slide_id=? AND task_id=?',
-                       (slide_id, task_id)).fetchone()
-
-    if a_row is not None:
-
-        # Update the timestamp
-        update_edit_meta(a_row['meta_id'])
-        
-        # Update the row
-        db.execute(
-            'UPDATE annot SET json=?, n_paths=?, n_markers=? '
-            'WHERE slide_id=? AND task_id=?', 
-            (json.dumps(data), stats['n_paths'], stats['n_markers'], slide_id, task_id))
-
-    else:
-
-        # Create a new timestamp
-        meta_id = create_edit_meta()
-
-        # Insert a new row
-        db.execute(
-            'INSERT INTO annot(json, meta_id, n_paths, n_markers, slide_id, task_id) '
-            'VALUES (?,?,?,?,?,?)', 
-            (json.dumps(data), meta_id, stats['n_paths'], stats['n_markers'], slide_id, task_id))
-
-    # Commit
-    db.commit()
-
-    # Also generate a file, just for backup purposes
-    json_filename = get_annot_json_file(task_id, slide_id)
-
-    with open(json_filename, 'w') as outfile:  
-        json.dump(data, outfile)
+    # Update annotation
+    _do_update_annot(task_id, slide_id, data, stats)
 
     return json.dumps({'success':True}), 200, {'ContentType':'application/json'} 
 
@@ -411,4 +461,98 @@ def thumb(id):
     return send_from_directory(thumb_dir, thumb_fn, as_attachment=False)
 
 
+# CLI commands
+@click.command('annot-import')
+@click.argument('task', type=click.INT)
+@click.argument('slide_id', type=click.INT)
+@click.argument('annot_file', type=click.File('rt'))
+@click.option('-a','--affine', help="Affine matrix to apply to annotation", type=click.File('rt'))
+@click.option('-u','--user', help='User name under which to insert samples', required=True)
+@click.option('--raw-stroke-width', help='Set the stroke width of paths', type=click.INT)
+@click.option('--font-size', help='Set the font size of markers', type=click.INT)
+@with_appcontext
+def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width, font_size):
+    """ Import an annotation file in paper.js JSON format """
+
+    # Read data
+    data = json.load(annot_file)
+
+    # Look up the user
+    db = get_db()
+    g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()
+    if g.user is None:
+        print('User %s is not in the system' % user)
+        return -1
+
+    # Read matrix
+    M = np.eye(3)
+    if affine is not None:
+        M = np.loadtxt(affine)
+
+    # Transform the data and count items
+    (data, stats) = transform_annot(data, M)
+
+    # Apply cosmetic transformations
+    if raw_stroke_width is not None:
+        if 'children' in data[0][1]:
+            for x in data[0][1]['children']:
+                if x[0] == 'Path':
+                    if 'data' not in x[1]:
+                        x[1]['data']={}
+                    x[1]['data']['rawStrokeWidth']=raw_stroke_width
+
+    if font_size is not None:
+        if 'children' in data[0][1]:
+            for x in data[0][1]['children']:
+                if x[0] == 'PointText':
+                    x[1]['fontSize']=font_size
+
+
+
+    # Update annotation
+    _do_update_annot(task, slide_id, data, stats)
+
+    # Report
+    print('Annotation for slide %d in task %d updated to %d paths, %d markers' %
+            (slide_id, task, stats['n_paths'], stats['n_markers']))
+
+
+# List slides
+@click.command('slides-list')
+@click.argument('task', type=click.INT)
+@click.option('-s','--specimen',help="List slides for a specimen")
+@click.option('-b','--block',help="List slides for a block")
+@click.option('--section',help="List slides for a section")
+@click.option('--slide',help="List slides for a slide")
+@with_appcontext
+def slides_list_cmd(task, specimen, block, section, slide):
+
+    db=get_db()
+
+    # Create a DB view of slide details
+    make_slide_dbview(task, 'v_full')
+
+    # Build up a where clause
+    w = filter(lambda (a,b): b is not None, 
+            [('specimen_name LIKE ?', specimen),
+             ('block_name LIKE ?', block),
+             ('section = ?', section),
+             ('slide = ?', slide) ])
+    if len(w) > 0:
+        w_sql,w_prm = zip(*w)
+        w_clause = 'WHERE %s' % ' AND '.join(w_sql)
+    else:
+        w_claise = ''
+        w_prm = ()
+
+    # Dump the database entries
+    with pandas.option_context('display.max_rows', None):  
+        print(pandas.read_sql_query(
+            "SELECT * FROM v_full %s" % w_clause,
+            db, params=w_prm))
+
+
+def init_app(app):
+    app.cli.add_command(import_annot_cmd)
+    app.cli.add_command(slides_list_cmd)
 

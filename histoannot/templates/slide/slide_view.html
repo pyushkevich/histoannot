@@ -409,8 +409,9 @@ $(document).ready(function() {
     $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode) }}", 
         function(data, status) {
           if(status=='success' && data.length) {
-            paper.project.importJSON(data)
-            deselect_all_manipulables()
+            paper.project.importJSON(data);
+            adjust_paperjs_scaling(get_image_zoomlevel());
+            deselect_all_manipulables();
       }
     })
   }

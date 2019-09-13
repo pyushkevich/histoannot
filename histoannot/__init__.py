@@ -33,7 +33,8 @@ _default_histo_url_schema = {
         "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
         "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
         "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
-        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff"
+        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
+        "d_tangles" :  "{baseurl}/{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
     },
 
     # The maximum number of bytes that may be cached locally for 'raw' data

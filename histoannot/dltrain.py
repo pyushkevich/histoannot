@@ -355,7 +355,7 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512)):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(specimen,block,slide_name,slide_ext,x,y,w,h,'png').data
+        rawbytes = get_patch(specimen,block,'raw',slide_name,slide_ext,x,y,w,h,'png').data
     else:
         subs = (del_url, specimen, block, slide_name, slide_ext, x, y, w, h)
         url = '%s/dzi/patch/%s/%s/%s.%s/%d_%d_%d_%d.png' % subs

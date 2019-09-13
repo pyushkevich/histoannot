@@ -288,6 +288,20 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Are we delegating DZI service to separate nodes?
     del_url = find_delegate_for_slide(slide_id)
+    del_url = del_url if del_url is not None else ''
+
+    # Form the URL templates for preloading and actual dzi access, so that in JS we
+    # can just do a quick substitution
+    url_ctx = {
+            'specimen':slide_info['specimen_name'], 
+            'block':slide_info['block_name'], 
+            'slide_name':slide_info['slide_name'], 
+            'slide_ext':slide_info['slide_ext'], 
+            'mode':affine_mode,
+            'resource':'XXXXX'}
+
+    url_tmpl_preload = del_url + url_for('dzi.dzi_preload', **url_ctx)
+    url_tmpl_dzi = del_url + url_for('dzi.dzi', **url_ctx)
 
     # Build a dictionary to call
     context = {
@@ -301,7 +315,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'resolution':resolution,
             'seg_mode':task['mode'], 
             'task_id': task_id, 
-            'dzi_url': del_url if del_url is not None else '',
+            'dzi_url': del_url,
+            'url_tmpl_preload': url_tmpl_preload,
+            'url_tmpl_dzi': url_tmpl_dzi,
             'task':task }
 
     # Add optional fields to context

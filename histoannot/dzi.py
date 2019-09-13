@@ -192,7 +192,7 @@ def tile(mode, specimen, block, resource, slide_name, slide_ext, level, col, row
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:x>_<int:y>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
-def get_patch(specimen, block, slide_name, slide_ext, x, y, w, h, format):
+def get_patch(specimen, block, resource, slide_name, slide_ext, x, y, w, h, format):
 
     format = format.lower()
     if format != 'jpeg' and format != 'png':

@@ -14,9 +14,11 @@
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-scalebar.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-paperjs-overlay.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='openseadragon-filtering.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='mousetrap.min.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='js.cookie.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='colormaps.js') }}"></script>
 
 {% if seg_mode == 'dltrain' %}
   {% include 'dbtrain/label_table_bare.html' %}
@@ -268,10 +270,12 @@ $(document).ready(function() {
   // Paper default settings
   paper.settings.handleSize = 10;
 
+  // Get a URL for 
+
   // Add the tiled image to the viewer and when successful, initialize the overlay
   var init_viewer = function() {
     viewer.addTiledImage({
-      tileSource: "{{ dzi_url + url_for('dzi.dzi', mode=affine_mode,  specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext'], resource=resolution) }}",
+      tileSource: "{{url_tmpl_dzi}}".replace("XXXXX","{{resolution}}"),
       x: 0,
       y: 0,
       success: init_paperjs,
@@ -321,21 +325,69 @@ $(document).ready(function() {
     })
   }
 
-  // Prefetch the slide
-  $.ajax({
-    url: "{{ dzi_url + url_for('dzi.dzi_preload', specimen=slide_info['specimen_name'], block=slide_info['block_name'], slide_name=slide_info['slide_name'], slide_ext=slide_info['slide_ext'], resource=resolution) }}",
-    success: function(response_text) {
-      data = JSON.parse(response_text);
-      if(data.status == 'finished') {
-        init_viewer();
-      }
-      else {
-        job_id = data.job_id;
-        check_preload_progress(job_id)
-      }
-    },
-    error: function() { window.alert("Slide failed to load"); }
-  })
+  // Function to preload a resource
+  var preload_dzi = function(resource, cb_loaded) {
+
+    // Form URL
+    var url = "{{url_tmpl_preload}}".replace('XXXXX', resource);
+
+    // Make AJAX call
+    $.ajax({
+      url: url,
+      success: function(response_text) {
+        data = JSON.parse(response_text);
+        if(data.status == 'finished') {
+          cb_loaded();
+        }
+        else {
+          job_id = data.job_id;
+          check_preload_progress(job_id)
+        }
+      },
+      error: function() { window.alert("Slide failed to load"); }
+    })
+  }
+
+  // Preload the main image
+  preload_dzi("{{resolution}}", init_viewer)
+
+  // A function to load an overlay of type 'resource' into the main viewer
+  var add_overlay_dzi = function(resource, cb_loaded) {
+
+    // Check if overlay already exists
+    var exists = viewer.world.getItemCount() > 1;
+
+    // Callback for when the resource was loaded
+    var on_loaded = function() {
+      viewer.addTiledImage({
+        tileSource: "{{url_tmpl_dzi}}".replace("XXXXX", resource),
+        x: 0, 
+        y: 0,
+        index: 1,
+        replace: exists,
+        opacity: 1,
+        success: function() { cb_loaded(); },
+        error: function() { window.alert("Overlay failed to load")}
+      })
+
+      // Add colormap to the data
+      viewer.setFilterOptions({
+        filters: [
+          {
+            items: viewer.world.getItemAt(0),
+            processors: [ ]
+          },
+          {
+            items: viewer.world.getItemAt(1),
+            processors: [ OpenSeadragon.Filters.COLORMAP4(cm_hot, 128) ]
+          }],
+        loadMode: 'sync'
+      });
+    }
+
+    // Preload the resource
+    preload_dzi(resource, on_loaded);
+  }
 
   // Current interaction mode
   var curr_mode = 'NAV'
@@ -1048,6 +1100,9 @@ $(document).ready(function() {
   else if(seg_mode=='dltrain') {
     var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
     Mousetrap.bind('b', function() { box_pressed_handler() });
+
+    // TODO: remote
+    Mousetrap.bind('o', function() { add_overlay_dzi('d_tangles',function() { console.log('loaded') }) })
   }
 
   if(seg_mode == 'annot' || seg_mode == 'dltrain') {

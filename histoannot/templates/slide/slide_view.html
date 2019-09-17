@@ -141,7 +141,7 @@ button.disabled, button.disabled:hover {
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</div>
 
 {% if seg_mode == 'annot' %}
-<button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (D) &nbsp</div>
+<button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</div>
 <button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</div>
 {% elif seg_mode == 'dltrain' %}
 <button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</div>
@@ -1091,7 +1091,7 @@ $(document).ready(function() {
 
   if (seg_mode=='annot') {
     var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);
-    Mousetrap.bind('d', function() { draw_pressed_handler() });
+    Mousetrap.bind('l', function() { draw_pressed_handler() });
 
     var markerButton = add_seadragon_button('marker_button', 'Place anatomical marker', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, marker_pressed_handler);
     Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });

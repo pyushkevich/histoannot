@@ -1,0 +1,10 @@
+[
+  { "name" : "candidate_roi", "color" : "#18b497", "description" : "Candidate ROI" },
+  { "name" : "chosen_roi", "color" : "#2816ba", "description" : "ROI Chosen for validation" },
+  { "name" : "inprogress_roi", "color" : "#f97a8a", "description" : "ROI being counted currently" },
+  { "name" : "finished_roi", "color" : "#0bc027", "description" : "ROI that has been completed" },
+  { "name" : "approved_roi", "color" : "#77d4c8", "description" : "ROI that has been inspected by another rater" },
+  { "name" : "tangle", "color" : "#ca06c9", "description" : "Tangle" },
+  { "name" : "pretangle", "color" : "#b095b8", "description" : "Pretangle, not a tangle yet"},
+  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"}
+]

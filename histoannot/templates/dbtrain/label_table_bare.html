@@ -75,6 +75,7 @@ var create_label_table_html = function(container) {
     $('<thead>').append(
       $('<th class="expander">').text('Class'),
       $('<th>').text('Color'),
+      $('<th>').text('Key'),
       $('<th>').text('#')),
     $('<tbody id="ctablebody">')).appendTo(container)
 }
@@ -83,17 +84,21 @@ var create_label_table_html = function(container) {
 // table above. The function takes an object containing callbacks
 // with the recognized callbacks being 'success' and 'click'
 var load_label_table_ajax = function(cb_success) {
-  var sel_id = get_current_label_id()
+  var sel_id = get_current_label_id();
+  var shcut = ['1','2','3','4','5','6','7','8','9','0','f1','f2','f3','f4','f5','f6','f7','f8','f9','f10'];
+  var n_shcut = shcut.length;
   $.ajax({
     url: "{{url_for('dltrain.get_labelset_labels_table_json', task_id=task_id, slide_id=slide_id)}}",
     success: function(response_text) {
       var data = JSON.parse(response_text);
       var sel = null;
       $('#ctablebody').empty();
+      $.each(shcut, function(i, item) { Mousetrap.unbind(item) });
       $.each(data, function(i, item) {
         var $tr = $('<tr>').append(
           $('<td>').text(item['name']).addClass('expander'),
           $('<td>').append($('<span>').addClass('colordot').css('background-color', item['color'])),
+          $('<td>').text(i < n_shcut ? shcut[i] : ''),
           $('<td>').text(item['n_samples']));
         $tr.appendTo('#ctablebody');
         $tr.attr('data-id', item['id']);
@@ -106,6 +111,9 @@ var load_label_table_ajax = function(cb_success) {
           if(_label_table_cb['click'])
             _label_table_cb['click']($(this).attr('data-id'));
         });
+        if(i < n_shcut) {
+          Mousetrap.bind(shcut[i], function() { $tr.trigger('click') });
+        }
       }); 
       if(!sel_id) {
         var first = $("#ctablebody tr").first();

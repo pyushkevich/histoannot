@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Tanglethon Validation 2019", 
+    "stains": [
+        "tau"
+    ], 
+    "dltrain": {
+        "labelset": "tangleval",
+        "min-size": 16,
+        "max-size": 4096
+    }, 
+    "mode": "dltrain", 
+    "desc": "Counting tangles withing ROIs"
+}

@@ -34,6 +34,7 @@ import urllib2
 import click
 from flask.cli import with_appcontext
 import pandas
+import math
 
 bp = Blueprint('slide', __name__)
 
@@ -388,6 +389,106 @@ def transform_annot(data, M):
 
     return (data, {'n_paths' : n_paths, 'n_markers' : n_markers})
 
+# Interpolate curve segment
+def curve_interp(seg_1, seg_2, npts):
+
+    x0 = seg_1[0][0]
+    x1 = seg_1[0][0] + seg_1[2][0]
+    x2 = seg_2[0][0] + seg_2[1][0]
+    x3 = seg_2[0][0]
+
+    y0 = seg_1[0][1]
+    y1 = seg_1[0][1] + seg_1[2][1]
+    y2 = seg_2[0][1] + seg_2[1][1]
+    y3 = seg_2[0][1]
+
+    res = [[x0,y0]]
+
+    for p in range(1, npts+1):
+        t = (p + 0.5) / (npts+1)
+        u = 1.0 - t
+
+        # Code from paper.js
+        x4 = u * x0 + t * x1; y4 = u * y0 + t * y1
+        x5 = u * x1 + t * x2; y5 = u * y1 + t * y2
+        x6 = u * x2 + t * x3; y6 = u * y2 + t * y3
+        x7 = u * x4 + t * x5; y7 = u * y4 + t * y5
+        x8 = u * x5 + t * x6; y8 = u * y5 + t * y6
+        x9 = u * x7 + t * x8; y9 = u * y7 + t * y8
+
+        res.append([x9,y9])
+
+    res.append([x3,y3])
+
+    return res
+
+
+# Compute curve length
+def curve_length(segs):
+    L=0
+    for p in range(1,len(segs)):
+        L = L + ((segs[p][0]-segs[p-1][0])**2 + (segs[p][1]-segs[p-1][1])**2) ** 0.5
+    return L
+
+
+# Regularly sample from path segments with given maximum output segment length
+# The return value is a list of 2D numpy arrays
+def annot_sample_path_curves(data, max_len):
+
+    # Output data structure
+    C=[]
+
+    # Iterate over the paths
+    if 'children' in data[0][1]:
+        for x in data[0][1]['children']:
+
+            # Handle paths
+            if x[0] == 'Path':
+
+                # Create a new output list to store the samples
+                ci=[]
+                ns = len(x[1]['segments'])
+                for i in range(0,ns-1):
+                    seg_1 = x[1]['segments'][i]
+                    seg_2 = x[1]['segments'][i+1]
+
+                    # Estimate the length of the curve segment
+                    pts = curve_interp(seg_1, seg_2, 100)
+
+                    # Determine the actual number of samples we will need
+                    nsam = int(curve_length(pts) / max_len)
+
+                    # Get the samples with desired sampling
+                    ptsf = curve_interp(seg_1, seg_2, nsam)
+
+                    # No duplicates
+                    if i > 0:
+                        ptsf = ptsf[1:len(ptsf)]
+
+                    # Append these samples
+                    ci = ci + ptsf
+
+                C.append(ci)
+
+    return C
+
+
+
+# Get all the paths in an annotation in a flattened dict 
+def annot_get_path_segments(data):
+
+    # numpy array to store segments
+
+
+    if 'children' in data[0][1]:
+        for x in data[0][1]['children']:
+
+            # Handle paths
+            if x[0] == 'Path':
+                for seg in x[1]['segments']:
+                    # Transform the segment (point and handles)
+                    for k in range(len(seg)):
+                        print((k,seg[k]))
 
 
 # Update annotation for a slide, the annotation assumed to be already transformed
@@ -569,7 +670,7 @@ def slides_list_cmd(task, specimen, block, section, slide):
         w_sql,w_prm = zip(*w)
         w_clause = 'WHERE %s' % ' AND '.join(w_sql)
     else:
-        w_claise = ''
+        w_clause = ''
         w_prm = ()
 
     # Dump the database entries

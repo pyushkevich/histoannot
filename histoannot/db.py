@@ -708,41 +708,64 @@ label_schema = {
     }
 }
 
-@click.command('labelset-update')
-@click.argument('id')
-@click.argument('json_file')
-@with_appcontext
-def update_labelset_from_json_command(id, json_file):
+# Shared code for updating labelset
+def update_labelset_from_json(id, json_file):
 
     db = get_db()
-    with open(json_file) as fdesc:
 
-        # Validate the JSON against the schema
-        data=json.load(fdesc)
-        validate(instance=data, schema=label_schema)
+    # Validate the JSON against the schem
+    data=json.load(json_file)
+    validate(instance=data, schema=label_schema)
 
-        # Go through the labels
-        for row in data:
+    # Go through the labels
+    for row in data:
 
-            # Check if a label with this name already exists
-            rc = db.execute("SELECT * FROM label "
-                            "WHERE labelset=? and name COLLATE NOCASE = ?",
-                            (id, row['name'])).fetchone()
+        # Check if a label with this name already exists
+        rc = db.execute("SELECT * FROM label "
+                        "WHERE labelset=? and name COLLATE NOCASE = ?",
+                        (id, row['name'])).fetchone()
 
-            # Get the description, which is optional
-            desc = row['description'] if 'description' in row else None
+        # Get the description, which is optional
+        desc = row['description'] if 'description' in row else None
 
-            # If so, we will be updating this label
-            if rc is not None:
-                db.execute("UPDATE label SET color=?, description=? "
-                           "WHERE labelset=? and name COLLATE NOCASE = ?",
-                           (row['color'], desc, id, row['name']))
-            else:
-                db.execute("INSERT INTO label (name, color, description, labelset) VALUES (?,?,?,?)",
-                           (row['name'], row['color'], desc, id))
+        # If so, we will be updating this label
+        if rc is not None:
+            db.execute("UPDATE label SET color=?, description=? "
+                       "WHERE labelset=? and name COLLATE NOCASE = ?",
+                       (row['color'], desc, id, row['name']))
+        else:
+            db.execute("INSERT INTO label (name, color, description, labelset) VALUES (?,?,?,?)",
+                       (row['name'], row['color'], desc, id))
 
-        # Commit
-        db.commit()
+
+@click.command('labelset-update')
+@click.argument('id')
+@click.argument('json_file', type=click.File('rb'))
+@with_appcontext
+def update_labelset_from_json_command(id, json_file):
+    """Update an existing labelset"""
+    update_labelset_from_json(id, json_file)
+    get_db().commit()
+
+
+@click.command('labelset-add')
+@click.argument('name')
+@click.argument('json_file',type=click.File('rb'))
+@click.option('--description','-d',help="Labelset description")
+@with_appcontext
+def labelset_add_new_command(name, json_file, description):
+
+    db = get_db()
+
+    # Create a new labelset
+    lsid = db.execute('INSERT INTO labelset(name,description) VALUES (?,?)', 
+            (name,description)).lastrowid
+
+    # Call the update command for this labelset (which also calls commit)
+    update_labelset_from_json(lsid, json_file)
+    db.commit()
+
+    print('Labelset %s added with id %d' % (name, lsid))
 
 
 # --------------------------------
@@ -776,3 +799,4 @@ def init_app(app):
     app.cli.add_command(print_labelset_labels_command)
     app.cli.add_command(dump_labelset_command)
     app.cli.add_command(update_labelset_from_json_command)
+    app.cli.add_command(labelset_add_new_command)

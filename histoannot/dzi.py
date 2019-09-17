@@ -190,9 +190,9 @@ def tile(mode, specimen, block, resource, slide_name, slide_ext, level, col, row
 
 
 # Get an image patch at level 0 from the raw image
-@bp.route('/dzi/patch/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:x>_<int:y>_<int:w>_<int:h>.<format>',
+@bp.route('/dzi/patch/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
-def get_patch(specimen, block, resource, slide_name, slide_ext, x, y, w, h, format):
+def get_patch(specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
 
     format = format.lower()
     if format != 'jpeg' and format != 'png':
@@ -207,7 +207,12 @@ def get_patch(specimen, block, resource, slide_name, slide_ext, x, y, w, h, form
     
     # Read the region centered on the box of size 512x512
     os = OpenSlide(tiff_file)
-    tile = os.read_region((x, y), 0, (512, 512));
+
+    # Work out the offset
+    x = ctrx - int(w * 0.5 * os.level_downsamples[level])
+    y = ctry - int(h * 0.5 * os.level_downsamples[level])
+
+    tile = os.read_region((x, y), level, (512, 512));
 
     # Convert to PNG
     buf = PILBytesIO()

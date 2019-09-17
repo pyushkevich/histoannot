@@ -23,6 +23,7 @@ from histoannot.auth import login_required
 from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_patch
+from histoannot.slide import make_slide_dbview, annot_sample_path_curves
 
 import sqlite3
 import json
@@ -30,6 +31,7 @@ import time
 import datetime
 import os
 import urllib2
+import random
 from PIL import Image
 
 from . import slide
@@ -56,7 +58,8 @@ def list_labelsets():
 def list_labelset_labels(name):
     db = get_db()
     try:
-        ll = db.execute('SELECT L.* FROM label L LEFT JOIN labelset LS ON L.labelset = LS.id WHERE LS.name=?', (name,))
+        ll = db.execute('SELECT L.* FROM label L LEFT JOIN labelset LS ON L.labelset = LS.id WHERE LS.name=?', 
+                (name,))
         return json.dumps([dict(row) for row in ll.fetchall()])
     except:
         abort(404)
@@ -72,9 +75,11 @@ def get_labelset_labels_table_json(task_id, slide_id):
     ll = db.execute('SELECT L.*, COUNT(T.id) as n_samples '
                     'FROM label L LEFT JOIN training_sample T '
                     '             ON T.label = L.id AND T.task=? AND T.slide=? '
+                    '             LEFT JOIN labelset LS on L.labelset = LS.id '
+                    'WHERE LS.name=? '
                     'GROUP BY L.id '
                     'ORDER BY L.id', 
-                    (task_id, slide_id))
+                    (task_id, slide_id, task['dltrain']['labelset']))
 
     ll_data = [dict(row) for row in ll.fetchall()]
     
@@ -158,6 +163,21 @@ def get_samples_for_label_table(task_id, slide_id):
 def get_labelset_labels_picker(task_id, slide_id):
 
     return render_template('dbtrain/label_picker.html', task_id=task_id, slide_id=slide_id)
+
+
+def get_label_id_in_task(task_id, label_name):
+
+    # Look up the labelset id
+    task = get_task_data(task_id)
+    db=get_db()
+    ls_id = db.execute('SELECT id FROM labelset WHERE name=?', (task['dltrain']['labelset'],)).fetchone()['id']
+
+    # Look up the label
+    label_id = db.execute('SELECT id FROM label WHERE name=? AND labelset=?', (label_name, ls_id)).fetchone()['id'];
+
+    return label_id
+
+
 
 @bp.route('/dltrain/task/<int:task_id>/labelset/addlabel', methods=('POST',))
 @login_required
@@ -272,6 +292,7 @@ def delete_sample():
 
     return "success"
 
+
 @bp.route('/dltrain/api/sample/update', methods=('POST',))
 @login_required
 def update_sample():
@@ -332,7 +353,7 @@ def get_sample_patch_filename(sample_id):
 
 
 # Generate an image patch for a sample
-def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512)):
+def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
 
     # Find out which machine the slide is currently being served from
     # Get the tiff image from which to sample the region of interest
@@ -355,10 +376,10 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512)):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(specimen,block,'raw',slide_name,slide_ext,x,y,w,h,'png').data
+        rawbytes = get_patch(specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
     else:
-        subs = (del_url, specimen, block, slide_name, slide_ext, x, y, w, h)
-        url = '%s/dzi/patch/%s/%s/%s.%s/%d_%d_%d_%d.png' % subs
+        subs = (del_url, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
+        url = '%s/dzi/patch/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
         print(url)
         rawbytes = urllib2.urlopen(url).read()
 
@@ -372,7 +393,7 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512)):
 
 
 # Callable function for creating a sample
-def create_sample_base(task_id, slide_id, label_id, rect):
+def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
 
     db = get_db()
 
@@ -389,7 +410,7 @@ def create_sample_base(task_id, slide_id, label_id, rect):
     # is that a server hosting the slide might have gone down and the slide would need to be
     # downloaded again, and we don't want to hold up returning to the user for so long
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, job_timeout="120s", result_ttl="60s")
+    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, (512,512), osl_level, job_timeout="120s", result_ttl="60s")
 
     # Stick the properties into the job
     job.meta['args']=(slide_id, sample_id, rect)
@@ -531,24 +552,14 @@ def samples_import_csv_command(task, input_file, user):
         print('Imported new sample %d from line "%s"' % (result['id'], line))
         
 
-@click.command('samples-delete')
-@click.argument('task')
-@click.option('--creator', help='Only delete samples created by user username')
-@click.option('--editor', help='Only delete samples edited by user username')
-@click.option('--specimen', help='Specify a specimen name whose samples to delete')
-@click.option('--block', help='Specify a block name whose samples to delete')
-@click.option('--slide', help='Specify a slide id whose samples to delete')
-@click.option('--label', help='Specify a label name whose samples to delete')
-@click.option('--newer', help='Only delete samples created after date', type=click.DateTime())
-@click.option('--older', help='Only delete samples created before date', type=click.DateTime())
-@click.option('-y','--yes', help='Do not prompt before deleting', is_flag=True)
-@with_appcontext
-def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, newer, older, yes):
-    """Delete training samples for TASK"""
+# Command to delete samples based on a set of filters
+def delete_samples(
+        task, creator, editor, specimen, block, slide, 
+        label, newer, older, yes, viewname='v_full'):
 
     # Create a temporary view of the big join table
     db=get_db()
-    make_dbview_full('v_full')
+    make_dbview_full(viewname)
 
     # Build up a where clause
     w = [('creator LIKE ?', creator),
@@ -568,7 +579,7 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
     (w_sql,w_prm) = zip(*w)
 
     # List the ids we would select
-    rc=db.execute('SELECT * FROM v_full WHERE %s' % ' AND '.join(w_sql), w_prm)
+    rc=db.execute('SELECT * FROM %s WHERE %s' % (viewname,' AND '.join(w_sql)), w_prm)
     result = rc.fetchall()
     if len(result) == 0:
         print('No entries can be deleted')
@@ -587,12 +598,12 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
 
     # Delete all the meta entries
     rc = db.execute("""DELETE FROM edit_meta WHERE id IN 
-                       (SELECT meta_id FROM v_full WHERE %s)""" % ' AND '.join(w_sql), w_prm)
+                       (SELECT meta_id FROM %s WHERE %s)""" % (viewname,' AND '.join(w_sql)), w_prm)
     print('Removed %d rows from edit_meta' % rc.rowcount)
 
     # Delete all the sample entries
     rc = db.execute("""DELETE FROM training_sample WHERE id IN
-                       (SELECT id FROM v_full WHERE %s)""" % ' AND '.join(w_sql), w_prm)
+                       (SELECT id FROM %s WHERE %s)""" % (viewname,' AND '.join(w_sql)), w_prm)
     print('Removed %d rows from training_sample' % rc.rowcount)
 
     # Delete all the image samples
@@ -602,8 +613,24 @@ def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, new
         except:
             print('Error removing file %s' % (get_sample_patch_filename(sample_id),))
 
-    # Commit
-    db.commit()
+
+@click.command('samples-delete')
+@click.argument('task')
+@click.option('--creator', help='Only delete samples created by user username')
+@click.option('--editor', help='Only delete samples edited by user username')
+@click.option('--specimen', help='Specify a specimen name whose samples to delete')
+@click.option('--block', help='Specify a block name whose samples to delete')
+@click.option('--slide', help='Specify a slide id whose samples to delete')
+@click.option('--label', help='Specify a label name whose samples to delete')
+@click.option('--newer', help='Only delete samples created after date', type=click.DateTime())
+@click.option('--older', help='Only delete samples created before date', type=click.DateTime())
+@click.option('-y','--yes', help='Do not prompt before deleting', is_flag=True)
+@with_appcontext
+def samples_delete_cmd(task, creator, editor, specimen, block, slide, label, newer, older, yes):
+    """Delete training samples for TASK"""
+
+    delete_samples(task, creator, editor, specimen, block, slide, label, newer, older, yes)
+    get_db().commit()
                 
 
 # Fix missing pngs for samples
@@ -636,6 +663,83 @@ def samples_fix_patches_cmd(task):
         # Generate the patch
         generate_sample_patch(row['slide'], id, rect)
 
+# Sample boxes from curves command
+@click.command('samples-random-from-annot')
+@click.argument('task-annot')
+@click.argument('task-dltrain')
+@click.argument('label')
+@click.argument('box-size', type=click.INT)
+@click.option('-c', '--clobber', is_flag=True, default=False, help="Delete existing samples")
+@click.option('-n', '--num-samples', type=click.INT, default=10, help="Number of samples per slide")
+@click.option('-r', '--random_shift', type=click.FLOAT, default=0.0, 
+        help="StDev of random displacment to apply to samples, in pixel units")
+@click.option('-u','--user', help='User name under which to insert samples', required=True)
+@with_appcontext
+def samples_random_from_annot_cmd(
+        task_annot, task_dltrain, label, box_size, 
+        clobber, num_samples, random_shift, user):
+    """Randomly generate samples from path annotations. This is used to 
+       generate ROIs at random in certain regions, e.g., gray matter."""
+
+    # Find all the slides with path annotations in the source task
+    db=get_db()
+    make_slide_dbview(int(task_annot), 'v_full')
+    rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0').fetchall()
+
+    # Look up the user
+    g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()
+    if g.user is None:
+        print('User %s is not in the system' % user)
+        return -1
+
+    # Look up the label
+    label_id = get_label_id_in_task(task_dltrain, label)
+
+    # Create another view for the target task
+    make_slide_dbview(int(task_dltrain), 'v_dest')
+
+    # Process each of the slices
+    for row in rc:
+        # Get all the paths from slide
+        slide_id = row['id']
+
+        # Check that the slide is in the destination task
+        rc_dest = db.execute('SELECT * FROM v_dest WHERE id=?', (slide_id,)).fetchone()
+        if rc_dest is None:
+            print('Skipping slide %d because it is not in the destination task' % (slide_id,))
+            continue
+
+        # Get the JSON for the task
+        rc = db.execute('SELECT json FROM annot WHERE slide_id=? AND task_id=?',
+                (slide_id, task_annot)).fetchone()
+        annot = json.loads(rc['json'])
+        sam = annot_sample_path_curves(annot, 100)
+        print("Slide %d" % slide_id)
+
+        # Join the curve samples
+        allsam = []
+        [ allsam.extend(el) for el in sam] 
+
+        # Randomly shuffle the samples
+        random.shuffle(allsam)
+
+        # Pick the first n samples
+        if num_samples < len(allsam):
+            allsam = allsam[0:num_samples]
+
+        # If there are samples already on this slide, delete them
+        if clobber:
+            delete_samples(task_dltrain,None,None,None,None,slide_id,label,
+                    None,None,True,'v_del_%d' % slide_id)
+
+        # Apply random shift to each sample
+        for p in allsam:
+            p[0]=p[0]+random.gauss(0,1) * random_shift
+            p[1]=p[1]+random.gauss(0,1) * random_shift
+            rect=(p[0]-box_size//2,p[1]-box_size//2,p[0]+box_size//2-1,p[1]+box_size//2-1)
+            s_id = json.loads(create_sample_base(task_dltrain, slide_id, label_id, rect, osl_level=1))['id']
+            print('Created sample %d in slide %d at (%f,%f)' % (s_id, slide_id, p[0], p[1]))
+
 
         
 def init_app(app):
@@ -643,3 +747,4 @@ def init_app(app):
     app.cli.add_command(samples_export_csv_command)
     app.cli.add_command(samples_delete_cmd)
     app.cli.add_command(samples_fix_patches_cmd)
+    app.cli.add_command(samples_random_from_annot_cmd)

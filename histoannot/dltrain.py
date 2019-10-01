@@ -335,6 +335,42 @@ def get_sample_png(id):
 
     # Serve the image
     return send_file(fn)
+
+
+@bp.route('/dltrain/api/sample/<int:id>/<int:level>/image_<int:w>_<int:h>.png')
+def get_sample_custom_png(id, level, w, h):
+
+    # Get the slide reference
+    db = get_db()
+    sample = db.execute('SELECT * FROM training_sample WHERE id=?', (id,)).fetchone()
+    slide_id = sample['slide']
+    sr = get_slide_ref(slide_id)
+
+    # Get the identifiers for the slide
+    (specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+
+    # Are we de this slide to a different node?
+    del_url = find_delegate_for_slide(slide_id)
+
+    # Compute the parameters
+    ctr_x = int((sample['x0'] + sample['x1']) / 2.0 + 0.5)
+    ctr_y = int((sample['y0'] + sample['y1']) / 2.0 + 0.5)
+    x = ctr_x - ((w - int(w/2.0)) - 1)
+    y = ctr_y - ((h - int(h/2.0)) - 1)
+
+    # If local, call the method directly
+    rawbytes = None
+    if del_url is None:
+        rawbytes = get_patch(specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
+    else:
+        subs = (del_url, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
+        url = '%s/dzi/patch/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
+        print(url)
+        rawbytes = urllib2.urlopen(url).read()
+
+    resp = make_response(rawbytes)
+    resp.mimetype = 'image/%s' % format
+    return resp
     
 
 # Get the filename where a sample should be saved

@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "TangleThon Validation",
+    "desc": "Temporary task to outline areas for tanglethon validation",
+    "stains": [
+        "tau"
+    ]
+}

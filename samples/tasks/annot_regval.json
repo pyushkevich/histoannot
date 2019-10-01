@@ -1,0 +1,6 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "HistoReg Validation",
+    "desc": "Curve drawing task to validate registration"
+}

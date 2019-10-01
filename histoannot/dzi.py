@@ -212,7 +212,7 @@ def get_patch(specimen, block, resource, slide_name, slide_ext, level, ctrx, ctr
     x = ctrx - int(w * 0.5 * os.level_downsamples[level])
     y = ctry - int(h * 0.5 * os.level_downsamples[level])
 
-    tile = os.read_region((x, y), level, (512, 512));
+    tile = os.read_region((x, y), level, (w,h));
 
     # Convert to PNG
     buf = PILBytesIO()

@@ -438,8 +438,35 @@ def refresh_slide_db(manifest, single_specimen = None):
 
                         # Check if the slide has already been imported into the database
                         t = db.execute('SELECT * FROM slide WHERE slide_name=?', (slide_name,)).fetchone()
+
                         if t is not None:
                             print('Slide %s already in the database with id=%s' % (slide_name, t['id']));
+
+                            # If the slide is a duplicate, we should make it disappear
+                            # but the problem is that we might have already done some annotation
+                            # for that slide. I guess it still makes sense to delete the slide
+                            if cert == 'duplicate':
+
+                                print('DELETING slide %s as DUPLICATE' % (slide_name,))
+                                db.execute('DELETE FROM slide WHERE slide_name=?', (slide_name,))
+                                db.commit()
+                                continue
+
+                            # Check if the metadata matches
+                            t0 = db.execute("""
+                                SELECT * FROM SLIDE 
+                                WHERE section=? AND slide=? AND stain=? AND slide_name=?""",
+                                (section, slide_no, stain, slide_name)).fetchone()
+
+                            # We may need to update the properties
+                            if t0 is None:
+
+                                print('UPDATING metadata for slide %s' % (slide_name,))
+                                db.execute("""
+                                  UPDATE slide SET section=?, slide=?, stain=?
+                                  WHERE slide_name=?""", (section, slide_no, stain, slide_name))
+                                db.commit()
+
                             update_slide_derived_data(t['id'])
                             continue
 

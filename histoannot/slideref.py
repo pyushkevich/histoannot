@@ -201,10 +201,7 @@ class SlideRef:
                 with open(f_local_md5) as x:
                     hash_local = x.readline()
                     if hash_local == self._url_handler.get_md5hash(f_remote):
-                        print('File %s has NOT changed relative to remote %s' % (f_local, f_remote))
                         return f_local
-                    else:
-                        print('File %s HAS changed relative to remote %s' % (f_local, f_remote))
 
         # If dry-run, don't actually download the thing
         if dry_run:

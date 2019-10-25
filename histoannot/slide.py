@@ -89,10 +89,100 @@ def index():
     # Render the template
     return render_template('slide/index.html', tasks=t)
 
+# Specimen listing for a task
+@bp.route('/api/task/<int:task_id>/specimens')
+@login_required
+def task_specimen_listing(task_id):
+    db = get_db()
+
+    # Get the current task data
+    task = get_task_data(task_id)
+
+    # Generate the where clause
+    where = get_task_slide_where_clause(task)
+
+    # List all the blocks that meet requirements for the current task
+    if task['mode'] == 'annot':
+
+        # Join with the annotations table
+        blocks = db.execute(
+            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (S.id) as nslides, '
+            '       COUNT(A.slide_id) as nannot '
+            'FROM slide S LEFT JOIN block B on S.block_id = B.id '
+            '             LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
+            '                                  AND A.n_paths+A.n_markers > 0 '
+            'WHERE %s '
+            'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
+            (task_id,) + where[1]).fetchall()
+
+    elif task['mode'] == 'dltrain':
+
+        # Join with the annotations table
+        blocks = db.execute(
+            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (DISTINCT S.id) as nslides, '
+            '                        COUNT(T.id) as nsamples '
+            'FROM slide S LEFT JOIN block B on S.block_id = B.id '
+            '             LEFT JOIN training_sample T on T.slide = S.id AND T.task = ?'
+            'WHERE %s '
+            'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
+            (task_id,) + where[1]).fetchall()
+
+    elif task['mode'] == 'browse':
+        blocks = db.execute(
+            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (S.id) as nslides, '
+            'FROM slide S LEFT JOIN block B on S.block_id = B.id '
+            '%s '
+            'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
+            where[1]).fetchall()
+
+    return json.dumps([dict(row) for row in blocks])
+
 # Task detail
 @bp.route('/task/<int:task_id>')
 @login_required
 def task_detail(task_id):
+
+    # Get the current task data
+    task = get_task_data(task_id)
+    return render_template('slide/task_detail.html', 
+            task=task, task_id=task_id, specimen_name=None, block_name=None)
+
+
+# Block detail (same template as the task detail, but points to a block
+@bp.route('/task/<int:task_id>/specimen/<specimen_name>/block/<block_name>')
+@login_required
+def block_detail_by_name(task_id, specimen_name, block_name):
+
+    # Get the current task data
+    task = get_task_data(task_id)
+    return render_template('slide/task_detail.html', 
+            task=task, task_id=task_id, 
+            specimen_name=specimen_name, block_name=block_name)
+
+
+# Task detail with focus on block
+@bp.route('/task/<int:task_id>/block_id/<int:block_id>')
+@login_required
+def block_detail(task_id, block_id):
+
+    # Get the current task data
+    task = get_task_data(task_id)
+    return render_template('slide/task_detail.html', task=task, task_id=task_id)
+
+    # Get some block properties
+    block = db.execute('SELECT * FROM block WHERE id=?', (block_id,)).fetchone()
+
+    # Render the template with extra parameters
+    return render_template('slide/task_detail.html', 
+            task=task, task_id=task_id, 
+            selected_spc=block['specimen_name'], selected_blk=block['block_name'])
+
+
+# Task detail
+@bp.route('/api/task/<int:task_id>/specimen/<specimen_name>/blocks')
+@login_required
+def specimen_block_listing(task_id, specimen_name):
+
     db = get_db()
 
     # Get the current task data
@@ -110,9 +200,9 @@ def task_detail(task_id):
             'FROM slide S LEFT JOIN block B on S.block_id = B.id '
             '             LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
             '                                  AND A.n_paths+A.n_markers > 0 '
-            'WHERE %s '
-            'GROUP BY B.id ORDER BY specimen_name, block_name' % where[0], 
-            (task_id,) + where[1]).fetchall()
+            'WHERE specimen_name=? AND %s '
+            'GROUP BY B.id ORDER BY block_name' % where[0], 
+            (task_id, specimen_name) + where[1]).fetchall()
 
     elif task['mode'] == 'dltrain':
 
@@ -121,31 +211,19 @@ def task_detail(task_id):
             'SELECT B.*, COUNT (DISTINCT S.id) as nslides, COUNT(T.id) as nsamples '
             'FROM slide S LEFT JOIN block B on S.block_id = B.id '
             '             LEFT JOIN training_sample T on T.slide = S.id AND T.task = ?'
-            'WHERE %s '
-            'GROUP BY B.id ORDER BY specimen_name, block_name' % where[0], 
-            (task_id,) + where[1]).fetchall()
+            'WHERE specimen_name=? AND %s '
+            'GROUP BY B.id ORDER BY block_name' % where[0], 
+            (task_id, specimen_name) + where[1]).fetchall()
 
     elif task['mode'] == 'browse':
         blocks = db.execute(
             'SELECT B.*, COUNT (S.id) as nslides '
             'FROM slide S LEFT JOIN block B on S.block_id = B.id '
-            '%s '
-            'GROUP BY B.id ORDER BY specimen_name, block_name' % where[0], 
-            where[1]).fetchall()
+            'WHERE specimen_name=? AND %s '
+            'GROUP BY B.id ORDER BY block_name' % where[0], 
+            (task_id, specimen_name) + where[1]).fetchall()
 
-    # Mark specimens as odd and even
-    last_spec = None
-    oddevenmap = {}
-    for b in blocks:
-        if last_spec is None or b['specimen_name'] != last_spec:
-            oddevenmap[b['specimen_name']] = len(oddevenmap) % 2
-            last_spec = b['specimen_name']
-
-    # For each block, count the number of annotations
-    print(blocks)
-    print(oddevenmap)
-    return render_template('slide/task_detail.html', 
-                           blocks=blocks, task=task, task_id=task_id, clr = oddevenmap)
+    return json.dumps([dict(row) for row in blocks])
 
 
 # Generate a db view for slides specific to a mode (annot, dltrain)
@@ -187,13 +265,19 @@ def make_slide_dbview(task_id, view_name):
 
 
 # The block detail listing
-@bp.route('/task/<int:task_id>/block/<int:block_id>/detail', methods=('GET', 'POST'))
+@bp.route('/api/task/<int:task_id>/specimen/<specimen_name>/block/<block_name>/slides', methods=('GET', 'POST'))
 @login_required
-def block_detail(task_id, block_id):
+def block_slide_listing(task_id, specimen_name, block_name):
     db = get_db()
 
     # Get the block descriptor
-    block = db.execute('SELECT * FROM block WHERE id=?', (block_id,)).fetchone()
+    block = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', 
+            (specimen_name,block_name)).fetchone()
+
+    if block is None:
+        return json.dumps([])
+
+    block_id = block['id']
 
     # Get the current task data
     task = get_task_data(task_id)
@@ -222,10 +306,8 @@ def block_detail(task_id, block_id):
             'GROUP BY S.id ORDER BY section, slide ASC' % where[0], 
             (task_id,) + where[1] + (block_id,)).fetchall()
 
-        print(slides)
+    return json.dumps([dict(row) for row in slides])
 
-    return render_template('slide/block_detail.html', 
-                           block=block, slides=slides, task_id = task_id, task=task)
 
 # Get all the data needed for slide view/annotation/training
 def get_slide_info(task_id, slide_id):
@@ -316,6 +398,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'resolution':resolution,
             'seg_mode':task['mode'], 
             'task_id': task_id, 
+            'block_id': slide_info['block_id'], 
             'dzi_url': del_url,
             'url_tmpl_preload': url_tmpl_preload,
             'url_tmpl_dzi': url_tmpl_dzi,

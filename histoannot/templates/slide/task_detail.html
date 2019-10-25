@@ -4,41 +4,264 @@
 Specimen Listing - {{task['name']}}
 {% endblock %}
 
-
 {% block content %}
 <a href="{{ url_for('slide.index')}}">Home</a> : 
 {{task['name']}}
+<span id="span_specimen_name"></span>
+<span id="span_block_name"></span>
 
-  <table class="pure-table">
-    <thead>
-      <tr>
-        <th>Specimen</th>
-        <th>Block</th>
-        <th># Slides</th>
-        {% if task['mode'] == 'annot' %}
-          <th># Labeled</th>
-        {% elif task['mode'] == 'dltrain' %}
-          <th># Samples</th>
-        {% endif %}
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-  {% for block in blocks %}
-    {% if clr[block['specimen_name']] == 1 %}
-      <tr>
-    {% else %}
-      <tr class="pure-table-odd">
-    {% endif %}
-        <td>{{block['specimen_name']}}</td>
-        <td>{{block['block_name']}}</td>
-        <td>{{block['nslides']}}</td>
-        {% if task['mode'] == 'annot' %}
-          <td>{{block['nannot']}}</td>
-        {% elif task['mode'] == 'dltrain' %}
-          <td>{{block['nsamples']}}</td>
-        {% endif %}
-        <td><a class="action" href="{{ url_for('slide.block_detail', block_id=block['id'], task_id=task_id) }}">View</a></td>
-      </tr>
-  {% endfor %}
+<div class="pure-g">
+  <div class="pure-u-1 pure-u-md-7-24">
+    <h3 align="center">SPECIMENS</h3>
+    <table id="specimen" class="compact stripe hover" style="width:100%">
+      <thead>
+        <tr>
+          <th>Specimen</th>
+          <th>#Blk</th>
+          <th>#Sld</th>
+          {% if task['mode'] == 'annot' %}
+            <th>#Ann</th>
+          {% elif task['mode'] == 'dltrain' %}
+            <th>#Sam</th>
+          {% endif %}
+        </tr>
+      </thead>
+      </tbody>
+    </table>
+  </div>
+  <div class="pure-u-1 pure-u-md-1-24">
+  </div>
+  <div class="pure-u-1 pure-u-md-5-24" id="d_blocks" style="display:none;">
+    <h3 align="center">BLOCKS</h3>
+    <table id="block" class="compact stripe hover" style="width:100%">
+      <thead>
+        <tr>
+          <th>Block</th>
+          <th>#Sld</th>
+          {% if task['mode'] == 'annot' %}
+            <th>#Ann</th>
+          {% elif task['mode'] == 'dltrain' %}
+            <th>#Sam</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+  <div class="pure-u-1 pure-u-md-1-24">
+  </div>
+  <div class="pure-u-1 pure-u-md-10-24" id="d_slides" style="display:none;">
+    <h3 align="center">SLIDES</h3>
+    <table id="slide" class="compact stripe hover" style="width:100%">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Section</th>
+          <th>Slice</th>
+          <th>Stain</th>
+          {% if task['mode'] == 'annot' %}
+            <th>#Ann</th>
+          {% elif task['mode'] == 'dltrain' %}
+            <th>#Sam</th>
+          {% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- DataTable support -->
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.1/css/select.dataTables.min.css">
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.1/js/dataTables.select.min.js"></script>
+
+<script type="text/javascript" charset="utf8">
+$(document).ready(function() {
+
+  mode="{{task['mode']}}";
+
+  // AJAX url templates
+  var url_spc="{{url_for('slide.task_specimen_listing', task_id=task_id)}}";
+  var url_blk="{{url_for('slide.specimen_block_listing', task_id=task_id, specimen_name='XXXX')}}";
+  var url_sld="{{url_for('slide.block_slide_listing', task_id=task_id, specimen_name='XXXX', block_name='YYYY')}}";
+  var url_tmb="{{url_for('slide.thumb', id=999999)}}";
+  var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
+  var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
+  var url_self="{{url_for('slide.block_detail_by_name', task_id=task_id, specimen_name='XXXX', block_name='YYYY')}}";
+
+  // Thumbnail render function
+  var fn_render_thumb = function(data, type, row) {
+    var url = url_tmb.replace('999999',data);
+    return '<img height="72px" src="'+url+'" />';
+  }
+
+  // Render functions with URLs
+  var fn_annot_link = function(data, type, row) {
+    var url = url_ann.replace('999999',data);
+    return '<a class="action" href="'+url+'">Annotate</a>';
+  }
+
+  var fn_dltrain_link = function(data, type, row) {
+    var url = url_dlt.replace('999999',data);
+    return '<a class="action" href="'+url+'">Train</a>';
+  }
+
+  // Column descriptions for different tables
+  col_desc = [ 
+    { data: "specimen_name" }, 
+    { data: "nblocks" }, 
+    { data: "nslides" } 
+  ];
+
+  blk_col_desc = [ 
+    { data: "block_name" }, 
+    { data: "nslides" } 
+  ];
+
+  sld_col_desc = [
+    { data: "id", render: fn_render_thumb },
+    { data: "section" },
+    { data: "slide" },
+    { data: "stain" }
+  ]
+
+  if(mode == 'annot') {
+    col_desc.push({ data: "nannot"});
+    blk_col_desc.push({ data: "nannot"});
+    sld_col_desc.push({ data: "n_markers"});
+    sld_col_desc.push({ data: "id", render: fn_annot_link});
+  }
+  else if(mode == 'dltrain') {
+    col_desc.push({ data: "nsamples"});
+    blk_col_desc.push({ data: "nsamples"});
+    sld_col_desc.push({ data: "n_samples"});
+    sld_col_desc.push({ data: "id", render: fn_dltrain_link});
+  }
+
+  t_specimen = $('#specimen').DataTable( {
+    "ajax": function(data, callback, settings) {
+      $.ajax({
+        url: url_spc,
+        success: function(resp_text) {
+          callback({data: JSON.parse(resp_text)});
+          if(request_spc) {
+            fn_select_row(t_specimen, 0, request_spc);
+            request_spc=null;
+          }
+        }
+      });
+    },
+    columns: col_desc,
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single'
+  } );
+
+  t_block = $('#block').DataTable( {
+    "ajax": function(data, callback, settings) {
+      if(selected_spc) {
+        $.ajax({
+          url: url_blk.replace('XXXX',selected_spc),
+          success: function(resp_text) {
+            callback({data: JSON.parse(resp_text)});
+            if(request_blk) {
+              fn_select_row(t_block, 0, request_blk);
+              request_blk=null;
+            }
+          }
+        });
+      }
+    },
+    columns: blk_col_desc,
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single'
+  } );
+
+  var selected_spc = null;
+  var selected_blk = null;
+
+  var py2js = function(str) { return str=="None" ? null : str; }
+  var request_spc=py2js("{{specimen_name}}");
+  var request_blk=py2js("{{block_name}}");
+
+  var fn_select_row = function(table, col, value) {
+    var indexes = table.rows().eq( 0 ).filter( function (rowIdx) {
+          return table.cell( rowIdx, col ).data() === value ? true : false;
+    } );
+    if(indexes.length == 1) {
+      table.row(indexes[0]).select();
+    }
+  }
+
+  t_slide = $('#slide').DataTable( {
+    "ajax": function(data, callback, settings) {
+      if(selected_spc && selected_blk) {
+        $.ajax({
+          url: url_sld.replace('XXXX',selected_spc).replace('YYYY',selected_blk),
+          success: function(resp_text) {
+            callback({data: JSON.parse(resp_text)});
+          }
+        });
+      }
+    },
+    columns: sld_col_desc,
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false
+  } );
+
+  t_specimen.on('select', function(e,dt,type,indexes) {
+    if(type=='row') {
+      // Set the target url
+      selected_spc = t_specimen.rows(indexes).data().pluck('specimen_name')[0];
+      t_block.ajax.reload();
+      $('#span_specimen_name').text(" : " + selected_spc);
+      $('#span_block_name').text("");
+      $('#d_blocks').css('display','block');
+
+      selected_blk = null;
+      $('#d_slides').css('display','none');
+    }
+  })
+
+  t_specimen.on('deselect', function(e,dt,type,indexes) {
+    selected_spc = null;
+    $('#span_specimen_name').text("");
+    $('#d_blocks').css('display','none');
+  })
+
+  t_block.on('select', function(e,dt,type,indexes) {
+    if(type=='row') {
+
+      selected_blk=t_block.rows(indexes).data().pluck('block_name')[0];
+      t_slide.ajax.reload();
+      $('#span_block_name').text(" : " + selected_blk);
+      $('#d_slides').css('display','block');
+      var new_url=url_self.replace('XXXX', selected_spc).replace('YYYY', selected_blk);
+      history.pushState({urlPath:new_url},selected_spc+":"+selected_blk,new_url);
+    }
+  })
+
+  t_block.on('deselect', function(e,dt,type,indexes) {
+    selected_blk = null;
+    $('#span_block_name').text("");
+    $('#d_slides').css('display','none');
+  })
+
+
+} );
+</script>
+
 {% endblock %}

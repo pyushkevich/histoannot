@@ -290,7 +290,10 @@ def block_slide_listing(task_id, specimen_name, block_name):
 
         # Join with the annotations table
         slides = db.execute(
-            'SELECT S.*, SUM(A.n_paths) as n_paths, SUM(A.n_markers) as n_markers '
+            'SELECT S.*, '
+            '       IFNULL(SUM(A.n_paths),0) as n_paths, '
+            '       IFNULL(SUM(A.n_markers),0) as n_markers, '
+            '       IFNULL(SUM(A.n_paths),0) + IFNULL(SUM(A.n_markers),0) as n_annot '
             'FROM slide S LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
             'WHERE %s AND S.block_id = ?'
             'GROUP BY S.id ORDER BY section, slide ASC' % where[0], 

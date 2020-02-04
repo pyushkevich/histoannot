@@ -768,31 +768,36 @@ def export_annot_svg(task, slide_id, out_file, stroke_width):
             for x in data[0][1]['children']:
 
                 # Handle paths
-                if x[0] == 'Path':
-                    seg = x[1]['segments']
-                    if len(seg) < 1:
-                        continue
+                try:
+                    if x[0] == 'Path':
+                        seg = x[1]['segments']
+                        if len(seg) < 1:
+                            continue
 
-                    # List of commands for SVG path
-                    cmd = []
+                        # List of commands for SVG path
+                        cmd = []
 
-                    # Record the initial positioning
-                    cmd.append('M%f,%f' % (seg[0][0][0], seg[0][0][1]))
+                        # Record the initial positioning
+                        cmd.append('M%f,%f' % (seg[0][0][0], seg[0][0][1]))
 
-                    # Record the control points
-                    for i in range(1,len(seg)):
-                        # Get the handles from the control point
-                        P1 = seg[i-1][0]
-                        P2 = seg[i][0]
-                        D = [P2[0]-P1[0], P2[1]-P1[1]]
-                        V1 = seg[i-1][2]
-                        V2 = seg[i][1]
-                        cmd.append('c%f,%f %f,%f %f,%f' % 
-                                (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
+                        # Record the control points
+                        for i in range(1,len(seg)):
+                            # Get the handles from the control point
+                            P1 = seg[i-1][0]
+                            P2 = seg[i][0]
+                            D = [P2[0]-P1[0], P2[1]-P1[1]]
+                            V1 = seg[i-1][2]
+                            V2 = seg[i][1]
+                            cmd.append('c%f,%f %f,%f %f,%f' % 
+                                    (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
 
-                    # Add the path to the SVG
-                    svg.add(svg.path(d=''.join(cmd), stroke="#000",
-                            fill="none", stroke_width=stroke_width))
+                        # Add the path to the SVG
+                        svg.add(svg.path(d=''.join(cmd), stroke="#000",
+                                fill="none", stroke_width=stroke_width))
+
+                except TypeError:
+                    logging.warning("Unreadable path %s in slide %d task %d" % 
+                            (x, slide_id, task))
 
         # Write the completed thing
         out_file.write(svg.tostring())

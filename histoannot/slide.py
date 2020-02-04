@@ -463,10 +463,11 @@ def transform_annot(data, M):
                 for seg in x[1]['segments']:
                     # Transform the segment (point and handles)
                     for k in range(len(seg)):
-                        z = np.dot(A,seg[k]) + (b if k==0 else 0)
-                        seg[k] = z.tolist()
-                        if k==0:
-                            print(z)
+                        try:
+                            z = np.dot(A,seg[k]) + (b if k==0 else 0)
+                            seg[k] = z.tolist()
+                        except:
+                            print("Error in transform_annot for segment ", seg, " index ", k);
 
             # Increment the counters
             elif x[0] == 'PointText':

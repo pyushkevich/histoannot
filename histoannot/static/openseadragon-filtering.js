@@ -488,17 +488,14 @@
                 callback();
             };
         },
-        COLORMAP4: function(cmap, ctr) {
+        COLORMAP4: function(cmap, level, wind) {
+
+            // The color map is based on window and level of the input data
             var resampledCmap = cmap.slice(0);
-            var diff = 255 - ctr;
             for(var i = 0; i < 256; i++) {
-                var position = 0;
-                if(i > ctr) {
-                    position = Math.min((i - ctr) / diff * 128 + 128,255) | 0;
-                }else{
-                    position = Math.max(0, i / (ctr / 128)) | 0;
-                }
-                resampledCmap[i] = cmap[position];
+                var t = (i - level) * 1.0 / wind;
+                var pos = Math.max(0, Math.min(255, Math.round(t * 256)));
+                resampledCmap[i] = cmap[pos];
             }
             return function(context, callback) {
                 var imgData = context.getImageData(
@@ -510,7 +507,8 @@
                     pxl[i] = c[0];
                     pxl[i + 1] = c[1];
                     pxl[i + 2] = c[2];
-                    pxl[i + 3] = c[3];
+                    pxl[i + 3] = 127;
+                    // pxl[i + 3] = c[3];
                 }
                 context.putImageData(imgData, 0, 0);
                 callback();

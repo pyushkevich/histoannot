@@ -806,8 +806,11 @@ def export_annot_svg(task, slide_id, out_file, stroke_width):
 @click.option('-b','--block',help="List slides for a block")
 @click.option('--section',help="List slides for a section")
 @click.option('--slide',help="List slides for a slide")
+@click.option('--min-paths', type=click.INT, help="List slides with path annotations only")
+@click.option('--min-markers', type=click.INT, help="List slides with marker annotations only")
 @with_appcontext
-def slides_list_cmd(task, specimen, block, section, slide):
+def slides_list_cmd(task, specimen, block, section, slide, 
+        min_paths, min_markers):
 
     db=get_db()
 
@@ -815,11 +818,14 @@ def slides_list_cmd(task, specimen, block, section, slide):
     make_slide_dbview(task, 'v_full')
 
     # Build up a where clause
-    w = filter(lambda (a,b): b is not None, 
+    w = filter(lambda (a,b): b is not None and b is not False, 
             [('specimen_name LIKE ?', specimen),
              ('block_name LIKE ?', block),
              ('section = ?', section),
-             ('slide = ?', slide) ])
+             ('slide = ?', slide),
+             ('n_paths >= ?', min_paths), 
+             ('n_markers >= ?', min_markers)])
+
     if len(w) > 0:
         w_sql,w_prm = zip(*w)
         w_clause = 'WHERE %s' % ' AND '.join(w_sql)

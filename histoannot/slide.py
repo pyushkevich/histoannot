@@ -807,11 +807,13 @@ def export_annot_svg(task, slide_id, out_file, stroke_width):
 @click.option('-b','--block',help="List slides for a block")
 @click.option('--section',help="List slides for a section")
 @click.option('--slide',help="List slides for a slide")
+@click.option('--stain',help="List slides matching a stain")
 @click.option('--min-paths', type=click.INT, help="List slides with path annotations only")
 @click.option('--min-markers', type=click.INT, help="List slides with marker annotations only")
+@click.option('-C', '--csv', type=click.File('wt'), help="Write results to CSV file")
 @with_appcontext
-def slides_list_cmd(task, specimen, block, section, slide, 
-        min_paths, min_markers):
+def slides_list_cmd(task, specimen, block, section, slide, stain,
+        min_paths, min_markers, csv):
 
     db=get_db()
 
@@ -824,6 +826,7 @@ def slides_list_cmd(task, specimen, block, section, slide,
              ('block_name LIKE ?', block),
              ('section = ?', section),
              ('slide = ?', slide),
+             ('stain = ?', stain),
              ('n_paths >= ?', min_paths), 
              ('n_markers >= ?', min_markers)])
 
@@ -834,11 +837,15 @@ def slides_list_cmd(task, specimen, block, section, slide,
         w_clause = ''
         w_prm = ()
 
+    # Create a Pandas data frame
+    df = pandas.read_sql_query( "SELECT * FROM v_full %s" % w_clause, db, params=w_prm)
+
     # Dump the database entries
-    with pandas.option_context('display.max_rows', None):  
-        print(pandas.read_sql_query(
-            "SELECT * FROM v_full %s" % w_clause,
-            db, params=w_prm))
+    if csv is not None:
+        df.to_csv(csv, index=False)
+    else:
+        with pandas.option_context('display.max_rows', None):  
+            print(df)
 
 
 def init_app(app):

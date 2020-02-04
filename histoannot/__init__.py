@@ -34,6 +34,7 @@ _default_histo_url_schema = {
         "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
         "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
         "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
+        "dims" :       "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
         "d_tangles" :  "{baseurl}/{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
     },
 

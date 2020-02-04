@@ -23,7 +23,7 @@ from werkzeug.exceptions import abort
 from histoannot.auth import login_required
 from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix
+from histoannot.dzi import get_affine_matrix, get_slide_raw_dims
 from io import BytesIO
 
 import os
@@ -35,6 +35,8 @@ import click
 from flask.cli import with_appcontext
 import pandas
 import math
+import svgwrite
+import logging
 
 bp = Blueprint('slide', __name__)
 
@@ -731,6 +733,72 @@ def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width,
             (slide_id, task, stats['n_paths'], stats['n_markers']))
 
 
+# Export annotation
+@click.command('annot-export-svg')
+@click.argument('task', type=click.INT)
+@click.argument('slide_id', type=click.INT)
+@click.argument('out_file', type=click.File('wt'))
+@click.option('--stroke-width', '-s', type=click.FLOAT, default=48.0,
+        help='Stroke width for exported paths')
+@with_appcontext
+def export_annot_svg(task, slide_id, out_file, stroke_width):
+    """ Export annotations on a slide to SVG file """
+
+    # Find the annotation in the database
+    db = get_db()
+    rc = db.execute('SELECT json FROM annot WHERE slide_id=? AND task_id=?',
+                    (slide_id, task)).fetchone()
+
+    if rc is not None:
+        # Get the annotation
+        data = json.loads(rc['json'])
+
+        # Get the raw slide dimensions
+        sr = get_slide_ref(slide_id)
+        dims = get_slide_raw_dims(sr)
+        if dims is None:
+            sys.exit("Missing slide dimensions information")
+
+        # Start writing svg
+        svg = svgwrite.Drawing(size=(dims[0], dims[1]))
+
+        # Write the paths
+        if 'children' in data[0][1]:
+            for x in data[0][1]['children']:
+
+                # Handle paths
+                if x[0] == 'Path':
+                    seg = x[1]['segments']
+                    if len(seg) < 1:
+                        continue
+
+                    # List of commands for SVG path
+                    cmd = []
+
+                    # Record the initial positioning
+                    cmd.append('M%f,%f' % (seg[0][0][0], seg[0][0][1]))
+
+                    # Record the control points
+                    for i in range(1,len(seg)):
+                        # Get the handles from the control point
+                        P1 = seg[i-1][0]
+                        P2 = seg[i][0]
+                        D = [P2[0]-P1[0], P2[1]-P1[1]]
+                        V1 = seg[i-1][2]
+                        V2 = seg[i][1]
+                        cmd.append('c%f,%f %f,%f %f,%f' % 
+                                (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
+
+                    # Add the path to the SVG
+                    svg.add(svg.path(d=''.join(cmd), stroke="#000",
+                            fill="none", stroke_width=stroke_width))
+
+        # Write the completed thing
+        out_file.write(svg.tostring())
+
+
+
+
 # List slides
 @click.command('slides-list')
 @click.argument('task', type=click.INT)
@@ -768,5 +836,6 @@ def slides_list_cmd(task, specimen, block, section, slide):
 
 def init_app(app):
     app.cli.add_command(import_annot_cmd)
+    app.cli.add_command(export_annot_svg)
     app.cli.add_command(slides_list_cmd)
 

@@ -5,6 +5,25 @@ Specimen Listing - {{task['name']}}
 {% endblock %}
 
 {% block content %}
+
+<style>
+.zoom {
+  transition: transform .2s; /* Animation */
+  max-width: 200px;
+  height: 75px;
+}
+
+.zoom:hover {
+  transform: scale(2.56) translate(5pt,0pt); /* (150% zoom - Note: if the zoom is too large, it will go outside of the viewport) */
+  position: absolute;
+}
+
+.spanner {
+  height: 75px;
+}
+</style>
+
+
 <a href="{{ url_for('slide.index')}}">Home</a> : 
 {{task['name']}}
 <span id="span_specimen_name"></span>
@@ -98,7 +117,7 @@ $(document).ready(function() {
   // Thumbnail render function
   var fn_render_thumb = function(data, type, row) {
     var url = url_tmb.replace('999999',data);
-    return '<img height="72px" src="'+url+'" />';
+    return '<div class="spanner"><img class="zoom" src="'+url+'" /></div>';
   }
 
   // Render functions with URLs

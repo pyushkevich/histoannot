@@ -28,6 +28,7 @@ import numpy as np
 import urllib
 import urllib2
 import psutil
+import re
 
 from rq import Queue, Connection, Worker
 from rq.job import Job, JobStatus
@@ -125,10 +126,31 @@ def get_affine_matrix(slide_ref, mode, resolution='raw', target='annot'):
     return M
 
 
+# Read the dimensions of the slide at a given level. Uses information from the
+# resolution.txt file
+def get_slide_raw_dims(slide_ref):
+
+    # Resolution files have level information. We convert them to json to read easily
+    resfile = slide_ref.get_local_copy('dims')
+    if resfile is not None:
+        with open(resfile) as f:
+
+            # Expression to search for
+            cre = re.compile("Level dimensions: *(.*)")
+
+            for line in f:
+                m = cre.match(line)
+                if m is not None:
+                    json_line = m.group(1).replace('(','[').replace(')',']')
+                    return json.loads(json_line)[0]
+
+    return None
+
+
+
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
 def dzi(mode, specimen, block, resource, slide_name, slide_ext):
-    format = 'jpeg'
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
@@ -143,7 +165,7 @@ def dzi(mode, specimen, block, resource, slide_name, slide_ext):
         osa = AffineTransformedOpenSlide(tiff_file, A)
         dz = DeepZoomGenerator(osa)
         dz.filename = os.path.basename(tiff_file)
-        resp = make_response(dz.get_dzi('jpeg'))
+        resp = make_response(dz.get_dzi('png'))
         resp.mimetype = 'application/xml'
         return resp
     except (KeyError, ValueError):

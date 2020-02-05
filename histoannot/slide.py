@@ -741,8 +741,9 @@ def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width,
 @click.argument('out_file', type=click.File('wt'))
 @click.option('--stroke-width', '-s', type=click.FLOAT, default=48.0,
         help='Stroke width for exported paths')
+@click.option('--strip-width', type=click.FLOAT, default=48.0)
 @with_appcontext
-def export_annot_svg(task, slide_id, out_file, stroke_width):
+def export_annot_svg(task, slide_id, out_file, stroke_width, strip_width):
     """ Export annotations on a slide to SVG file """
 
     # Find the annotation in the database
@@ -774,26 +775,84 @@ def export_annot_svg(task, slide_id, out_file, stroke_width):
                         if len(seg) < 1:
                             continue
 
-                        # List of commands for SVG path
-                        cmd = []
+                        # Default mode is to draw curves
+                        if strip_width is None:
 
-                        # Record the initial positioning
-                        cmd.append('M%f,%f' % (seg[0][0][0], seg[0][0][1]))
+                            # List of commands for SVG path
+                            cmd = []
 
-                        # Record the control points
-                        for i in range(1,len(seg)):
-                            # Get the handles from the control point
-                            P1 = seg[i-1][0]
-                            P2 = seg[i][0]
-                            D = [P2[0]-P1[0], P2[1]-P1[1]]
-                            V1 = seg[i-1][2]
-                            V2 = seg[i][1]
-                            cmd.append('c%f,%f %f,%f %f,%f' % 
-                                    (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
+                            # Record the initial positioning
+                            cmd.append('M%f,%f' % (seg[0][0][0], seg[0][0][1]))
 
-                        # Add the path to the SVG
-                        svg.add(svg.path(d=''.join(cmd), stroke="#000",
-                                fill="none", stroke_width=stroke_width))
+                            # Record the control points
+                            for i in range(1,len(seg)):
+                                # Get the handles from the control point
+                                P1 = seg[i-1][0]
+                                P2 = seg[i][0]
+                                D = [P2[0]-P1[0], P2[1]-P1[1]]
+                                V1 = seg[i-1][2]
+                                V2 = seg[i][1]
+                                cmd.append('c%f,%f %f,%f %f,%f' % 
+                                        (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
+
+                            # Add the path to the SVG
+                            svg.add(svg.path(d=''.join(cmd), stroke="#000",
+                                    fill="none", stroke_width=stroke_width))
+
+                        # Alternative mode is to draw parallel strips
+                        else:
+
+                            # Record the control points
+                            for i in range(1,len(seg)):
+                                # Get the handles from the control point
+                                P1 = seg[i-1][0]
+                                P2 = seg[i][0]
+                                D = [P2[0]-P1[0], P2[1]-P1[1]]
+                                V1 = seg[i-1][2]
+                                V2 = seg[i][1]
+
+                                # Get the tangent vectors
+                                nV1 = math.sqrt(V1[0]*V1[0]+V1[1]*V1[1])
+                                nV2 = math.sqrt(V2[0]*V2[0]+V2[1]*V2[1])
+
+                                T1=[ x / nV1 for x in V1]
+                                T2=[ x / nV2 for x in V2]
+
+                                Q2=[P2[0]+strip_width*T2[1],P2[1]-strip_width*T2[0]]
+                                Q1=[P1[0]-strip_width*T1[1],P1[1]+strip_width*T1[0]]
+                                DQ=[Q1[0]-Q2[0],Q1[1]-Q2[1]]
+
+                                R2=[P2[0]-strip_width*T2[1],P2[1]+strip_width*T2[0]]
+                                R1=[P1[0]+strip_width*T1[1],P1[1]-strip_width*T1[0]]
+                                DR=[R1[0]-R2[0],R1[1]-R2[1]]
+
+                                # Draw the path (part curve, part line)
+                                svg.add(svg.path(
+                                    d="M%f,%f c%f,%f %f,%f %f,%f L%f,%f c%f,%f %f,%f, %f,%f L%f,%f" % (
+                                        P1[0],P1[1],
+                                        V1[0],V1[1],D[0]+V2[0],D[1]+V2[1],D[0],D[1],
+                                        Q2[0], Q2[1],
+                                        V2[0], V2[1],DQ[0]+V1[0],DQ[1]+V1[1],DQ[0],DQ[1],
+                                        P1[0],P1[1]), stroke="none", fill="#ddd", stroke_width=0))
+
+                                # Draw the path (part curve, part line)
+                                svg.add(svg.path(
+                                    d="M%f,%f c%f,%f %f,%f %f,%f L%f,%f c%f,%f %f,%f, %f,%f L%f,%f" % (
+                                        P1[0],P1[1],
+                                        V1[0],V1[1],D[0]+V2[0],D[1]+V2[1],D[0],D[1],
+                                        R2[0], R2[1],
+                                        V2[0], V2[1],DR[0]+V1[0],DR[1]+V1[1],DR[0],DR[1],
+                                        P1[0],P1[1]), stroke="none", fill="#aaa", stroke_width=0))
+
+                                #svg.add(svg.path(
+                                #    d="M%f,%f c%f,%f %f,%f %f,%f L%f,%f L%f,%f L%f,%f" % (
+                                #        P1[0],P1[1],
+                                #        V1[0],V1[1],D[0]+V2[0],D[1]+V2[1],D[0],D[1],
+                                #        P2[0]+strip_width*T2[1],P2[1]-strip_width*T2[0],
+                                #        P1[0]-strip_width*T1[1],P1[1]+strip_width*T1[0],
+                                #        P1[0],P1[1]), stroke="#000", fill="#ddd", stroke_width=48))
+
+
 
                 except TypeError:
                     logging.warning("Unreadable path %s in slide %d task %d" % 
@@ -802,6 +861,60 @@ def export_annot_svg(task, slide_id, out_file, stroke_width):
         # Write the completed thing
         out_file.write(svg.tostring())
 
+
+
+
+
+# Export annotation
+@click.command('annot-export-vtk')
+@click.argument('task', type=click.INT)
+@click.argument('slide_id', type=click.INT)
+@click.argument('out_file', type=click.File('wt'))
+@with_appcontext
+def export_annot_vtk(task, slide_id, out_file):
+    """ Export annotations on a slide to VTK file """
+
+    # Find the annotation in the database
+    db = get_db()
+    rc = db.execute('SELECT json FROM annot WHERE slide_id=? AND task_id=?',
+                    (slide_id, task)).fetchone()
+
+    if rc is not None:
+        # Get the annotation
+        data = json.loads(rc['json'])
+
+        # Get the raw slide dimensions
+        sr = get_slide_ref(slide_id)
+        dims = get_slide_raw_dims(sr)
+        if dims is None:
+            sys.exit("Missing slide dimensions information")
+
+        # Get the set of points
+        pts = annot_sample_path_curves(data, 5000)
+
+        # Join all the point arrays
+        all_pts = [item for sublist in pts for item in sublist]
+
+        # Length of each polyline segment
+        plen = [len(sublist) for sublist in pts]
+
+        # Write a VTK file based on points
+        out_file.write("# vtk DataFile Version 4.2\n")
+        out_file.write("vtk output\n")
+        out_file.write("ASCII\n")
+        out_file.write("DATASET POLYDATA\n")
+        out_file.write("POINTS %d float\n" % len(all_pts))
+
+        # Write all the points
+        for p in all_pts:
+            out_file.write('%f %f %f\n' % (p[0],p[1],0.0))
+
+        out_file.write("LINES %d %d\n" % (len(pts), len(pts) + sum(plen)))
+
+        idx = 0
+        for q in pts:
+            out_file.write('%d %s\n' % ( len(q), ' '.join([str(x) for x in range(idx,idx + len(q))])) )
+            idx = idx + len(q)
 
 
 
@@ -856,5 +969,6 @@ def slides_list_cmd(task, specimen, block, section, slide, stain,
 def init_app(app):
     app.cli.add_command(import_annot_cmd)
     app.cli.add_command(export_annot_svg)
+    app.cli.add_command(export_annot_vtk)
     app.cli.add_command(slides_list_cmd)
 

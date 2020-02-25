@@ -163,15 +163,15 @@ $(document).ready(function() {
     id: "view",
     prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
     showNavigator: true,
-    showRotationControl: false,
+    showRotationControl: true,
     showSequenceControl: true,
     animationTime: 0.5,
     blendTime: 0.1,
-    constrainDuringPan: true,
+    constrainDuringPan: false,
     maxZoomPixelRatio: 1.1,
     minPixelRatio: 1.0,
     minZoomLevel: 1,
-    visibilityRatio: 1,
+    visibilityRatio: 0.25,
     zoomPerScroll: 2,
     timeout: 120000
   });

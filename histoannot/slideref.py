@@ -114,51 +114,48 @@ class SlideRef:
 
     # Initialize a slide reference with a remote URL.
     # slide_info is a dict with fields specimen, block, slide_name, slide_ext
-    def __init__(self, schema, remote_baseurl, remote_handler, slide_info):
+    def __init__(self, project, specimen, block, name, ext):
+        """
+        Slide reference constructor
 
-        # Store the remote url
-        self._remote_baseurl = remote_baseurl
-        self._url_handler = remote_handler
-        self._specimen = slide_info["specimen"]
-        self._block = slide_info["block"]
-        self._slide_name = slide_info["slide_name"]
-        self._slide_ext = slide_info["slide_ext"]
+        Args:
+            project(str): name of the project
+            specimen(str): ID of the specimen
+            block(str): ID of the block
+            name(str): name/ID of the slide (must be unique)
+            ext(str): extension of the slide
+        """
 
-        # Store the schema
-        self._schema = schema
+        # Find the project configuration
+        self._proj = current_app.config['PROJECTS'][project]
 
-        # If there is a remote handler, we need a local cache directory. If not,
-        # files are from the same filesystem and no local path is needed
-        if remote_handler is not None:
-            # Create a local directory for caching the content from the remote URL
-            self._local_baseurl = os.path.join(current_app.instance_path, 'slidecache')
-            if not os.path.exists(self._local_baseurl):
-                os.makedirs(self._local_baseurl)
-        else:
-            self._local_baseurl = self._remote_baseurl
+        # Store the slice properties
+        self._specimen = specimen
+        self._block = block
+        self._slide_name = name
+        self._slide_ext = ext
+
 
     # Get a tuple identifying the slide
     def get_id_tuple(self):
-        return (self._specimen, self._block, self._slide_name, self._slide_ext)
+        return (self._proj.get_name(), self._specimen, self._block, 
+                self._slide_name, self._slide_ext)
 
     # Generate the filename for the resource (local or remote)
     def get_resource_url(self, resource, local = True):
 
         # Use a dictionary for the substitution
-        d = {"baseurl" : self._local_baseurl if local else self._remote_baseurl,
+        d = {"baseurl" : self._proj.get_baseurl(local),
              "specimen" : self._specimen, "block" : self._block,
              "slide_name": self._slide_name, "slide_ext" : self._slide_ext }
 
         # Apply the dictionary to retrieve the filename vie schema
-        return self._schema["pattern"][resource].format(**d)
+        return self._proj.get_urlschema()["pattern"][resource].format(**d)
 
     # Check whether a resource exists (locally or remotely)
     def resource_exists(self, resource, local = True):
         f = self.get_resource_url(resource, local)
-        if local is True or self._url_handler is None:
-            return os.path.exists(f) and os.path.isfile(f)
-        else:
-            return self._url_handler.exists(f)
+        return self._proj.file_exists(f, local)
 
     # Get a local copy of the resource, copying it if necessary
     def get_local_copy(self, resource, check_hash=False, dry_run=False):
@@ -263,13 +260,16 @@ class SlideRef:
 
 
 # Get a slide reference for slide specified by detailed information
-def get_slideref_by_info(specimen, block, slide_name, slide_ext):
+def get_slideref_by_info(project, specimen, block, slide_name, slide_ext):
+
+    # Get the project reference
+    proj_src_ref = current_app.config['PROJECTS'][project]
 
     # Get the current schema
-    schema=current_app.config['HISTOANNOT_URL_SCHEMA']
+    schema=proj_src_ref.get_urlschema()
 
     # Get the current URL base
-    url_base=current_app.config['HISTOANNOT_URL_BASE']
+    url_base=proj_src_ref.get_baseurl()
 
     # Check the url_base
     if url_base.startswith('gs://'):

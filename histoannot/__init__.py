@@ -25,23 +25,9 @@ from . import slide
 from . import dltrain
 from . import dzi
 from . import delegate
-
-# The default naming schema for slide objects
-_default_histo_url_schema = {
-    # The filename patterns
-    "pattern" : {
-        "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
-        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
-        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
-        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
-        "dims" :       "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
-        "d_tangles" :  "{baseurl}/{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
-    },
-
-    # The maximum number of bytes that may be cached locally for 'raw' data
-    "cache_capacity" : 32 * 1024 ** 3
-}
-
+from . import project_source_ref
+from glob import glob
+import json
 # Needed for AJAX redirects to DZI nodes
 def _add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -60,7 +46,6 @@ def create_app(test_config = None):
 
     # Handle configurtion
     app.config['SECRET_KEY'] = 'dev'
-    app.config['HISTOANNOT_URL_SCHEMA'] = _default_histo_url_schema
     app.config['HISTOANNOT_DELEGATE_DZI'] = False
 
     if test_config is None:
@@ -76,9 +61,15 @@ def create_app(test_config = None):
     except OSError:
         pass
 
-    # Dump config
-    if 'HISTOANNOT_URL_BASE' not in app.config:
-        raise ValueError('Missing HISTOANNOT_URL_BASE in config')
+    # Create a dictionary for the project-level configuration data
+    app.config['PROJECTS'] = {}
+
+    # Read the per-project JSON files in the instance directory
+    # Each project has a JSON file that has at a minimum the URL
+    # base for that project
+    for jfile in glob('%s/projects/*.json'):
+        psr = ProjectSourceRef(jfile)
+        app.config['PROJECTS'][psr.get_name()] = psr
 
     # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)

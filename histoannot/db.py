@@ -21,6 +21,7 @@ import re
 import csv
 import sys
 import traceback
+import pandas
 
 import click
 from flask import current_app, g, url_for
@@ -310,12 +311,51 @@ def rebuild_slide_db_block(src_dir, specimen, block, match_csv):
         db.commit()
 
 
+# A wrapper around a project
+class ProjectRef:
+
+    def __init__(self, id):
+        if id is None:
+            db = get_db()
+            self._id = db.execute('SELECT name FROM project WHERE name=?', (name,)).fetchone()['id']
+        else:
+            self._id = id
+
+    @classmethod
+    def fromname(cls, name):
+        db = get_db()
+        rc = db.execute('SELECT id FROM project WHERE name=?', (name,)).fetchone()
+        return None if rc is None else cls(rc['id'])
+
+
+    def set_url(self, url):
+        get_db().execute('UPDATE project SET url=? WHERE id=?', (url, self._id))
+        get_db().commit()
+
+    def set_display_name(self, display_name):
+        get_db().execute('UPDATE project SET display_name=? WHERE id=?', (display_name, self._id))
+        get_db().commit()
+
+    def set_desc(self, desc):
+        get_db().execute('UPDATE project SET desc=? WHERE id=?', (desc, self._id))
+        get_db().commit()
+
+    def get_slide_by_name(self, slide_name):
+        db = get_db()
+        rc = db.execute(
+                'SELECT S.id FROM slide S left join project_block PB on S.block_id = PB.block '
+                'WHERE S.slide_name=? AND PB.project = ?',
+                (slide_name, self._id)).fetchone()
+        return None if rc is None else rc['id']
+
+
 @click.command('init-db')
 @with_appcontext
 def init_db_command():
     """Clear the existing data and create new tables."""
     init_db()
     click.echo('Initialized the database.')
+
 
 @click.command('init-db-dltrain')
 @with_appcontext
@@ -333,6 +373,115 @@ def scan_slides_command(src):
     """Scan the local directory for slides and create block and slide database"""
     update_slide_db(src)
     click.echo('Scanned for slides')
+
+
+@click.command('project-add')
+@click.argument('name')
+@click.argument('display-name')
+@click.option('--desc', help='Project description')
+@click.option('--url', help='URL for the project')
+@click.option('--icon', type=click.File('rb'), help='Icon for the project')
+@with_appcontext
+def add_project_command(name, display_name, desc, url, icon):
+    db = get_db()
+
+    # Execute the command
+    pid = db.execute('INSERT INTO project (name,display_name) VALUES (?,?)',
+            (name, display_name)).lastrowid;
+
+    # Update the properties of the project
+    pr = ProjectRef(pid)
+    if desc is not None:
+        pr.set_desc(desc)
+
+    if url is not None:
+        pr.set_url(url)
+
+    # Report
+    print('Created project %d' % (pid))
+
+@click.command('project-update')
+@click.argument('name')
+@click.option('--disp', help='Project display name')
+@click.option('--desc', help='Project description')
+@click.option('--url', help='URL for the project')
+@click.option('--icon', type=click.File('rb'), help='Icon for the project')
+@with_appcontext
+def update_project_command(name, disp, desc, url, icon):
+    db = get_db()
+
+    # Execute the command
+    rc = db.execute('SELECT id FROM project WHERE name=?', (name,)).fetchone()
+    if rc is None:
+        print('Project %s does not exist' % (name,))
+        sys.exit(-1)
+
+    # Update the properties of the project
+    pr = ProjectRef(rc['id'])
+    if disp is not None:
+        pr.set_display_name(disp)
+
+    if desc is not None:
+        pr.set_desc(desc)
+
+    if url is not None:
+        pr.set_url(url)
+
+
+
+@click.command('projects-implement')
+@click.argument('name')
+@click.argument('display-name')
+@with_appcontext
+def implement_projects_command(name, display_name):
+    """Update the database that does not contain projects to have projects.
+       All existing blocks, tasks, and users are assigned to the specified
+       default project"""
+
+    # The table may not exist
+    db = get_db()
+
+    # Execute the SQL commands
+    with current_app.open_resource('sqlmod/add_projects.sql') as f:
+        db.executescript(f.read().decode('utf8'))
+
+    # Create a new project
+    pid = db.execute('INSERT INTO project (name,display_name) VALUES (?,?)',
+            (name, display_name)).lastrowid;
+
+    # Assign all the blocks to the new project
+    rc = db.execute('SELECT id FROM block')
+    for row in rc.fetchall():
+        db.execute('INSERT INTO project_block (project,block) VALUES (?,?)', (pid, row['id']))
+
+    # Assign all the tasks to the new project
+    rc = db.execute('SELECT id FROM task')
+    for row in rc.fetchall():
+        db.execute('INSERT INTO project_task (project,task) VALUES (?,?)', (pid, row['id']))
+
+    # Assign all the users to the new project
+    rc = db.execute('SELECT id FROM user')
+    for row in rc.fetchall():
+        db.execute('INSERT INTO project_access (project,user) VALUES (?,?)', (pid, row['id']))
+
+    db.commit()
+
+
+
+
+@click.command('projects-list')
+@with_appcontext
+def list_projects_command():
+    db = get_db();
+
+    # Create a Pandas data frame
+    df = pandas.read_sql_query("SELECT * FROM project ORDER BY display_name", db)
+    with pandas.option_context('display.max_rows', None):  
+        print(df)
+
+
+
+
 
 @click.command('add-block')
 @click.option('--src', prompt='Source directory', help='Directory to import data from')
@@ -394,14 +543,18 @@ def update_slide_derived_data(slide_id):
         x.save(thumb_fn)
 
 
+
 # Builds up a slide database. Scans a manifest file that contains names of specimens
 # and URLs to Google Sheet spreadsheets in which individual slides are matched to the
 # block/section/slice/stain information. Checks if the corresponding files exist in 
 # the Google cloud and creates slide identifiers as needed
-def refresh_slide_db(manifest, single_specimen = None):
+def refresh_slide_db(project, manifest, single_specimen = None):
 
     # Database cursor
     db = get_db()
+
+    # Get the project object
+    prj = ProjectRef.fromname(project)
 
     # Read from the manifest file
     with open(manifest) as f_manifest:
@@ -437,10 +590,10 @@ def refresh_slide_db(manifest, single_specimen = None):
                         slide_name = str(slide_name)
 
                         # Check if the slide has already been imported into the database
-                        t = db.execute('SELECT * FROM slide WHERE slide_name=?', (slide_name,)).fetchone()
+                        slide_id = prj.get_slide_by_name(slide_name)
 
-                        if t is not None:
-                            print('Slide %s already in the database with id=%s' % (slide_name, t['id']));
+                        if slide_id is not None:
+                            print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
 
                             # If the slide is a duplicate, we should make it disappear
                             # but the problem is that we might have already done some annotation
@@ -448,15 +601,15 @@ def refresh_slide_db(manifest, single_specimen = None):
                             if cert == 'duplicate':
 
                                 print('DELETING slide %s as DUPLICATE' % (slide_name,))
-                                db.execute('DELETE FROM slide WHERE slide_name=?', (slide_name,))
+                                db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
                                 db.commit()
                                 continue
 
                             # Check if the metadata matches
                             t0 = db.execute("""
                                 SELECT * FROM SLIDE 
-                                WHERE section=? AND slide=? AND stain=? AND slide_name=?""",
-                                (section, slide_no, stain, slide_name)).fetchone()
+                                WHERE section=? AND slide=? AND stain=? AND slide_id=?""",
+                                (section, slide_no, stain, slide_id)).fetchone()
 
                             # We may need to update the properties
                             if t0 is None:
@@ -464,14 +617,15 @@ def refresh_slide_db(manifest, single_specimen = None):
                                 print('UPDATING metadata for slide %s' % (slide_name,))
                                 db.execute("""
                                   UPDATE slide SET section=?, slide=?, stain=?
-                                  WHERE slide_name=?""", (section, slide_no, stain, slide_name))
+                                  WHERE slide_id=?""", (section, slide_no, stain, slide_id))
                                 db.commit()
 
-                            update_slide_derived_data(t['id'])
+                            update_slide_derived_data(slide_id)
                             continue
 
-                        # Create a slideref for this object. The way we have set all of this up, the extension is not
-                        # coded anywhere in the manifests, so we dynamically check for multiple extensions
+                        # Create a slideref for this object. The way we have set all of this up,
+                        # the extension is not coded anywhere in the manifests, so we dynamically 
+                        # check for multiple extensions
                         found=False
                         for slide_ext in ('svs', 'tif', 'tiff'):
 
@@ -539,13 +693,16 @@ def load_raw_slide_to_cache(slide_id, resource):
 
 
 @click.command('refresh-slides')
+@click.argument('project')
 @click.argument('manifest', type=click.Path(exists=True))
 @click.option('-s', '--specimen', default=None, 
         help='Only refresh slides for a single specimen')
 @with_appcontext
-def refresh_slides_command(manifest, specimen):
-    """Refresh the slide database using manifest file MANIFEST that lists specimens and GDrive links"""
-    refresh_slide_db(manifest, specimen);
+def refresh_slides_command(project, manifest, specimen):
+    """Refresh the slide database for project PROJECT using manifest 
+       file MANIFEST that lists specimens and CSV files or GDrive links"""
+
+    refresh_slide_db(project, manifest, specimen);
     click.echo('Scanning complete')
 
 
@@ -816,6 +973,10 @@ def init_app(app):
     app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
     app.cli.add_command(init_db_dltrain_command)
+    app.cli.add_command(add_project_command)
+    app.cli.add_command(list_projects_command)
+    app.cli.add_command(update_project_command)
+    app.cli.add_command(implement_projects_command)
     app.cli.add_command(refresh_slides_command)
     app.cli.add_command(cache_load_raw_slide_command)
     app.cli.add_command(add_task_command)

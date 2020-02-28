@@ -2,18 +2,23 @@ DROP TABLE IF EXISTS user;
 DROP TABLE IF EXISTS block;
 DROP TABLE IF EXISTS slide;
 
+DROP TABLE IF EXISTS user;
 CREATE TABLE user (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
   password TEXT NOT NULL
 );
 
+
+DROP TABLE IF EXISTS block;
 CREATE TABLE block (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   specimen_name TEXT NOT NULL,
   block_name TEXT NOT NULL
 );
 
+
+DROP TABLE IF EXISTS slide;
 CREATE TABLE slide (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   block_id INTEGER NOT NULL,
@@ -28,6 +33,7 @@ CREATE TABLE slide (
     ON DELETE CASCADE
 );
 
+
 DROP TABLE IF EXISTS task;
 CREATE TABLE task (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,6 +41,7 @@ CREATE TABLE task (
   json TEXT NOT NULL,
   restrict_access BOOLEAN NOT NULL
 );
+
 
 DROP TABLE IF EXISTS task_access;
 CREATE TABLE task_access (
@@ -84,3 +91,44 @@ CREATE TABLE slide_dzi_node (
   url TEXT,
   FOREIGN KEY (slide_id) REFERENCES slide (id)
 );
+
+/* Project stuff */
+DROP TABLE IF EXISTS project;
+CREATE TABLE project (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  display_name TEXT UNIQUE NOT NULL,
+  desc TEXT,
+  url TEXT,
+  icon bytea
+);
+
+/* Unique constraint on block means it can belong to only one project */
+DROP TABLE IF EXISTS project_block;
+CREATE TABLE project_block (
+  project INT NOT NULL,
+  block INT UNIQUE NOT NULL,
+  PRIMARY_KEY(project,block),
+  FOREIGN KEY(project) REFERENCES project(id),
+  FOREIGN KEY(block) REFERENCES block(id)
+);
+
+/* Unique constraint on task means it can belong to only one project */
+DROP TABLE IF EXISTS project_task;
+CREATE TABLE project_task (
+  project INT NOT NULL,
+  task INT UNIQUE NOT NULL,
+  PRIMARY_KEY(project,task),
+  FOREIGN KEY(project) REFERENCES project(id),
+  FOREIGN KEY(task) REFERENCES task(id)
+);
+
+DROP TABLE IF EXISTS project_access;
+CREATE TABLE project_access (
+  user INTEGER NOT NULL,
+  project INTEGER NOT NULL,
+  PRIMARY KEY(user, project),
+  FOREIGN KEY (user) REFERENCES user (id),
+  FOREIGN KEY (project) REFERENCES project (id)
+);
+

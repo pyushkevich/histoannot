@@ -5,3 +5,5 @@
 libs/os_affine/build
 instance
 docs/build
+venv
+.idea

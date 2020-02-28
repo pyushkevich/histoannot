@@ -1,3 +1,7 @@
+import os
+import json
+from flask import current_app, g, url_for
+from gcs_handler import get_gstor
 
 # This class represents a project configuration. It stores data associated
 # with the project that is not kept in a database, but rather stored in 
@@ -9,25 +13,43 @@
 # The default naming schema for slide objects
 _default_histo_url_schema = {
     # The filename patterns
-    "pattern" : {
-        "raw" :        "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
-        "x16" :        "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
-        "affine" :     "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
-        "thumb" :      "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
-        "dims" :       "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
-        "d_tangles" :  "{baseurl}/{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
+    "pattern": {
+        "raw": "{baseurl}/{specimen}/histo_raw/{slide_name}.{slide_ext}",
+        "x16": "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
+        "affine": "{baseurl}/{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
+        "thumb": "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
+        "dims": "{baseurl}/{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
+        "d_tangles": "{baseurl}/{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
     },
 
     # The maximum number of bytes that may be cached locally for 'raw' data
-    "cache_capacity" : 32 * 1024 ** 3
+    "cache_capacity": 32 * 1024 ** 3
 }
+
+
+class RemoteFileCache:
+    """This class handles local caching of remote files, such as Google Cloud Storage bucket
+       files. The cache has a fixed capacity and when it is full, files are deleted to bring
+       it to X% capacity."""
+
+    def __init__(self, path, source, max_size = 20*2^30, free_fraction = 0.1):
+        """Create new cache with given max size in bytes and given fraction of size that
+           gets freed up when cache hits capacity"""
+        self._max_size = max_size
+        self._free_fraction = free_fraction
+        self._path = path
+        self._source = source
+
+    def get_file(self, fname):
+
+
 
 class ProjectSourceRef:
 
     # Constructor reads and checks the json file for the project. The
     # name of the json file must match the name of the project in the
     # database
-    def __init__(json_file):
+    def __init__(self, json_file):
 
         # Read the json file into a dict
         with open(json_file, 'rt') as jf:
@@ -46,7 +68,7 @@ class ProjectSourceRef:
         if self._url_handler is not None:
             # Create a local directory for caching the content from the remote URL
             self._local_baseurl = os.path.join(
-                    current_app.instance_path, 'slidecache', self._name)
+                current_app.instance_path, 'slidecache', self._name)
             if not os.path.exists(self._local_baseurl):
                 os.makedirs(self._local_baseurl)
         else:
@@ -67,7 +89,7 @@ class ProjectSourceRef:
     # Get either local or remote URL base
     def get_urlbase(self, local):
         return self._local_baseurl if local else self.get_remote_urlbase()
-        
+
     # Get the URL schema for this project
     def get_urlschema(self):
         return self._dict.get('url_schema', _default_histo_url_schema)
@@ -134,9 +156,9 @@ class ProjectSourceRef:
         if resource == 'raw' or resource == 'x16':
 
             # Generate a wildcard pattern to list all 'raw' format files 
-            d = {"baseurl" : self._local_baseurl,
-                 "specimen" : "*", "block" : "*", "slide_name": "*", "slide_ext" : "*" }
-            wildcard_str =  self._schema["pattern"][resource].format(**d)
+            d = {"baseurl": self._local_baseurl,
+                 "specimen": "*", "block": "*", "slide_name": "*", "slide_ext": "*"}
+            wildcard_str = self._schema["pattern"][resource].format(**d)
 
             # For each of the files, use os.stat to get information
             f_heap = []
@@ -148,14 +170,12 @@ class ProjectSourceRef:
 
             # If the total number of bytes exceeds the cache size
             while total_bytes > self._schema["cache_capacity"] and len(f_heap) > 0:
-
                 # Get the oldest file
                 (atime, size, fn) = heapq.heappop(f_heap)
 
                 # Remove the file
                 total_bytes -= size
                 os.remove(fn)
-
 
         # Make a copy of the resource locally
         self._url_handler.download(f_remote, f_local)
@@ -165,11 +185,3 @@ class ProjectSourceRef:
             f.write(self._url_handler.get_md5hash(f_remote))
 
         return f_local
-
-
-
-
-
-
-
-

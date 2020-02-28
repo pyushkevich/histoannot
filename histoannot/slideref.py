@@ -16,93 +16,17 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from urlparse import urlparse
-from google.cloud import storage
+
 import glob
 import stat
 import heapq
-import urllib2
+
 import csv
 import sys, traceback
 import threading
 import os
 from flask import g, current_app
 
-
-
-# This class handles remote URLs for Google cloud. The remote URLs must have format
-# "gs://bucket/path/to/blob.ext" 
-
-class GCSHandler:
-
-    # Constructor
-    def __init__(self):
-        self._bucket_cache={}
-        self._blob_cache={}
-        self._client = storage.Client()
-
-    # Process a URL
-    def _get_blob(self, uri):
-
-        # Check the cache
-        if uri in self._blob_cache:
-            return self._blob_cache[uri]
-
-        # Unpack the URL
-        o = urlparse(uri)
-
-        # Make sure that it includes gs
-        if o.scheme != "gs":
-            raise ValueError('URL should have schema "gs"')
-
-        # Find the bucket, if not found add it to the cache
-        if o.netloc in self._bucket_cache:
-            bucket = self._bucket_cache[o.netloc]
-        else:
-            bucket = self._client.get_bucket(o.netloc)
-            self._bucket_cache[o.netloc] = bucket
-
-        # Place the blob in the cache
-        blob = bucket.get_blob(o.path.strip('/'))
-        self._blob_cache[uri] = blob
-
-        # Get the blob in the bucket
-        return blob
-
-    # Check if a URL refers to an existing file
-    def exists(self, uri):
-        return self._get_blob(uri) is not None
-
-    # Get the MD5 hash
-    def get_md5hash(self, uri):
-        return self._get_blob(uri).md5_hash
-
-    # Download a remote resource locally
-    def download(self, uri, local_file):
-        
-        # Make sure the path containing local_file exists
-        dir_path = os.path.dirname(local_file)
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-
-        # Perform the download
-        blob = self._get_blob(uri)
-        with open(local_file, "wb") as file_obj:
-            worker = threading.Thread(target = self._client.download_blob_to_file, args=(blob, file_obj))
-            worker.start()
-            while worker.isAlive():
-                worker.join(1.0)
-                print('GCS: downloaded: %d of %s' % (os.stat(local_file).st_size, uri))
-
-    # Get the remote download size
-    def get_size(self, uri):
-        return self._get_blob(uri).size
-
-
-# Get a global GCP handler
-def get_gstor():
-    if 'gstor' not in g:
-        g.gstor = GCSHandler()
-    return g.gstor
 
 
 

@@ -14,12 +14,11 @@
       <a class="pure-menu-heading" href="">PICSL Histology Annotator</a>
       <ul class="pure-menu-list">
         {% if g.user %}
-        <li class="pure-menu-item"><span>{{ g.user['username'] }}</span>
+          <li class="pure-menu-item"><span>{{ g.user['username'] }}</span>
           <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Log Out</a>
-            {% else %}
-            <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.register') }}">Register</a>
-              <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Log In</a>
-                {% endif %}
+        {% else %}
+          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Log In</a>
+        {% endif %}
       </ul>
     </div>
 

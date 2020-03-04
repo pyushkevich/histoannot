@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+
+{% block title %}
+PICSL Histology Annotation Server
+{% endblock %}
+
+{% block content %}
+
+<style>
+.zoom {
+  transition: transform .2s; /* Animation */
+  max-width: 200px;
+  height: 75px;
+}
+
+.zoom:hover {
+  transform: scale(2.56) translate(5pt,0pt); /* (150% zoom - Note: if the zoom is too large, it will go outside of the viewport) */
+  position: absolute;
+}
+
+.spanner {
+  height: 75px;
+}
+</style>
+
+
+<a href="{{ url_for('slide.index')}}">Home</a>
+<span id="span_project_name"></span>
+
+<div class="pure-g" style="max-width: 1024px;">
+  <div class="pure-u-1 pure-u-md-12-24">
+    <h3 align="center">PROJECTS</h3>
+    <div id="d_project_table">
+      <table id="project" class="compact stripe hover" style="width:100%">
+        <thead>
+          <tr>
+            <th>Id</th>
+            <th>Project</th>
+            <th>#Spc</th>
+            <th>#Blk</th>
+            <th>#Sld</th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </div>
+    <div id="no_project_message" style="display:none; text-align:center;">
+      You are not a member of any project. Please contact a system administrator to be added to a project.
+    </div>
+  </div>
+  <div class="pure-u-1 pure-u-md-1-24">
+  </div>
+  <div class="pure-u-1 pure-u-md-11-24" id="d_tasks" style="display:none;">
+    <h3 align="center">TASKS</h3>
+    <table id="task" class="compact stripe hover" style="width:100%">
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Activity</th>
+          <th>#Spc</th>
+          <th>#Blk</th>
+          <th>#Sld</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- DataTable support -->
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.1/css/select.dataTables.min.css">
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.1/js/dataTables.select.min.js"></script>
+
+<script type="text/javascript" charset="utf8">
+$(document).ready(function() {
+
+  // AJAX url templates
+  var url_prj="{{url_for('slide.project_listing')}}";
+  var url_task="{{url_for('slide.task_listing', project='XXXX')}}";
+  var url_action="{{url_for('slide.task_detail', task_id='999999')}}";
+
+  // Rendering of links
+  var fn_task_link_render = function(data, type, row) {
+    var url = url_action.replace('999999',row['id']);
+    return '<a class="action" href="'+url+'">'+row['name']+'</a>';
+  };
+
+  // Column descriptions for different tables
+  var prj_col_desc = [
+    { data: "id", visible: false },
+    { data: "disp_name" },
+    { data: "nspecimens" },
+    { data: "nblocks" },
+    { data: "nslides" } 
+  ];
+
+  var task_col_desc = [
+    { data: "id", visible: false },
+    { data: "name", render: fn_task_link_render },
+    { data: "nspecimens" },
+    { data: "nblocks" },
+    { data: "nslides" }
+  ];
+
+  var t_project = $('#project').DataTable( {
+    "ajax": function(data, callback, settings) {
+      $.ajax({
+        url: url_prj,
+        success: function(resp_text) {
+          resp_data = JSON.parse(resp_text)
+          callback({data: resp_data});
+          if(resp_data.length === 0) {
+            $('#d_project_table').css('display', 'none');
+            $('#no_project_message').css('display', 'block');
+          }
+          else {
+            $('#d_project_table').css('display', 'block');
+            $('#no_project_message').css('display', 'none');
+            if(request_prj) {
+              fn_select_row(t_project, 0, request_prj);
+              request_prj=null;
+            }
+          }
+        }
+      });
+    },
+    columns: prj_col_desc,
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single',
+    searching: false
+  } );
+
+  var t_task = $('#task').DataTable( {
+    "ajax": function(data, callback, settings) {
+      if(selected_prj) {
+        $.ajax({
+          url: url_task.replace('XXXX',selected_prj),
+          success: function(resp_text) {
+            callback({data: JSON.parse(resp_text)});
+          }
+        });
+      }
+    },
+    columns: task_col_desc,
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single',
+    searching: false
+  } );
+
+  var selected_prj = null;
+
+  var py2js = function(str) { return str=="None" ? null : str; }
+  var request_prj=py2js("{{project_name}}");
+
+  var fn_select_row = function(table, col, value) {
+    var indexes = table.rows().eq( 0 ).filter( function (rowIdx) {
+          return table.cell(rowIdx, col).data() === value;
+    } );
+    if(indexes.length === 1) {
+      table.row(indexes[0]).select();
+    }
+  };
+
+  t_project.on('select', function(e,dt,type,indexes) {
+    if(type === 'row') {
+      // Set the target url
+      selected_prj = t_project.rows(indexes).data().pluck('id')[0];
+      var desc = t_project.rows(indexes).data().pluck('disp_name')[0];
+      t_task.ajax.reload();
+      $('#span_project_name').text(" : " + desc);
+      $('#d_tasks').css('display','block');
+    }
+  });
+
+  t_project.on('deselect', function(e,dt,type,indexes) {
+    selected_prj = null;
+    $('#span_project_name').text("");
+    $('#d_tasks').css('display','none');
+  });
+} );
+</script>
+
+{% endblock %}

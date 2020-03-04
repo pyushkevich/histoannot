@@ -1,0 +1,12 @@
+{
+  "base_url": "/Users/pauly/PycharmProjects/histoannot/blockface",
+  "disp_name": "Blockface Test Project",
+  "desc": "A test project with some blockface images",
+  "url_schema": {
+    "pattern": {
+      "raw": "{specimen}/{slide_name}.{slide_ext}",
+      "thumb": "{specimen}/{slide_name}_thumb.png",
+      "dims": "{specimen}/{slide_name}_resolution.txt"
+    }
+  }
+}

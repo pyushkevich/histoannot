@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS labelset;
 
 CREATE TABLE labelset (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
   description TEXT
 );
 
@@ -36,12 +36,17 @@ CREATE TABLE training_sample (
   FOREIGN KEY (task) REFERENCES task(id),
   FOREIGN KEY (meta_id) REFERENCES edit_meta(id)
 );
-  
-INSERT INTO labelset (name) values ('tangles');
-INSERT INTO labelset (name) values ('grey_white');
-INSERT INTO label (name, labelset, color) values ('tangle',1,'#ff0000');
-INSERT INTO label (name, labelset, color) values ('background',1,'#4444ff');
 
+DROP TABLE IF EXISTS project_labelset;
+CREATE TABLE project_labelset (
+  project TEXT NOT NULL,
+  labelset_name TEXT NOT NULL,
+  labelset_id INT NOT NULL,
+  PRIMARY KEY(project,labelset_name),
+  FOREIGN KEY(project) REFERENCES project(id),
+  FOREIGN KEY(labelset_name) REFERENCES labelset(name),
+  FOREIGN KEY(labelset_id) REFERENCES labelset(id)
+);
 
 
 

@@ -25,9 +25,11 @@ from . import slide
 from . import dltrain
 from . import dzi
 from . import delegate
-from . import project_source_ref
+from . import project_ref
+from . import project_cli
 from glob import glob
-import json
+from project_ref import RemoteResourceCache, ProjectRef
+
 # Needed for AJAX redirects to DZI nodes
 def _add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -61,16 +63,6 @@ def create_app(test_config = None):
     except OSError:
         pass
 
-    # Create a dictionary for the project-level configuration data
-    app.config['PROJECTS'] = {}
-
-    # Read the per-project JSON files in the instance directory
-    # Each project has a JSON file that has at a minimum the URL
-    # base for that project
-    for jfile in glob('%s/projects/*.json'):
-        psr = ProjectSourceRef(jfile)
-        app.config['PROJECTS'][psr.get_name()] = psr
-
     # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)
     dzi.init_app(app)
@@ -90,6 +82,9 @@ def create_app(test_config = None):
         # Auth commands
         auth.init_app(app)
 
+        # Project CLI commands
+        project_cli.init_app(app)
+
         # Auth blueprint
         app.register_blueprint(auth.bp)
 
@@ -97,12 +92,12 @@ def create_app(test_config = None):
         app.register_blueprint(slide.bp)
         slide.init_app(app)
 
-	# Delegation blueprint
-	app.register_blueprint(delegate.bp)
-	delegate.init_app(app)
+        # Delegation blueprint
+        app.register_blueprint(delegate.bp)
+        delegate.init_app(app)
 
         # DLTrain blueprint
-        app.register_blueprint(dltrain.bp);
+        app.register_blueprint(dltrain.bp)
         dltrain.init_app(app)
 
         # Pure CSS
@@ -127,7 +122,7 @@ def create_app(test_config = None):
             return 'HISTOANNOT DZI NODE'
 
         # Allow CORS headers
-	app.after_request(_add_cors_headers)
+        app.after_request(_add_cors_headers)
 
     else:
         raise ValueError('Missing or unknown HISTOANNOT_SERVER_MODE')

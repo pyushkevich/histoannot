@@ -6,9 +6,21 @@ DROP TABLE IF EXISTS user;
 CREATE TABLE user (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL
+  password TEXT,
+  email TEXT,
+  disabled BOOLEAN NOT NULL DEFAULT (FALSE),
+  site_admin BOOLEAN NOT NULL DEFAULT(FALSE)
 );
 
+DROP TABLE IF EXISTS password_reset;
+CREATE TABLE password_reset (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reset_key TEXT NOT NULL,
+  user INT NOT NULL,
+  t_expires INTEGER NOT NULL,
+  activated BOOLEAN NOT NULL DEFAULT(FALSE),
+  FOREIGN KEY(user) REFERENCES user(id)
+);
 
 DROP TABLE IF EXISTS block;
 CREATE TABLE block (
@@ -29,7 +41,7 @@ CREATE TABLE slide (
   slide_ext TEXT NOT NULL,
   CONSTRAINT fk_block
     FOREIGN KEY (block_id)
-    REFERENCES block_id(id)
+    REFERENCES block(id)
     ON DELETE CASCADE
 );
 
@@ -92,23 +104,23 @@ CREATE TABLE slide_dzi_node (
   FOREIGN KEY (slide_id) REFERENCES slide (id)
 );
 
-/* Project stuff */
+
 DROP TABLE IF EXISTS project;
-CREATE TABLE project (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  display_name TEXT UNIQUE NOT NULL,
-  desc TEXT,
-  url TEXT,
-  icon bytea
+CREATE TABLE PROJECT (
+    id TEXT PRIMARY KEY,
+    disp_name TEXT NOT NULL,
+    desc TEXT,
+    base_url TEXT NOT NULL,
+    json TEXT NOT NULL
 );
+
 
 /* Unique constraint on block means it can belong to only one project */
 DROP TABLE IF EXISTS project_block;
 CREATE TABLE project_block (
-  project INT NOT NULL,
+  project TEXT NOT NULL,
   block INT UNIQUE NOT NULL,
-  PRIMARY_KEY(project,block),
+  PRIMARY KEY(project,block),
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY(block) REFERENCES block(id)
 );
@@ -116,9 +128,9 @@ CREATE TABLE project_block (
 /* Unique constraint on task means it can belong to only one project */
 DROP TABLE IF EXISTS project_task;
 CREATE TABLE project_task (
-  project INT NOT NULL,
+  project TEXT NOT NULL,
   task INT UNIQUE NOT NULL,
-  PRIMARY_KEY(project,task),
+  PRIMARY KEY(project,task),
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY(task) REFERENCES task(id)
 );
@@ -126,9 +138,12 @@ CREATE TABLE project_task (
 DROP TABLE IF EXISTS project_access;
 CREATE TABLE project_access (
   user INTEGER NOT NULL,
-  project INTEGER NOT NULL,
+  project TEXT NOT NULL,
+  admin BOOLEAN NOT NULL DEFAULT(FALSE),
   PRIMARY KEY(user, project),
-  FOREIGN KEY (user) REFERENCES user (id),
-  FOREIGN KEY (project) REFERENCES project (id)
+  FOREIGN KEY(project) REFERENCES project(id),
+  FOREIGN KEY (user) REFERENCES user (id)
 );
+
+
 

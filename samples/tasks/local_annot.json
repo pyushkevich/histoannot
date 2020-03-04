@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "Basic Annotation",
+    "desc": "Use this task to annotate images",
+    "stains": [
+        "blockface"
+    ]
+}

@@ -36,7 +36,8 @@ from redis import Redis
 
 from openslide import OpenSlide, OpenSlideError
 from openslide.deepzoom import DeepZoomGenerator
-from histoannot.slideref import SlideRef, get_slideref_by_info
+from histoannot.slideref import SlideRef
+from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
 
 bp = Blueprint('dzi', __name__)
@@ -47,32 +48,32 @@ from flask.cli import with_appcontext
 
 
 # The function that is enqueued in RQ
-def do_preload_file(specimen, block, resource, slide_name, slide_ext):
+def do_preload_file(project, specimen, block, resource, slide_name, slide_ext):
 
-    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
-    print('Fetching %s %s %s.%s' % (specimen, block, slide_name, slide_ext))
+    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    print('Fetching %s %s %s %s.%s' % (project, specimen, block, slide_name, slide_ext))
     tiff_file = sr.get_local_copy(resource, check_hash=True)
     print('Fetched to %s' % tiff_file)
     return tiff_file
 
 
 # Prepare the DZI for a slide. Must be called first
-@bp.route('/dzi/preload/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
-def dzi_preload(specimen, block, resource, slide_name, slide_ext):
+@bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
     # Check if the file exists locally. If so, there is no need to queue a worker
-    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
     if tiff_file is not None:
         return json.dumps({ "status" : JobStatus.FINISHED })
 
     # Get a redis queue
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, specimen, block, resource, slide_name, slide_ext,
+    job = q.enqueue(do_preload_file, project, specimen, block, resource, slide_name, slide_ext,
             job_timeout="300s", result_ttl="60s")
 
     # Stick the properties into the job
-    job.meta['args']=(specimen, block, resource, slide_name, slide_ext)
+    job.meta['args']=(project, specimen, block, resource, slide_name, slide_ext)
     job.save_meta()
 
     # Return the job id
@@ -92,8 +93,8 @@ def dzi_job_status(job_id):
     res = { 'status' : j.get_status() }
 
     if j.get_status() == JobStatus.STARTED:
-        (specimen, block, resource, slide_name, slide_ext) = j.meta['args']
-        sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+        (project, specimen, block, resource, slide_name, slide_ext) = j.meta['args']
+        sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
         res['progress'] = sr.get_download_progress(resource)
 
     return json.dumps(res)
@@ -149,28 +150,25 @@ def get_slide_raw_dims(slide_ref):
 
 
 # Get the DZI for a slide
-@bp.route('/dzi/<mode>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
-def dzi(mode, specimen, block, resource, slide_name, slide_ext):
+@bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
 
     tiff_file = sr.get_local_copy(resource, check_hash=True)
 
     # Get an affine transform if that is an option
     A = get_affine_matrix(sr, mode, resource, 'image')
-    
-    try:
-        osa = AffineTransformedOpenSlide(tiff_file, A)
-        dz = DeepZoomGenerator(osa)
-        dz.filename = os.path.basename(tiff_file)
-        resp = make_response(dz.get_dzi('png'))
-        resp.mimetype = 'application/xml'
-        return resp
-    except (KeyError, ValueError):
-        # Unknown slug
-        abort(404)
+
+    # Load the slide
+    osa = AffineTransformedOpenSlide(tiff_file, A)
+    dz = DeepZoomGenerator(osa)
+    dz.filename = os.path.basename(tiff_file)
+    resp = make_response(dz.get_dzi('png'))
+    resp.mimetype = 'application/xml'
+    return resp
 
 
 
@@ -181,9 +179,9 @@ class PILBytesIO(BytesIO):
 
 
 # Get the tiles for a slide
-@bp.route('/dzi/<mode>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
+@bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
-def tile(mode, specimen, block, resource, slide_name, slide_ext, level, col, row, format):
+def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
@@ -192,7 +190,7 @@ def tile(mode, specimen, block, resource, slide_name, slide_ext, level, col, row
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
 
     os = None
@@ -208,13 +206,14 @@ def tile(mode, specimen, block, resource, slide_name, slide_ext, level, col, row
     tile.save(buf, format, quality=75)
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
+    print('PNG size: %d' % (len(buf.getvalue(),)))
     return resp
 
 
 # Get an image patch at level 0 from the raw image
-@bp.route('/dzi/patch/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
+@bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
-def get_patch(specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
+def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
 
     format = format.lower()
     if format != 'jpeg' and format != 'png':
@@ -224,7 +223,7 @@ def get_patch(specimen, block, resource, slide_name, slide_ext, level, ctrx, ctr
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = get_slideref_by_info(specimen, block, slide_name, slide_ext)
+    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
     
     # Read the region centered on the box of size 512x512
@@ -251,6 +250,7 @@ def run_preload_worker_cmd():
     with Connection():
         w = Worker(current_app.config['PRELOAD_QUEUE'])
         w.work()
+
 
 # Command to ping master
 @click.command('dzi-node-ping-master')

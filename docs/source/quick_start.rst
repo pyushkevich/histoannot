@@ -67,16 +67,28 @@ Finally, a master manifest file should be created in `/home/phas/hdata/master_ma
     ...
 
 
+Projects
+--------
+A single PHAS server can serve multiple projects. Each project represents a separate collection of histology data, e.g., different set of scanned slides. Each project can have its own root directory, and its own manifest files.
+
 Starting PHAS in a Docker Container
 ===================================
 
 Before launching the container, we will populate the instance directory with a simple config file. In an editor create a file `/home/phas/instance/config.py` and include the following lines::
 
-    HISTOANNOT_URL_BASE="/home/phas/hdata"
     HISTOANNOT_SERVER_MODE="master"
     SECRET_KEY="92340wjdflksn2839our"
 
 Replace the secret key string with your own string. It is used for encrypting cookies and should be unique to your server.
+
+We also need to create at least one project. In this example, we are using only a single project. Projects are described by ``.json`` files located in the ``projects`` directory. The internal name of each project matches the name of the ``.json`` file. Create a file ``projects/default.json`` in the ``instance`` directory and populate it as follows::
+
+    {
+        "base_url": "/home/phas/hdata",
+        "disp_name": "Default Project",
+        "desc" : "This is an example project"
+    }
+
 
 We are now ready to run the container as a background service. Execute the following commands::
 
@@ -141,6 +153,15 @@ To initialize the database run::
 	flask init-db
 
 This will create a file  `histoannot.sqlite` in your `/home/phas/instance` folder. Take good care of this file and back it up often! It contains your database!
+
+
+Configuring a Project
+---------------------
+Configuring a project involves two steps:
+    1. Creating a ``.json`` file in the ``instance/projects`` directory
+    2. Initializing the project in the database::
+
+        flask projects-init
 
 
 Connecting to Histology Data

@@ -15,10 +15,11 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-import urllib2
 import urlparse
 import os
 import threading
+
+from flask.cli import with_appcontext
 from google.cloud import storage
 from flask import g, current_app
 
@@ -27,11 +28,18 @@ from flask import g, current_app
 
 class GCSHandler:
 
+    _client = None  # type: storage.Client
+
     # Constructor
     def __init__(self):
         self._bucket_cache = {}
         self._blob_cache = {}
-        self._client = storage.Client()
+
+    # Get client (on demand)
+    def get_client(self):
+        if self._client is None:
+            self._client = storage.Client()
+        return self._client
 
     # Process a URL
     def _get_blob(self, uri):
@@ -41,7 +49,7 @@ class GCSHandler:
             return self._blob_cache[uri]
 
         # Unpack the URL
-        o = urlparse(uri)
+        o = urlparse.urlparse(uri)
 
         # Make sure that it includes gs
         if o.scheme != "gs":
@@ -51,7 +59,7 @@ class GCSHandler:
         if o.netloc in self._bucket_cache:
             bucket = self._bucket_cache[o.netloc]
         else:
-            bucket = self._client.get_bucket(o.netloc)
+            bucket = self.get_client().get_bucket(o.netloc)
             self._bucket_cache[o.netloc] = bucket
 
         # Place the blob in the cache
@@ -80,7 +88,7 @@ class GCSHandler:
         # Perform the download
         blob = self._get_blob(uri)
         with open(local_file, "wb") as file_obj:
-            worker = threading.Thread(target=self._client.download_blob_to_file, args=(blob, file_obj))
+            worker = threading.Thread(target=self.get_client().download_blob_to_file, args=(blob, file_obj))
             worker.start()
             while worker.isAlive():
                 worker.join(1.0)
@@ -91,8 +99,3 @@ class GCSHandler:
         return self._get_blob(uri).size
 
 
-# Get a global GCP handler
-def get_gstor():
-    if 'gstor' not in g:
-        g.gstor = GCSHandler()
-    return g.gstor

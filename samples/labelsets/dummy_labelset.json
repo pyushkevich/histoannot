@@ -1,0 +1,5 @@
+[
+  { "name" : "gray matter", "color" : "#18b497", "description" : "Gray Matter" },
+  { "name" : "white matter", "color" : "#2816ba", "description" : "White Matter" },
+  { "name" : "background", "color" : "#f97a8a", "description" : "Ice/Background" }
+]

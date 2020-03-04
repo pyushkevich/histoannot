@@ -140,23 +140,23 @@ button.disabled, button.disabled:hover {
 </div>
 {% endif %}
 
-<button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</div>
+<button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
 
 {% if seg_mode == 'annot' %}
-<button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</div>
-<button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</div>
+<button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</button>
+<button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</button>
 {% elif seg_mode == 'dltrain' %}
-<button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</div>
+<button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
 {% endif %}
 
 {% if seg_mode == 'dltrain' or seg_mode == 'annot' %}
-<button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</div>
+<button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
 {% endif %}
 
 <script type="text/javascript">
 $(document).ready(function() {
 
-  var seg_mode='{{seg_mode}}'
+  var seg_mode='{{seg_mode}}';
 
   // Initialize the viewer
   var viewer = new OpenSeadragon({
@@ -175,6 +175,7 @@ $(document).ready(function() {
     zoomPerScroll: 2,
     timeout: 120000
   });
+
   viewer.addHandler("open", function() {
     // To improve load times, ignore the lowest-resolution Deep Zoom
     // levels.  This is a hack: we can't configure the minLevel via
@@ -185,17 +186,16 @@ $(document).ready(function() {
 
   // Get the current image zoom level
   get_image_zoomlevel = function() {
-    var viewportZoom = viewer.viewport.getZoom(true);
-    var image1 = viewer.world.getItemAt(0);
-    var paperZoom = image1.viewportToImageZoom(viewportZoom);
-    return paperZoom;
-  }
+      var viewportZoom = viewer.viewport.getZoom(true);
+      var image1 = viewer.world.getItemAt(0);
+      return image1.viewportToImageZoom(viewportZoom);
+  };
 
   // Scaling function for strokes/fonts/etc
   zoom_paperjs_scaling_fn = function(raw_value, raw_accel, img_zoom) {
     adj_value = raw_value / img_zoom;
     return Math.max(1, adj_value);
-  }
+  };
 
   // Adjusts the scaling of the paper.js style elements (stroke width, etc.)
   // to match the current zoom factors. 
@@ -211,33 +211,33 @@ $(document).ready(function() {
 
     // Handle markers
     var markers = paper.project.getItems({class: paper.PointText});
-    for (var i = 0; i < markers.length; i++) {
+    for (i = 0; i < markers.length; i++) {
       markers[i].style.fontSize = get_width_in_canvas_units(10)
       markers[i].style.leading = markers[i].style.fontSize * 1.2
     }
 
     paper.view.draw();
-  }
+  };
 
   // Handle display zoom, adjusting the styling of displayed items
   var last_zoom = -1;
   viewer.addHandler("update-viewport", function() {
     var viewportZoom = viewer.viewport.getZoom(true);
-    if(last_zoom != viewportZoom) {
+    if(last_zoom !== viewportZoom) {
       var paperZoom = get_image_zoomlevel();
       if(paper.project) {
         adjust_paperjs_scaling(paperZoom)
       }
     }
     last_zoom = viewportZoom;
-  })
+  });
 
   // Set the strokewidth of a Path element
   set_paperjs_item_strokewidth = function(item, strokeWidth) {
     // Set the desired strokewidth
     item.data.rawStrokeWidth = strokeWidth;
     item.strokeWidth = zoom_paperjs_scaling_fn(strokeWidth, 0, get_image_zoomlevel());
-  }
+  };
 
   var mpp = parseFloat("{{ slide_mpp }}");
   viewer.scalebar({
@@ -251,17 +251,17 @@ $(document).ready(function() {
   });
 
   // Initialization for paper_js
-  var overlay
+  var overlay;
   function init_paperjs() {
     overlay = viewer.paperjsOverlay();
     overlay.resize();
     overlay.resizecanvas();
 
     // Get the initial data
-    if (seg_mode == 'annot') {
+    if (seg_mode === 'annot') {
       download_annot();
     }
-    else if (seg_mode == 'dltrain') {
+    else if (seg_mode === 'dltrain') {
       sample_api.refresh_samples();
 
       // If initial sample specified, focus on it
@@ -283,7 +283,7 @@ $(document).ready(function() {
       success: init_paperjs,
       error: function() { window.alert("Slide failed to load"); }
     });
-  }
+  };
 
 
   // A dialog to display slide cache progress
@@ -308,7 +308,7 @@ $(document).ready(function() {
       success: function(response_text) {
         console.log(response_text);
         data = JSON.parse(response_text);
-        if(data.status == 'queued' || data.status == 'started') {
+        if(data.status === 'queued' || data.status === 'started') {
           progress_dialog.dialog("open");
           if(data.progress) {
             progress_bar.progressbar("value", Math.floor(data.progress * 100));
@@ -325,7 +325,7 @@ $(document).ready(function() {
         }
       }
     })
-  }
+  };
 
   // Function to preload a resource
   var preload_dzi = function(resource, cb_loaded) {
@@ -338,7 +338,7 @@ $(document).ready(function() {
       url: url,
       success: function(response_text) {
         data = JSON.parse(response_text);
-        if(data.status == 'finished') {
+        if(data.status === 'finished') {
           cb_loaded();
         }
         else {
@@ -348,10 +348,10 @@ $(document).ready(function() {
       },
       error: function() { window.alert("Slide failed to load"); }
     })
-  }
+  };
 
   // Preload the main image
-  preload_dzi("{{resolution}}", init_viewer)
+  preload_dzi("{{resolution}}", init_viewer);
 
   // A function to load an overlay of type 'resource' into the main viewer
   var add_overlay_dzi = function(resource, cb_loaded) {
@@ -370,7 +370,7 @@ $(document).ready(function() {
         opacity: 1,
         success: function() { cb_loaded(); },
         error: function() { window.alert("Overlay failed to load")}
-      })
+      });
 
       // Add colormap to the data
       viewer.setFilterOptions({
@@ -385,35 +385,35 @@ $(document).ready(function() {
           }],
         loadMode: 'sync'
       });
-    }
+    };
 
     // Preload the resource
     preload_dzi(resource, on_loaded);
-  }
+  };
 
   // Current interaction mode
-  var curr_mode = 'NAV'
+  var curr_mode = 'NAV';
 
   // Initialize the paper.js overlay
-  var curr_path
-  var curr_box
-  var curr_box_drag_start
+  var curr_path;
+  var curr_box;
+  var curr_box_drag_start;
 
   // Helper function to get Point corresponding to OSD event
   var ev_point = function(event) {
     return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
-  }
+  };
 
   var ev_orig_point = function(event) {
     return paper.view.viewToProject(new paper.Point(event.originalEvent.x, event.originalEvent.y));
-  }
+  };
 
   // Helper function to get the delta corresponding to OSD event
   var ev_delta = function(event) {
     var transformed_point1 = paper.view.viewToProject(new paper.Point(0,0));
     var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
     return transformed_point2.subtract(transformed_point1);
-  }
+  };
 
   var deselect_all_manipulables = function() {
     var selected = paper.project.selectedItems;

@@ -1,0 +1,5 @@
+{
+  "base_url": "gs://mtl_histology",
+  "disp_name": "MTL Serial Histology",
+  "desc" : "Serially sectioned medial temporal lobe specimens from the UPenn/UCLM study"
+}

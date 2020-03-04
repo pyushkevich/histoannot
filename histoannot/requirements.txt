@@ -8,3 +8,4 @@ rq
 psutil
 Click >= 7.0
 pandas
+svgwrite

@@ -20,7 +20,10 @@ from flask import (
 )
 from werkzeug.exceptions import abort
 from histoannot.auth import login_required
-from histoannot.db import get_db, get_slide_ref, SlideRef, get_task_data, create_edit_meta, update_edit_meta
+from histoannot.db import get_db
+
+# TODO: these should be moved to another module
+from histoannot.project_cli import get_slide_ref, get_task_data, create_edit_meta, update_edit_meta
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_patch
 from histoannot.slide import make_slide_dbview, annot_sample_path_curves
@@ -46,23 +49,6 @@ from flask.cli import with_appcontext
 bp = Blueprint('dltrain', __name__)
 
 # Index
-@bp.route('/dltrain/api/labelset', methods=('GET',))
-@login_required
-def list_labelsets():
-    db = get_db()
-    ls = db.execute('SELECT * from labelset')
-    return json.dumps([dict(row) for row in ls.fetchall()])
-
-@bp.route('/dltrain/api/labelset/<name>/labels', methods=('GET',))
-@login_required
-def list_labelset_labels(name):
-    db = get_db()
-    try:
-        ll = db.execute('SELECT L.* FROM label L LEFT JOIN labelset LS ON L.labelset = LS.id WHERE LS.name=?', 
-                (name,))
-        return json.dumps([dict(row) for row in ll.fetchall()])
-    except:
-        abort(404)
 
 # Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table/json', methods=('GET',))
@@ -70,16 +56,16 @@ def list_labelset_labels(name):
 def get_labelset_labels_table_json(task_id, slide_id):
     db = get_db()
 
-    task = get_task_data(task_id)
+    project,task = get_task_data(task_id)
 
     ll = db.execute('SELECT L.*, COUNT(T.id) as n_samples '
                     'FROM label L LEFT JOIN training_sample T '
                     '             ON T.label = L.id AND T.task=? AND T.slide=? '
-                    '             LEFT JOIN labelset LS on L.labelset = LS.id '
-                    'WHERE LS.name=? '
+                    '             LEFT JOIN labelset_info LS on L.labelset = LS.id '
+                    'WHERE LS.name=? AND LS.project=?'
                     'GROUP BY L.id '
                     'ORDER BY L.id', 
-                    (task_id, slide_id, task['dltrain']['labelset']))
+                    (task_id, slide_id, task['dltrain']['labelset'], project))
 
     ll_data = [dict(row) for row in ll.fetchall()]
     
@@ -91,7 +77,7 @@ def get_labelset_labels_table_json(task_id, slide_id):
 def get_labelset_labels_table(task_id, slide_id):
     db = get_db()
 
-    task = get_task_data(task_id)
+    project,task = get_task_data(task_id)
 
     ll = db.execute('SELECT L.*, COUNT(T.id) as n_samples '
                     'FROM label L LEFT JOIN training_sample T '
@@ -165,12 +151,18 @@ def get_labelset_labels_picker(task_id, slide_id):
     return render_template('dbtrain/label_picker.html', task_id=task_id, slide_id=slide_id)
 
 
+def get_labelset_id(project, task):
+    db=get_db()
+    return db.execute('SELECT id FROM labelset_info WHERE name=? AND project=?',
+                       (task['dltrain']['labelset'],project)).fetchone()['id']
+
+
+
 def get_label_id_in_task(task_id, label_name):
 
-    # Look up the labelset id
-    task = get_task_data(task_id)
     db=get_db()
-    ls_id = db.execute('SELECT id FROM labelset WHERE name=?', (task['dltrain']['labelset'],)).fetchone()['id']
+    project,task = get_task_data(task_id)
+    ls_id = get_labelset_id(project, task)
 
     # Look up the label
     label_id = db.execute('SELECT id FROM label WHERE name=? AND labelset=?', (label_name, ls_id)).fetchone()['id'];
@@ -182,10 +174,10 @@ def get_label_id_in_task(task_id, label_name):
 @bp.route('/dltrain/task/<int:task_id>/labelset/addlabel', methods=('POST',))
 @login_required
 def add_labelset_label(task_id):
-    db = get_db()
 
-    task = get_task_data(task_id)
-    ls_id = db.execute('SELECT id FROM labelset WHERE name=?', (task['dltrain']['labelset'],)).fetchone()['id']
+    db = get_db()
+    project,task = get_task_data(task_id)
+    ls_id = get_labelset_id(project, task)
 
     label_name = request.form['label_name'];
     color = request.form['label_color'];
@@ -223,7 +215,7 @@ def get_annot_json_file(id):
 # Check sample validity
 def check_rect(task_id, rect):
 
-    t_data = get_task_data(task_id)
+    project,t_data = get_task_data(task_id)
     min_size = t_data['dltrain'].get('min-size')
     max_size = t_data['dltrain'].get('max-size')
 
@@ -347,7 +339,8 @@ def get_sample_custom_png(id, level, w, h):
     sr = get_slide_ref(slide_id)
 
     # Get the identifiers for the slide
-    (specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+    # TODO: what to do with project name here
+    (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
 
     # Are we de this slide to a different node?
     del_url = find_delegate_for_slide(slide_id)
@@ -361,10 +354,10 @@ def get_sample_custom_png(id, level, w, h):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
+        rawbytes = get_patch(project,specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
     else:
-        subs = (del_url, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
-        url = '%s/dzi/patch/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
+        subs = (del_url, project, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
+        url = '%s/dzi/patch/%s/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
         print(url)
         rawbytes = urllib2.urlopen(url).read()
 
@@ -397,7 +390,8 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
     sr = get_slide_ref(slide_id)
 
     # Get the identifiers for the slide
-    (specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+    # TODO: what to do with project here?
+    (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
 
     # Are we de this slide to a different node?
     del_url = find_delegate_for_slide(slide_id)
@@ -412,10 +406,10 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
+        rawbytes = get_patch(project,specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
     else:
-        subs = (del_url, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
-        url = '%s/dzi/patch/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
+        subs = (del_url, project, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
+        url = '%s/dzi/patch/%s/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
         print(url)
         rawbytes = urllib2.urlopen(url).read()
 
@@ -527,13 +521,12 @@ def samples_import_csv_command(task, input_file, user):
     db = get_db()
 
     # Look up the labelset for the current task
-    tdata = get_task_data(task)
+    project,tdata = get_task_data(task)
     if not 'dltrain' in tdata:
         print('Task %s is not the right type for importing samples' % tdata['name'])
         return -1
 
-    lsid = db.execute('SELECT id FROM labelset WHERE name = ?',
-            (tdata['dltrain']['labelset'],)).fetchone()['id']
+    lsid = get_labelset_id(project, tdata)
 
     # Look up the user
     g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()

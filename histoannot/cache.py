@@ -35,6 +35,7 @@ class AffineTransformedOpenSlide(object):
         
         # Initialize the C code
         self._osr = m.init_osr(slide_path, (0,0))
+        print(self._osr)
         n_levels = m.get_nlevels(self._osr)
 
         # If n_levels is 1 throw up

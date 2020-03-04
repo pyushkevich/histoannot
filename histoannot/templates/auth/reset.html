@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block header %}
+  {% block title %}Update Profile{% endblock %}
+{% endblock %}
+
+{% block content %}
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+
+
+    <form method="post" class="pure-form pure-form-stacked">
+      <fieldset>
+        <div class="pure-g" style="max-width: 640px;">
+          <div class="pure-u-1 pure-u-md-1-2">
+            <label for="username">Username:</label>
+            {% if username %}
+            <input name="username" class="pure-u-23-24" type="text" id="username" value="{{username}}" autocomplete="username" required readonly style="width:180pt;">
+            {% else %}
+            <input name="username" class="pure-u-23-24" type="text" id="username" autocomplete="username" required style="width:180pt;">
+            {% endif %}
+          </div>
+        <div class="pure-u-1 pure-u-md-1-2">
+          <label for="email">Email Address:</label>
+          <input name="email" class="pure-u-23-24" type="email" id="email" value="{{email}}" required style="width:180pt;">
+        </div>
+
+        <div class="pure-u-1 pure-u-md-1-2">
+          <label for="password">Choose a new password:</label>
+          <input pattern="(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{8,}" type="password" name="password" id="password" autocomplete="new-password" required style="width:180pt;">
+        </div>
+
+        <div class="pure-u-1 pure-u-md-1-2">
+          <label for="confirm_password">Reenter the password:</label>
+          <input type="password" name="confirm_password" id="confirm_password" autocomplete="new-password" required style="width:180pt;">
+        </div>
+
+        <div class="pure-u-1 pure-u-md-2-2" style="margin-top: -1em;margin-bottom: 3em;">
+          <span class="pure-form-message-inline">Password must have at least 8 characters, including digits, lowercase and uppercase letters.</span>
+        </div>
+        <div class="pure-u-1 pure-u-md-1-3"></div>
+        <div class="pure-u-1 pure-u-md-1-3">
+          <button type="submit" class="pure-button pure-button-primary">Submit</button>
+        </div>
+          <div class="pure-u-1 pure-u-md-1-3"></div>
+      </fieldset>
+    </form>
+
+</div>
+
+<div style="display:none">
+</div>
+
+<script type="text/javascript">
+
+$(document).ready(function() {
+  var password = document.getElementById("password");
+  var confirm_password = document.getElementById("confirm_password");
+
+  if(password) {
+    function validatePassword() {
+      if (password.value != confirm_password.value) {
+        confirm_password.setCustomValidity("Passwords Don't Match");
+      } else {
+        confirm_password.setCustomValidity('');
+      }
+    }
+
+    password.onchange = validatePassword;
+    confirm_password.onkeyup = validatePassword;
+  }
+})
+
+</script>
+{% endblock %}
+

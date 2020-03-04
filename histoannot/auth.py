@@ -16,9 +16,10 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import functools
+import time
 
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, session, url_for, current_app
+    Blueprint, flash, abort, g, redirect, render_template, request, session, url_for, current_app
 )
 from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -28,87 +29,17 @@ import os
 import click
 import hashlib
 import getpass
+import sys
+import uuid
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
-
-@bp.route('/register', methods=('GET', 'POST'))
-def register():
-    error = None
-    print("WTF ", request.form)
-    if request.method == 'POST':
-
-        if session.get('is_invited', False) is False:
-
-            # Handle the invitation portion
-            syspass = request.form['syspass']
-            if not syspass:
-                error = 'Invitation code is required'
-            else:
-                # Read system password 
-                passfile=os.path.join(current_app.instance_path,'password.txt')
-                target=''
-                with open(passfile, 'r') as infile:  
-                    target=infile.read().replace('\n','')
-                    if target != hashlib.md5(syspass.encode()).hexdigest():
-                        error = 'Invalid invitation code'
-
-            if error is None:
-                session['is_invited'] = True
-
-        else:
-            print('HERE ', session.get('is_invited', False))
-
-            # Invited user, get the registration info
-            username = request.form['username']
-            password = request.form['password']
-
-            db = get_db()
-            error = None
-
-            if not username:
-                error = 'Username is required.'
-            elif not password:
-                error = 'Password is required.'
-            else:
-                rc = db.execute('SELECT username FROM user WHERE username=?',(username,))
-                if rc.fetchone() is not None:
-                    error = 'Username "%s" is already taken' % (username,)
-                else:
-                    # Process user
-                    db.execute(
-                        'INSERT INTO user (username, password) VALUES (?, ?)',
-                        (username, generate_password_hash(password))
-                    )
-                    db.commit()
-
-                    # Take user to main page
-                    user = db.execute('SELECT * FROM user WHERE username = ?', (username,)).fetchone()
-                    session.clear()
-                    session['user_id'] = user['id']
-                    return redirect(url_for('index'))
-
-    else:
-        session.clear()
-
-    if error is not None:
-        flash(error)
-
-    return render_template('auth/register.html', invited=session.get('is_invited', False))
-
-
-def set_system_password():
-    syspass=getpass.getpass("System password:")
-    passfile=os.path.join(current_app.instance_path,'password.txt')
-    with open(passfile, 'w') as outfile:
-        outfile.write(hashlib.md5(syspass.encode()).hexdigest());
-
-
+# Landing page
 @bp.route('/login', methods=('GET', 'POST'))
 def login():
     if request.method == 'POST':
         username = request.form['username']
-        password = request.form['password']
+        password = request.form['passwd']
         db = get_db()
         error = None
         user = db.execute(
@@ -116,13 +47,18 @@ def login():
         ).fetchone()
 
         if user is None:
-            error = 'Incorrect username.'
+            error = 'Incorrect username or password.'
+        elif user['disabled'] > 0:
+            error = 'User account is disabled.'
+        elif user['password'] is None:
+            error = 'You have not created a password yet. Please reset your password.'
         elif not check_password_hash(user['password'], password):
-            error = 'Incorrect password.'
+            error = 'Incorrect username or password.'
 
         if error is None:
             session.clear()
             session['user_id'] = user['id']
+            session['user_is_site_admin'] = user['site_admin']
             return redirect(url_for('index'))
 
         flash(error)
@@ -143,7 +79,7 @@ def load_logged_in_user():
         g.user = None
     else:
         g.user = get_db().execute(
-            'SELECT * FROM user WHERE id = ?', (user_id,)
+            'SELECT * FROM user WHERE id = ? AND disabled=FALSE', (user_id,)
         ).fetchone()
 
 
@@ -159,13 +95,190 @@ def login_required(view):
     return wrapped_view
 
 
-@click.command('passwd-set')
-@with_appcontext
-def passwd_set_command():
-    """Set the system password for new user registration"""
-    set_system_password()
-    click.echo('Updated the system password')
+@bp.route('/pwreset', methods=('GET', 'POST'))
+def reset():
+    if request.method == 'GET':
+        return render_template('auth/request_reset.html', email='')
 
+    # Check if the email address is available
+    db=get_db()
+    error = None
+
+    rq_email = request.form['email']
+    rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = FALSE', (rq_email,)).fetchone()
+
+    if rc is None:
+        error = "There is no active user with email address %s" % (rq_email,)
+
+    else:
+        # Create a password reset link
+        url = create_password_reset_link(rc['id'])
+
+        # TODO: actually email the link
+        error = "An email with a password reset link has been sent to %s" % (rq_email,)
+
+    flash(error)
+    return render_template('auth/request_reset.html', email=rq_email)
+
+
+@bp.route('/pwreset/<resetkey>', methods=('GET', 'POST'))
+def reset_password(resetkey):
+
+    # Check the reset key against the database
+    db=get_db()
+    rc = db.execute('SELECT U.*, t_expires, activated '
+               'FROM user U LEFT JOIN password_reset PR on U.id = PR.user '
+               'WHERE reset_key = ?', (resetkey,)).fetchone()
+
+    # If nothing is found, then this is an invalid key, hacking attempt
+    if rc is None:
+        abort(403, description="Invalid link")
+
+    # If the link is expired, tell user
+    if rc['t_expires'] < time.time():
+        abort(404, description="This link has expired. Please request another link.")
+
+    # If the link has been used, tell user
+    if rc['activated'] > 0:
+        abort(404, description="This link has already been used. Please request another link.")
+
+    if rc['disabled'] > 0:
+        abort(404, description="This link is for a non-active user.")
+
+    # If the request is empty, we need to have the user provide information
+    if request.method == 'GET':
+        return render_template('auth/reset.html',
+                               username=rc['username'],
+                               email=rc['email'] if rc['email'] is not None else '')
+
+    # The user is posting a completed profile. We must now update their password
+    rq_username = request.form['username']
+    rq_password = request.form['password']
+    rq_email = request.form['email']
+
+    error = None
+
+    # TODO: perform additional validation outside of JS in case robot was used
+    if not rq_username:
+        error = 'Username is required.'
+    elif not rq_email:
+        error = 'Email address is required.'
+    elif not rq_password:
+        error = 'Password is required.'
+    else:
+        # TODO: implement user prototypes and invitation codes (create user here)
+
+        # Make sure that we are not duplicating another email address in the
+        # system. Every active user must have a unique email address
+        rc_email = db.execute('SELECT COUNT(id) as n FROM user '
+                              'WHERE email=? AND id <> ? AND disabled=FALSE',
+                              (rq_email, rc['id'])).fetchone()
+        if rc_email['n'] > 0:
+            error = 'This email address is already in use by another user.'
+
+        else:
+
+            # Update user's profile
+            db.execute('UPDATE user SET email=?, password=? WHERE id=?',
+                       (rq_email, generate_password_hash(rq_password), rc['id']))
+
+            # Disable the activation link
+            db.execute('UPDATE password_reset SET activated=TRUE WHERE reset_key=?',
+                       (resetkey,))
+
+            db.commit()
+
+            # Update the session, the user is now considered logged in
+            session.clear()
+            session['user_id'] = rc['id']
+            session['user_is_site_admin'] = rc['site_admin']
+
+            # Go to the home page
+            return redirect(url_for('index'))
+
+    # Render the page again
+    if error is not None:
+        flash(error)
+
+    return render_template('auth/reset.html',
+                           username=rq_username,
+                           email=rq_email)
+
+
+
+
+def get_user_id(username):
+    db=get_db()
+    rc = db.execute('SELECT id FROM user WHERE username=?',(username,)).fetchone()
+    return rc['id'] if rc is not None else None
+
+
+
+def create_password_reset_link(user_id, expiry = 86400):
+
+    db=get_db()
+    reset_key = str(uuid.uuid4())
+    db.execute('INSERT INTO password_reset(reset_key,user,t_expires) '
+               'VALUES (?,?,?)', (reset_key, user_id, time.time() + expiry))
+    db.commit()
+    return url_for('auth.reset_password', _external=True, resetkey=reset_key)
+
+
+@click.command('users-add')
+@click.argument('username')
+@click.option('-p', '--projects', multiple=True, help='Add user to specified project')
+@click.option('-P', '--projects-admin', multiple=True, help='Add user as administrator to specified project')
+@click.option('-S', '--site-admin', type=click.BOOL, help='Make the user a system administrator', default=False)
+@click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
+@with_appcontext
+def user_add_command(username, projects, projects_admin, site_admin, expiry):
+    """Create a new user and generate a password reset link"""
+
+    # Check if the user is already in the system
+    if get_user_id(username) is not None:
+        print('User %s is already in the system' % (username,))
+        sys.exit(1)
+
+    db = get_db()
+    rc = db.execute('SELECT * FROM user WHERE username=?', (username,))
+    if rc.rowcount > 0:
+        print("User %s already exists" % (username,))
+        sys.exit(1)
+
+    # Create the username
+    rc = db.execute('INSERT INTO user(username, site_admin) VALUES (?,?)',
+                    (username,site_admin))
+    user_id = rc.lastrowid
+
+    # Provide the user access to the requested projects
+    for prj in projects:
+        db.execute('INSERT INTO project_access(project, user) '
+                   'VALUES (?,?)', (prj, user_id))
+
+    for prj in projects_admin:
+        db.execute('INSERT INTO project_access(project, user, admin) '
+                   'VALUES (?,?, TRUE)', (prj, user_id))
+
+    db.commit()
+
+    # Generate a password reset link for the user.
+    url = create_password_reset_link(user_id, expiry)
+    print("Created user %d. Password reset link is: %s" % (user_id, url))
+
+
+@click.command('users-get-reset-link')
+@click.argument('username')
+@click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
+@with_appcontext
+def user_get_reset_link_command(username, expiry):
+    user_id = get_user_id(username)
+    if user_id is not None:
+        url = create_password_reset_link(user_id, expiry)
+        print(url)
+    else:
+        print('User is not in the system')
+        sys.exit(1)
 
 def init_app(app):
-    app.cli.add_command(passwd_set_command)
+    app.cli.add_command(user_add_command)
+    app.cli.add_command(user_get_reset_link_command)

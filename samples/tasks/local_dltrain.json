@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Dummy Task: DL Train", 
+    "stains": [
+        "Blockface"
+    ], 
+    "dltrain": {
+        "labelset": "dummy",
+        "min-size": 8,
+        "max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Dummy Task to Test DL Training"
+}

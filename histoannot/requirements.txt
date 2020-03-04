@@ -1,5 +1,6 @@
 Flask >= 1.0.2
 Flask-Pure
+Flask-Mail
 openslide-python
 jsonschema
 google-cloud-storage

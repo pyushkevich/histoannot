@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import os
-from flask import Flask, request
+from flask import Flask, request, g
 from flask_pure import Pure
 from . import cache
 from . import db
@@ -49,6 +49,9 @@ def create_app(test_config = None):
     # Handle configurtion
     app.config['SECRET_KEY'] = 'dev'
     app.config['HISTOANNOT_DELEGATE_DZI'] = False
+
+    # Descriptive keys
+    app.config['HISTOANNOT_PUBLIC_NAME'] = app.config.get('HISTOANNOT_PUBLIC_NAME','PICSL Histology Annotation System')
 
     if test_config is None:
         # load the instance config, if it exists, when not testing

@@ -23,6 +23,7 @@ from flask import (
 )
 from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
+from flask_mail import Message, Mail
 
 from histoannot.db import get_db
 import os
@@ -95,6 +96,13 @@ def login_required(view):
     return wrapped_view
 
 
+def get_mail():
+    if 'mail' not in g:
+        g.mail = Mail(current_app)
+    return g.mail
+
+
+
 @bp.route('/pwreset', methods=('GET', 'POST'))
 def reset():
     if request.method == 'GET':
@@ -111,14 +119,78 @@ def reset():
         error = "There is no active user with email address %s" % (rq_email,)
 
     else:
-        # Create a password reset link
-        url = create_password_reset_link(rc['id'])
-
-        # TODO: actually email the link
+        send_user_resetlink(rc['id'])
         error = "An email with a password reset link has been sent to %s" % (rq_email,)
 
     flash(error)
     return render_template('auth/request_reset.html', email=rq_email)
+
+
+def send_user_resetlink(user_id, email=None, expiry=86400):
+
+    if email is None:
+        db=get_db()
+        rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=FALSE', (user_id,)).fetchone()
+        if rc is not None:
+            email = rc['email']
+        else:
+            return None
+
+    # Create a password reset link
+    url = create_password_reset_link(user_id)
+
+    # Create an email
+    mail = get_mail()
+    server_name = current_app.config['HISTOANNOT_PUBLIC_NAME']
+    msg = Message("Password Reset Link for %s" % (server_name,))
+    msg.add_recipient(email)
+    msg.html = """
+        <p>You have requested a link to reset your password on %s.</p>
+        <p>Please follow this link to reset the password for user <b>%s</b>:</p>
+        <a href="%s">%s</a>
+        """ % (server_name, rc['username'], url, url)
+
+    mail.send(msg)
+
+
+def send_user_invitation(user_id, expiry=86400):
+    # Get user record
+    db=get_db()
+    rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=FALSE', (user_id,)).fetchone()
+    if rc is not None:
+        # Create a reset link
+        url=create_password_reset_link(rc['id'], expiry)
+
+        # Send the email
+        mail = get_mail()
+        server_name = current_app.config['HISTOANNOT_PUBLIC_NAME']
+        msg = Message("Account created on %s" % (server_name,) )
+        msg.add_recipient(rc['email'])
+        msg.html = """
+            <p>A new account with username <b>%s</b> was created for you on %s.</p> 
+            <p>Please follow the link below to activate your account and create a password:</p>
+            <a href="%s">%s</a>""" % (rc['username'], server_name, url, url)
+        mail.send(msg)
+
+        print('Password link sent to %s at %s' % (rc['username'],rc['email']))
+    else:
+        print('User %d does not email or is not active' % (user_id,))
+
+
+# Check if an email address is present in the database
+def email_exists(email, user_id=None):
+    db = get_db()
+
+    if user_id is None:
+        rc_email = db.execute('SELECT COUNT(id) as n FROM user '
+                              'WHERE email=? AND disabled=FALSE',
+                              (email,)).fetchone()
+    else:
+        rc_email = db.execute('SELECT COUNT(id) as n FROM user '
+                              'WHERE email=? AND id <> ? AND disabled=FALSE',
+                              (email, user_id)).fetchone()
+    return rc_email['n'] > 0
+
 
 
 @bp.route('/pwreset/<resetkey>', methods=('GET', 'POST'))
@@ -170,10 +242,7 @@ def reset_password(resetkey):
 
         # Make sure that we are not duplicating another email address in the
         # system. Every active user must have a unique email address
-        rc_email = db.execute('SELECT COUNT(id) as n FROM user '
-                              'WHERE email=? AND id <> ? AND disabled=FALSE',
-                              (rq_email, rc['id'])).fetchone()
-        if rc_email['n'] > 0:
+        if email_exists(rq_email, rc['id']):
             error = 'This email address is already in use by another user.'
 
         else:
@@ -228,15 +297,22 @@ def create_password_reset_link(user_id, expiry = 86400):
 @click.argument('username')
 @click.option('-p', '--projects', multiple=True, help='Add user to specified project')
 @click.option('-P', '--projects-admin', multiple=True, help='Add user as administrator to specified project')
-@click.option('-S', '--site-admin', type=click.BOOL, help='Make the user a system administrator', default=False)
+@click.option('-S', '--site-admin', is_flag=True, help='Make the user a system administrator', default=False)
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
+@click.option('-e', '--email', help='User email address')
+@click.option('-n', '--notify', is_flag=True, help='Send the user a notification email')
+
 @with_appcontext
-def user_add_command(username, projects, projects_admin, site_admin, expiry):
+def user_add_command(username, projects, projects_admin, site_admin, expiry, email, notify):
     """Create a new user and generate a password reset link"""
 
     # Check if the user is already in the system
     if get_user_id(username) is not None:
         print('User %s is already in the system' % (username,))
+        sys.exit(1)
+
+    if email is not None and email_exists(email):
+        print('Email address %s is already in use by another user.' % (email,))
         sys.exit(1)
 
     db = get_db()
@@ -246,8 +322,8 @@ def user_add_command(username, projects, projects_admin, site_admin, expiry):
         sys.exit(1)
 
     # Create the username
-    rc = db.execute('INSERT INTO user(username, site_admin) VALUES (?,?)',
-                    (username,site_admin))
+    rc = db.execute('INSERT INTO user(username, email, site_admin) VALUES (?,?,?)',
+                    (username,email,site_admin))
     user_id = rc.lastrowid
 
     # Provide the user access to the requested projects
@@ -262,8 +338,11 @@ def user_add_command(username, projects, projects_admin, site_admin, expiry):
     db.commit()
 
     # Generate a password reset link for the user.
-    url = create_password_reset_link(user_id, expiry)
-    print("Created user %d. Password reset link is: %s" % (user_id, url))
+    if notify is True and email is not None:
+        send_user_invitation(user_id, expiry)
+    else:
+        url = create_password_reset_link(user_id, expiry)
+        print("Created user %d. Password reset link is: %s" % (user_id, url))
 
 
 @click.command('users-get-reset-link')

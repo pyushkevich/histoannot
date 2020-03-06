@@ -374,44 +374,39 @@ def update_project_command(name, json):
     add_project(name, json, True)
 
 
-@click.command('projects-implement')
-@click.argument('name')
-@click.argument('json', type=click.File('rt'))
+@click.command('projects-assign-unclaimed-entities')
+@click.argument('project')
 @with_appcontext
-def implement_projects_command(name, json):
-    """Update the database that does not contain projects to have projects.
-       All existing blocks, tasks, and users are assigned to the specified
-       default project"""
+def project_assign_unclaimed_command(project):
+    """
+    Associates with a project all entities (blocks, tasks, users, labelsets) in the database that
+    have not been previously associated with a project. Used when migrating a database that did
+    not have projects one that does."""
 
     # The table may not exist
     db = get_db()
 
-    # Execute the SQL commands
-    with current_app.open_resource('sqlmod/add_projects.sql') as f:
-        db.executescript(f.read().decode('utf8'))
-
-    # Add the proposed project
-    create_project_command(name, json)
-
-    # Assign all the blocks to the new project
-    rc = db.execute('SELECT id FROM block')
+    # Assign all unassociated blocks to the new project
+    rc = db.execute('SELECT * FROM block WHERE id NOT IN (SELECT DISTINCT(block) FROM project_block)')
     for row in rc.fetchall():
-        db.execute('INSERT INTO project_block (project,block) VALUES (?,?)', (name, row['id']))
+        db.execute('INSERT INTO project_block (project,block) VALUES (?,?)', (project, row['id']))
 
     # Assign all the tasks to the new project
-    rc = db.execute('SELECT id FROM task')
+    rc = db.execute('SELECT id FROM task WHERE id NOT IN (SELECT DISTINCT(task) FROM project_task)')
     for row in rc.fetchall():
-        db.execute('INSERT INTO project_task (project,task) VALUES (?,?)', (name, row['id']))
+        db.execute('INSERT INTO project_task (project,task) VALUES (?,?)', (project, row['id']))
 
     # Assign all the users to the new project
-    rc = db.execute('SELECT id FROM user')
+    rc = db.execute('SELECT id FROM user WHERE id NOT IN (SELECT DISTINCT(user) FROM project_access)')
     for row in rc.fetchall():
-        db.execute('INSERT INTO project_access (project,user) VALUES (?,?)', (name, row['id']))
+        db.execute('INSERT INTO project_access (project,user) VALUES (?,?)', (project, row['id']))
 
     # Assign all the labelsets to the new project
-    rc = db.execute('SELECT id FROM labelset')
+    rc = db.execute('SELECT id,name FROM labelset '
+                    'WHERE id NOT IN (SELECT DISTINCT(labelset_id) FROM project_labelset)')
     for row in rc.fetchall():
-        db.execute('INSERT INTO project_access (project,user) VALUES (?,?)', (name, row['id']))
+        db.execute('INSERT INTO project_labelset (project,labelset_id,labelset_name) VALUES (?,?,?)',
+                   (project, row['id'], row['name']))
 
     db.commit()
 
@@ -982,7 +977,7 @@ def init_app(app):
     app.cli.add_command(list_projects_command)
     app.cli.add_command(create_project_command)
     app.cli.add_command(update_project_command)
-    app.cli.add_command(implement_projects_command)
+    app.cli.add_command(project_assign_unclaimed_command)
     app.cli.add_command(refresh_slides_command)
     app.cli.add_command(cache_load_raw_slide_command)
     app.cli.add_command(add_task_command)

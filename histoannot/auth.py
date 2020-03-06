@@ -80,7 +80,7 @@ def load_logged_in_user():
         g.user = None
     else:
         g.user = get_db().execute(
-            'SELECT * FROM user WHERE id = ? AND disabled=FALSE', (user_id,)
+            'SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)
         ).fetchone()
 
 
@@ -113,7 +113,7 @@ def reset():
     error = None
 
     rq_email = request.form['email']
-    rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = FALSE', (rq_email,)).fetchone()
+    rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = 0', (rq_email,)).fetchone()
 
     if rc is None:
         error = "There is no active user with email address %s" % (rq_email,)
@@ -130,7 +130,7 @@ def send_user_resetlink(user_id, email=None, expiry=86400):
 
     if email is None:
         db=get_db()
-        rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=FALSE', (user_id,)).fetchone()
+        rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
         if rc is not None:
             email = rc['email']
         else:
@@ -156,7 +156,7 @@ def send_user_resetlink(user_id, email=None, expiry=86400):
 def send_user_invitation(user_id, expiry=86400):
     # Get user record
     db=get_db()
-    rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=FALSE', (user_id,)).fetchone()
+    rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
     if rc is not None:
         # Create a reset link
         url=create_password_reset_link(rc['id'], expiry)
@@ -183,11 +183,11 @@ def email_exists(email, user_id=None):
 
     if user_id is None:
         rc_email = db.execute('SELECT COUNT(id) as n FROM user '
-                              'WHERE email=? AND disabled=FALSE',
+                              'WHERE email=? AND disabled=0',
                               (email,)).fetchone()
     else:
         rc_email = db.execute('SELECT COUNT(id) as n FROM user '
-                              'WHERE email=? AND id <> ? AND disabled=FALSE',
+                              'WHERE email=? AND id <> ? AND disabled=0',
                               (email, user_id)).fetchone()
     return rc_email['n'] > 0
 
@@ -252,7 +252,7 @@ def reset_password(resetkey):
                        (rq_email, generate_password_hash(rq_password), rc['id']))
 
             # Disable the activation link
-            db.execute('UPDATE password_reset SET activated=TRUE WHERE reset_key=?',
+            db.execute('UPDATE password_reset SET activated=1 WHERE reset_key=?',
                        (resetkey,))
 
             db.commit()
@@ -333,7 +333,7 @@ def user_add_command(username, projects, projects_admin, site_admin, expiry, ema
 
     for prj in projects_admin:
         db.execute('INSERT INTO project_access(project, user, admin) '
-                   'VALUES (?,?, TRUE)', (prj, user_id))
+                   'VALUES (?,?, 1)', (prj, user_id))
 
     db.commit()
 

@@ -378,11 +378,13 @@ def get_slide_info(task_id, slide_id):
 
     # Get the task-specific where clause
     project,task = get_task_data(task_id)
-    where = get_task_slide_where_clause(task)
+
+    # Create a view for this task
+    make_slide_dbview(task_id, 'v_full')
 
     # Get a list of slides/stains for this section (for drop-down menu)
     rc_slide = db.execute(
-        'SELECT id, slide, stain FROM slide S '
+        'SELECT id, slide, stain FROM v_full '
         'WHERE block_id=? AND section=? '
         'ORDER BY slide', (block_id, section))
 
@@ -393,7 +395,7 @@ def get_slide_info(task_id, slide_id):
     # same stain is not available, then just the closest slide.
 
     # Find the previous section number
-    prev_sec = db.execute('SELECT section FROM slide '
+    prev_sec = db.execute('SELECT section FROM v_full '
                           'WHERE block_id=? AND section<? '
                           'ORDER BY section DESC limit 1',
                           (block_id, section)).fetchone()
@@ -401,13 +403,14 @@ def get_slide_info(task_id, slide_id):
     # Find the closest slide in the section
     if prev_sec is not None:
         prev_slide = db.execute('SELECT *,(stain<>?)*1000+abs(slide-?) AS X '
-                                'FROM slide WHERE block_id=? AND section=? '
-                                'ORDER BY X LIMIT 1', (stain, slideno, block_id, prev_sec['section'])).fetchone()
+                                'FROM v_full WHERE block_id=? AND section=? '
+                                'ORDER BY X LIMIT 1',
+                                (stain, slideno, block_id, prev_sec['section'])).fetchone()
     else:
         prev_slide = None
 
     # Find the previous section number
-    next_sec = db.execute('SELECT section FROM slide '
+    next_sec = db.execute('SELECT section FROM v_full '
                           'WHERE block_id=? AND section>? '
                           'ORDER BY section ASC limit 1',
                           (block_id, section)).fetchone()
@@ -415,8 +418,9 @@ def get_slide_info(task_id, slide_id):
     # Find the closest slide in the section
     if next_sec is not None:
         next_slide = db.execute('SELECT *,(stain<>?)*1000+abs(slide-?) AS X '
-                                'FROM slide WHERE block_id=? AND section=? '
-                                'ORDER BY X LIMIT 1', (stain, slideno, block_id, next_sec['section'])).fetchone()
+                                'FROM v_full WHERE block_id=? AND section=? '
+                                'ORDER BY X LIMIT 1',
+                                (stain, slideno, block_id, next_sec['section'])).fetchone()
     else:
         next_slide = None
 

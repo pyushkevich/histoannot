@@ -940,17 +940,17 @@ def users_grant_permission_command(user_id, project, project_admin, site_admin):
     db=get_db()
 
     if site_admin is True:
-        db.execute('UPDATE user SET site_admin=TRUE WHERE id=?', (user_id,))
+        db.execute('UPDATE user SET site_admin=1 WHERE id=?', (user_id,))
         print('User %d added as site administrator' % (user_id,))
 
     if project_admin is not None:
         pr = ProjectRef(project_admin)
-        db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,TRUE)',
+        db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,1)',
                    (project_admin, user_id))
 
     if project is not None:
         pr = ProjectRef(project)
-        db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,FALSE)',
+        db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,0)',
                    (project, user_id))
 
 

@@ -4,8 +4,8 @@ CREATE TABLE user (
   username TEXT UNIQUE NOT NULL,
   password TEXT,
   email TEXT,
-  disabled BOOLEAN NOT NULL DEFAULT (FALSE),
-  site_admin BOOLEAN NOT NULL DEFAULT(FALSE)
+  disabled BOOLEAN NOT NULL DEFAULT (0),
+  site_admin BOOLEAN NOT NULL DEFAULT(0)
 );
 
 DROP TABLE IF EXISTS password_reset;
@@ -14,7 +14,7 @@ CREATE TABLE password_reset (
   reset_key TEXT NOT NULL,
   user INT NOT NULL,
   t_expires INTEGER NOT NULL,
-  activated BOOLEAN NOT NULL DEFAULT(FALSE),
+  activated BOOLEAN NOT NULL DEFAULT(0),
   FOREIGN KEY(user) REFERENCES user(id)
 );
 
@@ -135,7 +135,7 @@ DROP TABLE IF EXISTS project_access;
 CREATE TABLE project_access (
   user INTEGER NOT NULL,
   project TEXT NOT NULL,
-  admin BOOLEAN NOT NULL DEFAULT(FALSE),
+  admin BOOLEAN NOT NULL DEFAULT(0),
   PRIMARY KEY(user, project),
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY (user) REFERENCES user (id)

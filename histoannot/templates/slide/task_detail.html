@@ -25,6 +25,7 @@ Specimen Listing - {{task['name']}}
 
 
 <a href="{{ url_for('slide.index')}}">Home</a> : 
+<a href="{{ url_for('slide.project_detail', project_name=project)}}">{{project_name}}</a> :
 {{task['name']}}
 <span id="span_specimen_name"></span>
 <span id="span_block_name"></span>

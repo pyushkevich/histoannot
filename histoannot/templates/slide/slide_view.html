@@ -26,90 +26,123 @@
 {% endif %}
 
 <style type="text/css">
-html {
-    overflow: hidden;
-}
-body {
-    margin: 0;
-    padding: 0;
-}
-div#view {
-    position: relative;
-    left: 0;
-    width: 100%;
-    height: calc(100vh - 100px);
-    background-color: white;
-    color: black;
-}
 
-button.bottom_button {
-    border-radius: 3px;
-    margin: 0 5px 5px 5px;
-    padding: 2px 0 2px 0;
-    cursor: pointer;
-}
+    html {
+        overflow: hidden;
+    }
 
-button.enabled {
-    border: 2px solid blue;
-    color: blue;
-}
+    body {
+        margin: 0;
+        padding: 0;
+    }
 
-button.active, button.enabled:hover {
-    background-color: blue;
-    color: white;
-}
+    div#view {
+        position: relative;
+        left: 0;
+        width: 100%;
+        height: calc(100vh - 100px);
+        background-color: white;
+        color: black;
+    }
 
-button.disabled, button.disabled:hover {
-    color: lightgray;
-    border: 2px solid lightgray;
-}
+    button.bottom_button {
+        border-radius: 3px;
+        margin: 0 5px 5px 5px;
+        padding: 2px 0 2px 0;
+        cursor: pointer;
+    }
+
+    button.enabled {
+        border: 2px solid blue;
+        color: blue;
+    }
+
+    button.active, button.enabled:hover {
+        background-color: blue;
+        color: white;
+    }
+
+    button.disabled, button.disabled:hover {
+        color: lightgray;
+        border: 2px solid lightgray;
+    }
+
+    a.button_link {
+        background: #e0e0e0;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 90%;
+        color: #909090;
+        border: lightgray 1px solid;
+        text-align: center;
+        text-transform: uppercase;
+        vertical-align: top;
+    }
+
+    a.button_link:hover {
+        filter: brightness(90%);
+    }
+
+
 
 </style>
 <div>
-  <table style="width:100%"><tr>
-      <td>
-        <a href="{{ url_for('slide.index')}}">Home</a> : 
-        <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
-        <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">
-          {{ slide_info['specimen_name'] }}_{{ slide_info['block_name'] }}
-        </a> : {{ slide_info['section'] }}_{{ slide_info['slide'] }}_{{ slide_info['stain'] }} &nbsp {{dzi_url}} 
-      </td>
-      <td>
-        &nbsp
-      </td>
-      <td align="right">
-        {% if prev_slide %}
-            <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">Previous Slide</a>
-        {% endif %}
-        &nbsp
-        <!-- affine or raw mode -->
-        {% if seg_mode != 'dltrain' %}
-        <form id="form_mode" "target=#" style="display: inline;">
-          <label for="form_mode_select">Transform:<label>
-            <select id="form_mode_select" style="font-size: 80%">
-            {% if have_affine  %}
-              <option value="affine">Aligned to MRI</option>
+    <table style="width:100%"><tr>
+        <td>
+            <a href="{{ url_for('slide.index')}}">Home</a> :
+            <a href="{{ url_for('slide.project_detail', project_name=project)}}">{{project_name}}</a> :
+            <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
+            <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
+            <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a> :
+            {% if prev_slide %}
+                <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">&nbsp ❮ &nbsp</a>
             {% endif %}
-            <option value="raw">Native Space</option>
-          </select>
-        </form>
-        &nbsp
-        <form id="form_res" "target=#" style="display: inline;">
-          <label for="form_res_select">Resolution:<label>
-            <select id="form_res_select" style="font-size: 80%">
-            {% if have_x16  %}
-              <option value="x16">1:16</option>
+            <span style="color:black;">Section {{ slide_info['section'] }}</span>
+            {% if next_slide  %}
+            <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode,resolution=resolution)}}">&nbsp ❯ &nbsp</a>
             {% endif %}
-            <option value="raw">1:1</option>
-          </select>
-        </form>
-        &nbsp
-        {% endif %}
-        {% if next_slide  %}
-            <a href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode,resolution=resolution)}}">Next Slide</a>
-        {% endif %}
-      </td>
-  </tr></table>
+
+            &nbsp {{dzi_url}}
+
+        </td>
+        <td>
+            &nbsp
+        </td>
+        <td align="right">
+            <form id="form_stain" target="#" style="display: inline;">
+                <label for="form_stain_select">Stain:</label>
+                <select id="form_stain_select" style="font-size: 80%; color: black;">
+                    {% for s in stain_list %}
+                    <option value="{{s['id']}}">{{s['stain']}}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <!-- affine or raw mode -->
+            &nbsp
+            {% if seg_mode != 'dltrain' %}
+            <form id="form_mode" target="#" style="display: inline;">
+                <label for="form_mode_select">Transform:</label>
+                <select id="form_mode_select" style="font-size: 80%;  color: black;">
+                    {% if have_affine  %}
+                    <option value="affine">Aligned to MRI</option>
+                    {% endif %}
+                    <option value="raw">Native Space</option>
+                </select>
+            </form>
+            &nbsp
+            <form id="form_res" target="#" style="display: inline;">
+                <label for="form_res_select">Resolution:</label>
+                <select id="form_res_select" style="font-size: 80%; color: black;">
+                    {% if have_x16  %}
+                    <option value="x16">1:16</option>
+                    {% endif %}
+                    <option value="raw">1:1</option>
+                </select>
+            </form>
+            &nbsp
+            {% endif %}
+        </td>
+    </tr></table>
 </div>
 
 <!-- A dialog showing slide loading progress -->
@@ -156,1103 +189,1112 @@ button.disabled, button.disabled:hover {
 <script type="text/javascript">
 $(document).ready(function() {
 
-  var seg_mode='{{seg_mode}}';
+    var seg_mode='{{seg_mode}}';
 
-  // Initialize the viewer
-  var viewer = new OpenSeadragon({
-    id: "view",
-    prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
-    showNavigator: true,
-    showRotationControl: true,
-    showSequenceControl: true,
-    animationTime: 0.5,
-    blendTime: 0.1,
-    constrainDuringPan: false,
-    maxZoomPixelRatio: 1.1,
-    minPixelRatio: 1.0,
-    minZoomLevel: 1,
-    visibilityRatio: 0.25,
-    zoomPerScroll: 2,
-    timeout: 120000
-  });
-
-  viewer.addHandler("open", function() {
-    // To improve load times, ignore the lowest-resolution Deep Zoom
-    // levels.  This is a hack: we can't configure the minLevel via
-    // OpenSeadragon configuration options when the viewer is created
-    // from DZI XML.
-    viewer.source.minLevel = 8;
-  });
-
-  // Get the current image zoom level
-  get_image_zoomlevel = function() {
-      var viewportZoom = viewer.viewport.getZoom(true);
-      var image1 = viewer.world.getItemAt(0);
-      return image1.viewportToImageZoom(viewportZoom);
-  };
-
-  // Scaling function for strokes/fonts/etc
-  zoom_paperjs_scaling_fn = function(raw_value, raw_accel, img_zoom) {
-    adj_value = raw_value / img_zoom;
-    return Math.max(1, adj_value);
-  };
-
-  // Adjusts the scaling of the paper.js style elements (stroke width, etc.)
-  // to match the current zoom factors. 
-  adjust_paperjs_scaling = function(paperZoom) {
-
-    // Handle paths
-    var paths = paper.project.getItems({class: paper.Path});
-    for (var i = 0; i < paths.length; i++) {
-      if(paths[i].data.rawStrokeWidth) {
-        paths[i].strokeWidth = zoom_paperjs_scaling_fn(paths[i].data.rawStrokeWidth, 0, paperZoom);
-      }
-    }
-
-    // Handle markers
-    var markers = paper.project.getItems({class: paper.PointText});
-    for (i = 0; i < markers.length; i++) {
-      markers[i].style.fontSize = get_width_in_canvas_units(10)
-      markers[i].style.leading = markers[i].style.fontSize * 1.2
-    }
-
-    paper.view.draw();
-  };
-
-  // Handle display zoom, adjusting the styling of displayed items
-  var last_zoom = -1;
-  viewer.addHandler("update-viewport", function() {
-    var viewportZoom = viewer.viewport.getZoom(true);
-    if(last_zoom !== viewportZoom) {
-      var paperZoom = get_image_zoomlevel();
-      if(paper.project) {
-        adjust_paperjs_scaling(paperZoom)
-      }
-    }
-    last_zoom = viewportZoom;
-  });
-
-  // Set the strokewidth of a Path element
-  set_paperjs_item_strokewidth = function(item, strokeWidth) {
-    // Set the desired strokewidth
-    item.data.rawStrokeWidth = strokeWidth;
-    item.strokeWidth = zoom_paperjs_scaling_fn(strokeWidth, 0, get_image_zoomlevel());
-  };
-
-  var mpp = parseFloat("{{ slide_mpp }}");
-  viewer.scalebar({
-    pixelsPerMeter: mpp ? (1e6 / mpp) : 0,
-    xOffset: 10,
-    yOffset: 10,
-    barThickness: 3,
-    color: '#555555',
-    fontColor: '#333333',
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-  });
-
-  // Initialization for paper_js
-  var overlay;
-  function init_paperjs() {
-    overlay = viewer.paperjsOverlay();
-    overlay.resize();
-    overlay.resizecanvas();
-
-    // Get the initial data
-    if (seg_mode === 'annot') {
-      download_annot();
-    }
-    else if (seg_mode === 'dltrain') {
-      sample_api.refresh_samples();
-
-      // If initial sample specified, focus on it
-      setTimeout(function() { focus_on_initial_sample() }, 250);
-    }
-  }
-
-  // Paper default settings
-  paper.settings.handleSize = 10;
-
-  // Get a URL for 
-
-  // Add the tiled image to the viewer and when successful, initialize the overlay
-  var init_viewer = function() {
-    viewer.addTiledImage({
-      tileSource: "{{url_tmpl_dzi}}".replace("XXXXX","{{resolution}}"),
-      x: 0,
-      y: 0,
-      success: init_paperjs,
-      error: function() { window.alert("Slide failed to load"); }
+    // Initialize the viewer
+    var viewer = new OpenSeadragon({
+        id: "view",
+        prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
+        showNavigator: true,
+        showRotationControl: true,
+        showSequenceControl: true,
+        animationTime: 0.5,
+        blendTime: 0.1,
+        constrainDuringPan: false,
+        maxZoomPixelRatio: 1.1,
+        minPixelRatio: 1.0,
+        minZoomLevel: 1,
+        visibilityRatio: 0.25,
+        zoomPerScroll: 2,
+        timeout: 120000
     });
-  };
 
+    viewer.addHandler("open", function() {
+        // To improve load times, ignore the lowest-resolution Deep Zoom
+        // levels.  This is a hack: we can't configure the minLevel via
+        // OpenSeadragon configuration options when the viewer is created
+        // from DZI XML.
+        viewer.source.minLevel = 8;
+    });
 
-  // A dialog to display slide cache progress
-  var progress_dialog = $("#progress_dialog_container").dialog({
-    autoOpen: false,
-    resizable: false,
-    height: "auto",
-    width: 400,
-    modal: true
-  });
-
-  // A progress bar
-  var progress_bar = $("#progress_bar").progressbar({
-    value:0
-  });
-
-  // Get the progress of loading the current slide
-  var check_preload_progress = function(job_id) {
-    var myurl = 
-    $.ajax({
-      url: "{{ dzi_url + url_for('dzi.dzi_job_status', job_id=999999) }}".replace("999999",job_id),
-      success: function(response_text) {
-        console.log(response_text);
-        data = JSON.parse(response_text);
-        if(data.status === 'queued' || data.status === 'started') {
-          progress_dialog.dialog("open");
-          if(data.progress) {
-            progress_bar.progressbar("value", Math.floor(data.progress * 100));
-            $("#progress_comment").text("")
-          }
-          else {
-            $("#progress_comment").text("Waiting for other downloads to complete")
-          }
-          setTimeout(function() { check_preload_progress(job_id) }, 500);
-        }
-        else {
-          progress_dialog.dialog("close");
-          init_viewer();
-        }
-      }
-    })
-  };
-
-  // Function to preload a resource
-  var preload_dzi = function(resource, cb_loaded) {
-
-    // Form URL
-    var url = "{{url_tmpl_preload}}".replace('XXXXX', resource);
-
-    // Make AJAX call
-    $.ajax({
-      url: url,
-      success: function(response_text) {
-        data = JSON.parse(response_text);
-        if(data.status === 'finished') {
-          cb_loaded();
-        }
-        else {
-          job_id = data.job_id;
-          check_preload_progress(job_id)
-        }
-      },
-      error: function() { window.alert("Slide failed to load"); }
-    })
-  };
-
-  // Preload the main image
-  preload_dzi("{{resolution}}", init_viewer);
-
-  // A function to load an overlay of type 'resource' into the main viewer
-  var add_overlay_dzi = function(resource, cb_loaded) {
-
-    // Check if overlay already exists
-    var exists = viewer.world.getItemCount() > 1;
-
-    // Callback for when the resource was loaded
-    var on_loaded = function() {
-      viewer.addTiledImage({
-        tileSource: "{{url_tmpl_dzi}}".replace("XXXXX", resource),
-        x: 0, 
-        y: 0,
-        index: 1,
-        replace: exists,
-        opacity: 1,
-        success: function() { cb_loaded(); },
-        error: function() { window.alert("Overlay failed to load")}
-      });
-
-      // Add colormap to the data
-      viewer.setFilterOptions({
-        filters: [
-          {
-            items: viewer.world.getItemAt(0),
-            processors: [ ]
-          },
-          {
-            items: viewer.world.getItemAt(1),
-            processors: [ OpenSeadragon.Filters.COLORMAP4(cm_hot, 128) ]
-          }],
-        loadMode: 'sync'
-      });
+    // Get the current image zoom level
+    get_image_zoomlevel = function() {
+        var viewportZoom = viewer.viewport.getZoom(true);
+        var image1 = viewer.world.getItemAt(0);
+        return image1.viewportToImageZoom(viewportZoom);
     };
 
-    // Preload the resource
-    preload_dzi(resource, on_loaded);
-  };
-
-  // Current interaction mode
-  var curr_mode = 'NAV';
-
-  // Initialize the paper.js overlay
-  var curr_path;
-  var curr_box;
-  var curr_box_drag_start;
-
-  // Helper function to get Point corresponding to OSD event
-  var ev_point = function(event) {
-    return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
-  };
-
-  var ev_orig_point = function(event) {
-    return paper.view.viewToProject(new paper.Point(event.originalEvent.x, event.originalEvent.y));
-  };
-
-  // Helper function to get the delta corresponding to OSD event
-  var ev_delta = function(event) {
-    var transformed_point1 = paper.view.viewToProject(new paper.Point(0,0));
-    var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
-    return transformed_point2.subtract(transformed_point1);
-  };
-
-  var deselect_all_manipulables = function() {
-    var selected = paper.project.selectedItems;
-    for (var i = 0; i < selected.length; i++) {
-      var item = selected[i];
-      if (item instanceof paper.Path || item instanceof paper.PointText) {
-        item.selected = false;
-      }
-    }
-  }
-
-  var get_number_selected_manipulables = function() {
-    var selected = paper.project.selectedItems;
-    var n = 0;
-    for (var i = 0; i < selected.length; i++) {
-      var item = selected[i];
-      if (item instanceof paper.Path || item instanceof paper.PointText) {
-        console.log('seleted on ', item)
-        n++;
-      }
-    }
-    return n;
-  }
-
-  var get_number_selected_boxes = function() {
-    var selected = paper.project.selectedItems;
-    var n = 0;
-    for (var i = 0; i < selected.length; i++) {
-      var item = selected[i];
-      if (item.data.id) {
-        n++;
-      }
-    }
-    return n;
-  }
-
-  var upload_annot = function() {
-    var url="{{url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution)}}"
-    payload = paper.project.exportJSON();
-    $.post(url , payload, 
-        function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
-  }
-
-  // An object that is being moved 
-  var moving_object=null;
-  var moving_object_moved=false;
-  var moving_object_handle=null;
-
-  var set_slide_mouse_nav = function(state) {
-    if(state == true && viewer.isMouseNavEnabled() == false)
-      viewer.setMouseNavEnabled(true);
-    else if(state == false && viewer.isMouseNavEnabled() == true)
-      viewer.setMouseNavEnabled(false);
-  }
-
-  var get_width_in_canvas_units = function(full_zoom_width) {
-    // Get the total dimensions of the canvas
-    // Lets say we want the text to appear like 10-point font when the entire slide occupies 
-    // a canvas of width 1000. Then the actual font is 10 * (width/1000), or really max(width,height) * 10 / 1000
-    var canvas_size = viewer.world.getItemAt(0).getContentSize();
-    return Math.round(Math.max(canvas_size.x, canvas_size.y) * full_zoom_width / 1000);
-  }
-
-
-  var download_annot = function() {
-    $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution) }}", 
-        function(data, status) {
-          if(status=='success' && data.length) {
-            paper.project.importJSON(data);
-            adjust_paperjs_scaling(get_image_zoomlevel());
-            deselect_all_manipulables();
-      }
-    })
-  }
-
-  // A class dealing with keeping track of samples
-  function SampleAPI() {
-
-    // Create a self variable
-    self = this;
-
-    // A map from sample_id to the Path Item representing that sample
-    this.boxmap = new Map();
-
-    // A function to create a box
-    this.create_box = function(x0, y0, x1, y1, label_id, color, raw_stroke_width) {
-      new_box = new paper.Path({
-        segments: [ new paper.Point(x0,y0), new paper.Point(x1,y0), new paper.Point(x1,y1), new paper.Point(x0,y1) ],
-        closed: true,
-        strokeColor: color, 
-        selectedColor : color});
-      new_box.data.label_id = label_id;
-      new_box.data.label_color = color;
-      new_box.data.geometry = [x0, y0, x1, y1];
-      set_paperjs_item_strokewidth(new_box, raw_stroke_width);
-      return new_box;
+    // Scaling function for strokes/fonts/etc
+    zoom_paperjs_scaling_fn = function(raw_value, raw_accel, img_zoom) {
+        adj_value = raw_value / img_zoom;
+        return Math.max(1, adj_value);
     };
 
-    // A function to update a box with new coordinates
-    this.update_box = function(path_item, x0, y0, x1, y1) {
-      if(path_item.segments.length == 4) {
-        // Set the items
-        path_item.segments[0].point.x = x0; path_item.segments[0].point.y = y0;
-        path_item.segments[1].point.x = x1; path_item.segments[1].point.y = y0;
-        path_item.segments[2].point.x = x1; path_item.segments[2].point.y = y1;
-        path_item.segments[3].point.x = x0; path_item.segments[3].point.y = y1;
+    // Adjusts the scaling of the paper.js style elements (stroke width, etc.)
+    // to match the current zoom factors.
+    adjust_paperjs_scaling = function(paperZoom) {
 
-        // Store the geometry in a separate data variable
-        path_item.data.geometry = [x0, y0, x1, y1];
-      }
-    };
-
-    // Move box by a delta
-    this.move_box = function(path_item, dx, dy) {
-      if(path_item.segments.length == 4) {
-        var x0 = path_item.data.geometry[0];
-        var y0 = path_item.data.geometry[1];
-        var x1 = path_item.data.geometry[2];
-        var y1 = path_item.data.geometry[3];
-        self.update_box(path_item, x0+dx, y0+dy, x1+dx, y1+dy);
-      }
-    }
-
-    // Move box corner by a delta
-    this.move_box_corner = function(path_item, index, dx, dy) {
-      if(path_item.segments.length == 4) {
-        var x0 = path_item.data.geometry[0];
-        var y0 = path_item.data.geometry[1];
-        var x1 = path_item.data.geometry[2];
-        var y1 = path_item.data.geometry[3];
-
-        switch(index) {
-        case 0: x0 += dx; y0 += dy; break;
-        case 1: x1 += dx; y0 += dy; break;
-        case 2: x1 += dx; y1 += dy; break;
-        case 3: x0 += dx; y1 += dy; break;
-        }
-
-        self.update_box(path_item, x0, y0, x1, y1);
-      }
-    }
-
-
-    // Upload a sample (separate from create_box because this is only done when the user
-    // is done drawing the box)
-    this.upload_new_sample = function(box, cb_success) {
-
-      // Send the completed marker to the server
-      $.ajax({
-        url: "{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}", 
-        type: 'post',
-        data: JSON.stringify(box.data),
-        success: function(response_text) { 
-          data = JSON.parse(response_text);
-          box.data.id = data.id;
-          self.boxmap.set(data.id, box);
-          if(cb_success)
-            cb_success();
-        },
-        error: function (xhr, ajaxOptions, thrownError) {
-          box.remove();
-          paper.view.draw();
-          alert(xhr.responseText);
-        }
-      });
-    }
-
-    // Modify an existing sample (e.g., as a result of dragging, resizing)
-    this.modify_sample = function(box, cb_success) {
-      // If for some reason the box does not have an ID, we  need to create it, but
-      // this would be a really odd occurrence
-      if(!box.data.id) {
-        console.warn('SampleAPI.modify_sample called on box without an id');
-        self.upload_new_sample(box);
-      }
-      else {
-        // Send the completed marker to the server
-        $.post("{{ url_for('dltrain.update_sample') }}", 
-          JSON.stringify(box.data), 
-          function(response_text) { 
-            if(cb_success)
-              cb_success();
-          }
-        );
-      }
-    }
-
-    // Request a list of all samples from the server and update the paper.js canvas with
-    // the new samples
-    this.refresh_samples = function() {
-
-      // If we are in a middle of a movement action, do not perform updates
-      if((moving_object && moving_object_moved) || curr_box) {
-        do_delay(self.refresh_samples, 10000);
-        return;
-      }
-
-      // Make a request for the samples
-      $.ajax({
-        url: "{{ url_for('dltrain.get_samples', task_id = task_id, slide_id = slide_id) }}",
-        type: 'get',
-        success: function(data) {
-
-          // Get a list of all the new samples
-          samples = JSON.parse(data);
-
-          // Keep track of samples that need to be removed
-          var sample_ids = new Map();
-
-          // Add all the new samples
-          samples.forEach(function(item, index) {
-
-            // Record that we received this id
-            sample_ids.set(item.id, null);
-
-            // Does this already exist?
-            var old_box = self.boxmap.get(item.id);
-
-            // Update or create the box
-            if(old_box) {
-              self.update_box(old_box, item.x0, item.y0, item.x1, item.y1);
-              old_box.strokeColor = item.color;
-              old_box.selectedColor = item.color;
-              old_box.data.label_id = item.label;
-              old_box.data.label_color = item.color;
-            } else {
-              var new_box = self.create_box(item.x0, item.y0, item.x1, item.y1, item.label, item.color, 2);
-              self.boxmap.set(item.id, new_box);
-              new_box.data.id = item.id;
+        // Handle paths
+        var paths = paper.project.getItems({class: paper.Path});
+        for (var i = 0; i < paths.length; i++) {
+            if(paths[i].data.rawStrokeWidth) {
+                paths[i].strokeWidth = zoom_paperjs_scaling_fn(paths[i].data.rawStrokeWidth, 0, paperZoom);
             }
-          });
-
-          // Remove all the items that were not received (deleted elsewhere)
-          paper.project.activeLayer.children.forEach(function(item,index) {
-            if(! sample_ids.has(item.data.id) ) {
-              item.remove();
-            }
-          });
-
-          paper.view.draw();
-        },
-        complete: function(data) {
-          do_delay(self.refresh_samples, 10000)
         }
-      });
+
+        // Handle markers
+        var markers = paper.project.getItems({class: paper.PointText});
+        for (i = 0; i < markers.length; i++) {
+            markers[i].style.fontSize = get_width_in_canvas_units(10)
+            markers[i].style.leading = markers[i].style.fontSize * 1.2
+        }
+
+        paper.view.draw();
+    };
+
+    // Handle display zoom, adjusting the styling of displayed items
+    var last_zoom = -1;
+    viewer.addHandler("update-viewport", function() {
+        var viewportZoom = viewer.viewport.getZoom(true);
+        if(last_zoom !== viewportZoom) {
+            var paperZoom = get_image_zoomlevel();
+            if(paper.project) {
+                adjust_paperjs_scaling(paperZoom)
+            }
+        }
+        last_zoom = viewportZoom;
+    });
+
+    // Set the strokewidth of a Path element
+    set_paperjs_item_strokewidth = function(item, strokeWidth) {
+        // Set the desired strokewidth
+        item.data.rawStrokeWidth = strokeWidth;
+        item.strokeWidth = zoom_paperjs_scaling_fn(strokeWidth, 0, get_image_zoomlevel());
+    };
+
+    var mpp = parseFloat("{{ slide_mpp }}");
+    viewer.scalebar({
+        pixelsPerMeter: mpp ? (1e6 / mpp) : 0,
+        xOffset: 10,
+        yOffset: 10,
+        barThickness: 3,
+        color: '#555555',
+        fontColor: '#333333',
+        backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    });
+
+    // Initialization for paper_js
+    var overlay;
+    function init_paperjs() {
+        overlay = viewer.paperjsOverlay();
+        overlay.resize();
+        overlay.resizecanvas();
+
+        // Get the initial data
+        if (seg_mode === 'annot') {
+            download_annot();
+        }
+        else if (seg_mode === 'dltrain') {
+            sample_api.refresh_samples();
+
+            // If initial sample specified, focus on it
+            setTimeout(function() { focus_on_initial_sample() }, 250);
+        }
     }
 
-    // Delete a sample
-    this.delete_sample = function(box) {
+    // Paper default settings
+    paper.settings.handleSize = 10;
 
-      // Tell the server to delete this sample
-      console.log('Deleting ', box.data)
-      if(box.data.id) {
-        box.remove();
-        $.ajax({
-          url: "{{ url_for('dltrain.delete_sample') }}",
-          data: { id: box.data.id },
-          type: 'post',
-          success: function(data) {
-            self.boxmap.delete(box.data.id);
-            paper.view.draw();
-          }
+    // Get a URL for
+
+    // Add the tiled image to the viewer and when successful, initialize the overlay
+    var init_viewer = function() {
+        viewer.addTiledImage({
+            tileSource: "{{url_tmpl_dzi}}".replace("XXXXX","{{resolution}}"),
+            x: 0,
+            y: 0,
+            success: init_paperjs,
+            error: function() { window.alert("Slide failed to load"); }
         });
-      }
-      else {
-        box.remove();
-        paper.view.draw();
-      }
     };
 
-    // Count selected samples
-    this.get_selected_samples_count = function() {
-      var selected = paper.project.selectedItems;
-      var n = 0;
-      for (var i = 0; i < selected.length; i++) {
-        var item = selected[i];
-        if (item.data.id) {
-          n++;
-        }
-      }
-      return n;
-    }
 
-    // Relabel selected samples
-    this.relabel_selected_samples = function(new_label_id, new_label_color, cb_success) {
-      var selected = paper.project.selectedItems;
-      var n = 0;
-      for (var i = 0; i < selected.length; i++) {
-        var item = selected[i];
-        if (item.data.id && item.data.label_id != new_label_id) {
-          item.data.label_id = new_label_id;
-          item.data.label_color = new_label_color;
-          item.strokeColor = new_label_color;
-          item.selectedColor = new_label_color;
-          self.modify_sample(item, cb_success);
-        }
-      }
-    }
+    // A dialog to display slide cache progress
+    var progress_dialog = $("#progress_dialog_container").dialog({
+        autoOpen: false,
+        resizable: false,
+        height: "auto",
+        width: 400,
+        modal: true
+    });
 
+    // A progress bar
+    var progress_bar = $("#progress_bar").progressbar({
+        value:0
+    });
 
-  };
+    // Get the progress of loading the current slide
+    var check_preload_progress = function(job_id) {
+        var myurl =
+            $.ajax({
+                url: "{{ dzi_url + url_for('dzi.dzi_job_status', job_id=999999) }}".replace("999999",job_id),
+                success: function(response_text) {
+                    console.log(response_text);
+                    data = JSON.parse(response_text);
+                    if(data.status === 'queued' || data.status === 'started') {
+                        progress_dialog.dialog("open");
+                        if(data.progress) {
+                            progress_bar.progressbar("value", Math.floor(data.progress * 100));
+                            $("#progress_comment").text("")
+                        }
+                        else {
+                            $("#progress_comment").text("Waiting for other downloads to complete")
+                        }
+                        setTimeout(function() { check_preload_progress(job_id) }, 500);
+                    }
+                    else {
+                        progress_dialog.dialog("close");
+                        init_viewer();
+                    }
+                }
+            })
+    };
 
-  // Instantiate API for getting samples
-  var sample_api = undefined;
-  if(seg_mode == 'dltrain') {
-    sample_api = new SampleAPI();
-  }
+    // Function to preload a resource
+    var preload_dzi = function(resource, cb_loaded) {
 
+        // Form URL
+        var url = "{{url_tmpl_preload}}".replace('XXXXX', resource);
 
-  var press_handler = function(event) {
-    if(curr_mode == 'DRAW') {
-      curr_path = new paper.Path({
-        segments: [ev_point(event)],
-        strokeColor: 'black',
-        strokeCap: 'round'});
-      set_paperjs_item_strokewidth(curr_path, 4);
-    }
-    else if(curr_mode == 'NAV') {
-      hit = my_hit_test(ev_point(event));
-      moving_object=null;
-      if(hit) {
-        if(!hit.item.selected) {
-          // Hitting an unselected target
-          deselect_all_manipulables();
-          hit.item.selected = true;
-          if(seg_mode == 'dltrain' && hit.item.data.label_id) {
-            select_label(hit.item.data.label_id);
-            load_samples_table_ajax(hit.item.data.label_id);
-          }
-          fn_update_button_state();
-          paper.view.draw();
-          moving_object = hit.item;
-          moving_object_moved = true;
-        }
-        else {
-          moving_object = hit.item;
-          moving_object_moved = false;
-          if (seg_mode == 'dltrain') {
-            if(hit.type == 'segment') {
-              moving_object_handle = hit.segment.index;
-            } else {
-              moving_object_handle = null;
+        // Make AJAX call
+        $.ajax({
+            url: url,
+            success: function(response_text) {
+                data = JSON.parse(response_text);
+                if(data.status === 'finished') {
+                    cb_loaded();
+                }
+                else {
+                    job_id = data.job_id;
+                    check_preload_progress(job_id)
+                }
+            },
+            error: function() { window.alert("Slide failed to load"); }
+        })
+    };
+
+    // Preload the main image
+    preload_dzi("{{resolution}}", init_viewer);
+
+    // A function to load an overlay of type 'resource' into the main viewer
+    var add_overlay_dzi = function(resource, cb_loaded) {
+
+        // Check if overlay already exists
+        var exists = viewer.world.getItemCount() > 1;
+
+        // Callback for when the resource was loaded
+        var on_loaded = function() {
+            viewer.addTiledImage({
+                tileSource: "{{url_tmpl_dzi}}".replace("XXXXX", resource),
+                x: 0,
+                y: 0,
+                index: 1,
+                replace: exists,
+                opacity: 1,
+                success: function() { cb_loaded(); },
+                error: function() { window.alert("Overlay failed to load")}
+            });
+
+            // Add colormap to the data
+            viewer.setFilterOptions({
+                filters: [
+                    {
+                        items: viewer.world.getItemAt(0),
+                        processors: [ ]
+                    },
+                    {
+                        items: viewer.world.getItemAt(1),
+                        processors: [ OpenSeadragon.Filters.COLORMAP4(cm_hot, 128) ]
+                    }],
+                loadMode: 'sync'
+            });
+        };
+
+        // Preload the resource
+        preload_dzi(resource, on_loaded);
+    };
+
+    // Current interaction mode
+    var curr_mode = 'NAV';
+
+    // Initialize the paper.js overlay
+    var curr_path;
+    var curr_box;
+    var curr_box_drag_start;
+
+    // Helper function to get Point corresponding to OSD event
+    var ev_point = function(event) {
+        return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
+    };
+
+    var ev_orig_point = function(event) {
+        return paper.view.viewToProject(new paper.Point(event.originalEvent.x, event.originalEvent.y));
+    };
+
+    // Helper function to get the delta corresponding to OSD event
+    var ev_delta = function(event) {
+        var transformed_point1 = paper.view.viewToProject(new paper.Point(0,0));
+        var transformed_point2 = paper.view.viewToProject(new paper.Point(event.delta.x, event.delta.y));
+        return transformed_point2.subtract(transformed_point1);
+    };
+
+    var deselect_all_manipulables = function() {
+        var selected = paper.project.selectedItems;
+        for (var i = 0; i < selected.length; i++) {
+            var item = selected[i];
+            if (item instanceof paper.Path || item instanceof paper.PointText) {
+                item.selected = false;
             }
-          }
         }
-      }
-      else {
-        deselect_all_manipulables()
-        set_slide_mouse_nav(true);
-        paper.view.draw();
-      }
     }
-    else if (curr_mode == 'BOX') {
 
-      // Record the starting point
-      curr_box_drag_start = ev_point(event);
-
-      // Create an empty rectangle at the point
-      curr_box = sample_api.create_box(curr_box_drag_start.x, curr_box_drag_start.y,
-        curr_box_drag_start.x, curr_box_drag_start.y,
-        get_current_label_id(), get_current_label_color(), 2);
-
-      // Redraw canvas (probably pointless)
-      paper.view.draw();
-    }
-  }
-
-  var drag_handler = function(event) {
-    if(curr_mode == 'DRAW') {
-      curr_path.add(ev_point(event))
-      paper.view.draw();
-    }
-    else if(curr_mode == 'BOX') {
-      var p0 = curr_box_drag_start;
-      var p1 = ev_point(event);
-      sample_api.update_box(curr_box, 
-        Math.min(p0.x, p1.x), Math.min(p0.y,p1.y), 
-        Math.max(p0.x, p1.x), Math.max(p0.y,p1.y));
-      paper.view.draw();
-    }
-    else if(curr_mode == 'NAV' && moving_object) {
-      if(event.delta.x != 0 || event.delta.y != 0) {
-        // Move the object by the delta
-        if(seg_mode == 'annot') {
-          moving_object.position = moving_object.position.add(ev_delta(event));
+    var get_number_selected_manipulables = function() {
+        var selected = paper.project.selectedItems;
+        var n = 0;
+        for (var i = 0; i < selected.length; i++) {
+            var item = selected[i];
+            if (item instanceof paper.Path || item instanceof paper.PointText) {
+                console.log('seleted on ', item)
+                n++;
+            }
         }
-        else if(seg_mode == 'dltrain') {
-          var delta = ev_delta(event);
-          if(moving_object_handle != null) {
-            sample_api.move_box_corner(moving_object, moving_object_handle, delta.x, delta.y);
-          }
-          else {
-            sample_api.move_box(moving_object, delta.x, delta.y);
-          }
+        return n;
+    }
+
+    var get_number_selected_boxes = function() {
+        var selected = paper.project.selectedItems;
+        var n = 0;
+        for (var i = 0; i < selected.length; i++) {
+            var item = selected[i];
+            if (item.data.id) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    var upload_annot = function() {
+        var url="{{url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution)}}"
+        payload = paper.project.exportJSON();
+        $.post(url , payload,
+            function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
+    }
+
+    // An object that is being moved
+    var moving_object=null;
+    var moving_object_moved=false;
+    var moving_object_handle=null;
+
+    var set_slide_mouse_nav = function(state) {
+        if(state == true && viewer.isMouseNavEnabled() == false)
+            viewer.setMouseNavEnabled(true);
+        else if(state == false && viewer.isMouseNavEnabled() == true)
+            viewer.setMouseNavEnabled(false);
+    }
+
+    var get_width_in_canvas_units = function(full_zoom_width) {
+        // Get the total dimensions of the canvas
+        // Lets say we want the text to appear like 10-point font when the entire slide occupies
+        // a canvas of width 1000. Then the actual font is 10 * (width/1000), or really max(width,height) * 10 / 1000
+        var canvas_size = viewer.world.getItemAt(0).getContentSize();
+        return Math.round(Math.max(canvas_size.x, canvas_size.y) * full_zoom_width / 1000);
+    }
+
+
+    var download_annot = function() {
+        $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution) }}",
+            function(data, status) {
+                if(status=='success' && data.length) {
+                    paper.project.importJSON(data);
+                    adjust_paperjs_scaling(get_image_zoomlevel());
+                    deselect_all_manipulables();
+                }
+            })
+    }
+
+    // A class dealing with keeping track of samples
+    function SampleAPI() {
+
+        // Create a self variable
+        self = this;
+
+        // A map from sample_id to the Path Item representing that sample
+        this.boxmap = new Map();
+
+        // A function to create a box
+        this.create_box = function(x0, y0, x1, y1, label_id, color, raw_stroke_width) {
+            new_box = new paper.Path({
+                segments: [ new paper.Point(x0,y0), new paper.Point(x1,y0), new paper.Point(x1,y1), new paper.Point(x0,y1) ],
+                closed: true,
+                strokeColor: color,
+                selectedColor : color});
+            new_box.data.label_id = label_id;
+            new_box.data.label_color = color;
+            new_box.data.geometry = [x0, y0, x1, y1];
+            set_paperjs_item_strokewidth(new_box, raw_stroke_width);
+            return new_box;
+        };
+
+        // A function to update a box with new coordinates
+        this.update_box = function(path_item, x0, y0, x1, y1) {
+            if(path_item.segments.length == 4) {
+                // Set the items
+                path_item.segments[0].point.x = x0; path_item.segments[0].point.y = y0;
+                path_item.segments[1].point.x = x1; path_item.segments[1].point.y = y0;
+                path_item.segments[2].point.x = x1; path_item.segments[2].point.y = y1;
+                path_item.segments[3].point.x = x0; path_item.segments[3].point.y = y1;
+
+                // Store the geometry in a separate data variable
+                path_item.data.geometry = [x0, y0, x1, y1];
+            }
+        };
+
+        // Move box by a delta
+        this.move_box = function(path_item, dx, dy) {
+            if(path_item.segments.length == 4) {
+                var x0 = path_item.data.geometry[0];
+                var y0 = path_item.data.geometry[1];
+                var x1 = path_item.data.geometry[2];
+                var y1 = path_item.data.geometry[3];
+                self.update_box(path_item, x0+dx, y0+dy, x1+dx, y1+dy);
+            }
         }
 
-        // Mark object as having moved
-        moving_object_moved = true;
-        paper.view.draw();
-      }
-    }
-  }
+        // Move box corner by a delta
+        this.move_box_corner = function(path_item, index, dx, dy) {
+            if(path_item.segments.length == 4) {
+                var x0 = path_item.data.geometry[0];
+                var y0 = path_item.data.geometry[1];
+                var x1 = path_item.data.geometry[2];
+                var y1 = path_item.data.geometry[3];
 
-  // Something to do about overlapping timers
-  var timer_map = {}
-  var do_delay = function(fn, t_wait) {
-    if(timer_map[fn.name])
-      clearTimeout(timer_map[fn.name])
-    timer_map[fn.name] = setTimeout(fn, t_wait)
-  }
+                switch(index) {
+                    case 0: x0 += dx; y0 += dy; break;
+                    case 1: x1 += dx; y0 += dy; break;
+                    case 2: x1 += dx; y1 += dy; break;
+                    case 3: x0 += dx; y1 += dy; break;
+                }
 
-  var dragEnd_handler = function(event) {
-    if(curr_mode == 'DRAW') {
-      curr_path.simplify(10)
-      upload_annot()
-      paper.view.draw();
-      nav_pressed_handler();
-    }
-    else if(curr_mode == 'BOX') {
-      // Send the completed marker to the server
-      sample_api.upload_new_sample(curr_box, function() {
-        do_delay(reload_label_and_sample_tables, 1000)
-      });
-      curr_box = undefined;
-      nav_pressed_handler();
-    }
-    else if(curr_mode == 'NAV' && moving_object)
-    {
-      if(moving_object_moved) {
-        if(seg_mode == 'annot') {
-          upload_annot();
+                self.update_box(path_item, x0, y0, x1, y1);
+            }
         }
-        else if(seg_mode == 'dltrain') {
-          sample_api.modify_sample(moving_object, function() {
-            do_delay(reload_label_and_sample_tables, 1000)
-          });
+
+
+        // Upload a sample (separate from create_box because this is only done when the user
+        // is done drawing the box)
+        this.upload_new_sample = function(box, cb_success) {
+
+            // Send the completed marker to the server
+            $.ajax({
+                url: "{{ url_for('dltrain.create_sample', task_id = task_id, slide_id = slide_id) }}",
+                type: 'post',
+                data: JSON.stringify(box.data),
+                success: function(response_text) {
+                    data = JSON.parse(response_text);
+                    box.data.id = data.id;
+                    self.boxmap.set(data.id, box);
+                    if(cb_success)
+                        cb_success();
+                },
+                error: function (xhr, ajaxOptions, thrownError) {
+                    box.remove();
+                    paper.view.draw();
+                    alert(xhr.responseText);
+                }
+            });
         }
-      }
-      else {
-        // Just toggle selection
-        moving_object.selected = false;
-      }
 
-      moving_object = null;
-      paper.view.draw();
-    }
-  }
-
-  var show_marker_editor = function(event, target_item) {
-    var p = ev_point(event);
-    var input = document.getElementById("marker");
-    input.style.left = "" + event.position.x - 50 + "px";
-    input.style.top = "" + event.position.y - 20 + "px";
-    input.style.width = "100px";
-    input.style.height = "40px";
-    input.style.display = "block";
-    input.style.textAlign = "center";
-    input.style.zIndex = 100;
-
-    if(target_item) { input.value = target_item.content; } else { input.value = null; }
-
-    input.focus();
-
-    input.onkeypress = function(e) {
-      if(!e) e = window.event;
-      if (e.keyCode == '13') {
-        this.style.display = "none";
-        if(target_item) {
-          target_item.content = this.value;
-          target_item.visible = true;
-          target_item.selected = false;
-        } else {
-
-          var newtext = new paper.PointText(p);
-          newtext.content = this.value;
-          newtext.style = {
-            fontWeight: 'bold',
-            fontSize: get_width_in_canvas_units(10),
-            justification: 'center'
-          };
-        }
-        paper.view.draw();
-        nav_pressed_handler();
-        upload_annot();
-        return false;
-      }
-    }
-  }
-
-  var release_handler = function(event) {
-    if(curr_mode == 'NAV' && moving_object) {
-      if(!moving_object_moved)
-        moving_object.selected = false;
-    }
-    else if(curr_mode == 'MARKER') {
-      show_marker_editor(event, null);
-    }
-
-  }
-
-  // Customized hit testing to include paths and text
-  var my_hit_test = function(point) {
-    if(seg_mode == 'annot') {
-      return paper.project.hitTest(point);
-    } else if (seg_mode == 'dltrain') {
-      var hit_test_options = {
-        segments: true,
-        stroke: true,
-        fill: false,
-        tolerance: 3
-      }
-      return paper.project.hitTest(point, hit_test_options);
-    }
-  }
-
-  var move_handler = function(event) {
-    var pointer = "default";
-    var curs_arr = [ "nwse-resize", "nesw-resize", "nwse-resize", "nesw-resize" ];
-
-    if(curr_mode == 'NAV' && paper.project) {
-      hit = my_hit_test(ev_point(event));
-      if(hit) {
-        if(seg_mode == 'annot') {
-          pointer = "pointer";
-        }
-        else if(seg_mode == 'dltrain') {
-          if(!hit.item.selected) {
-            pointer = "pointer";
-          }
-          else {
-            if(hit.type=='segment') {
-              pointer = curs_arr[hit.segment.index];
+        // Modify an existing sample (e.g., as a result of dragging, resizing)
+        this.modify_sample = function(box, cb_success) {
+            // If for some reason the box does not have an ID, we  need to create it, but
+            // this would be a really odd occurrence
+            if(!box.data.id) {
+                console.warn('SampleAPI.modify_sample called on box without an id');
+                self.upload_new_sample(box);
             }
             else {
-              pointer = "move";
+                // Send the completed marker to the server
+                $.post("{{ url_for('dltrain.update_sample') }}",
+                    JSON.stringify(box.data),
+                    function(response_text) {
+                        if(cb_success)
+                            cb_success();
+                    }
+                );
             }
-          }
         }
-        set_slide_mouse_nav(false);
-      }
-      else {
-        pointer = "default";
-        var sel_size = get_number_selected_manipulables();
-        // Nav behavior only available if no selection
-        if(sel_size == 0)
-          set_slide_mouse_nav(true);
+
+        // Request a list of all samples from the server and update the paper.js canvas with
+        // the new samples
+        this.refresh_samples = function() {
+
+            // If we are in a middle of a movement action, do not perform updates
+            if((moving_object && moving_object_moved) || curr_box) {
+                do_delay(self.refresh_samples, 10000);
+                return;
+            }
+
+            // Make a request for the samples
+            $.ajax({
+                url: "{{ url_for('dltrain.get_samples', task_id = task_id, slide_id = slide_id) }}",
+                type: 'get',
+                success: function(data) {
+
+                    // Get a list of all the new samples
+                    samples = JSON.parse(data);
+
+                    // Keep track of samples that need to be removed
+                    var sample_ids = new Map();
+
+                    // Add all the new samples
+                    samples.forEach(function(item, index) {
+
+                        // Record that we received this id
+                        sample_ids.set(item.id, null);
+
+                        // Does this already exist?
+                        var old_box = self.boxmap.get(item.id);
+
+                        // Update or create the box
+                        if(old_box) {
+                            self.update_box(old_box, item.x0, item.y0, item.x1, item.y1);
+                            old_box.strokeColor = item.color;
+                            old_box.selectedColor = item.color;
+                            old_box.data.label_id = item.label;
+                            old_box.data.label_color = item.color;
+                        } else {
+                            var new_box = self.create_box(item.x0, item.y0, item.x1, item.y1, item.label, item.color, 2);
+                            self.boxmap.set(item.id, new_box);
+                            new_box.data.id = item.id;
+                        }
+                    });
+
+                    // Remove all the items that were not received (deleted elsewhere)
+                    paper.project.activeLayer.children.forEach(function(item,index) {
+                        if(! sample_ids.has(item.data.id) ) {
+                            item.remove();
+                        }
+                    });
+
+                    paper.view.draw();
+                },
+                complete: function(data) {
+                    do_delay(self.refresh_samples, 10000)
+                }
+            });
+        }
+
+        // Delete a sample
+        this.delete_sample = function(box) {
+
+            // Tell the server to delete this sample
+            console.log('Deleting ', box.data)
+            if(box.data.id) {
+                box.remove();
+                $.ajax({
+                    url: "{{ url_for('dltrain.delete_sample') }}",
+                    data: { id: box.data.id },
+                    type: 'post',
+                    success: function(data) {
+                        self.boxmap.delete(box.data.id);
+                        paper.view.draw();
+                    }
+                });
+            }
+            else {
+                box.remove();
+                paper.view.draw();
+            }
+        };
+
+        // Count selected samples
+        this.get_selected_samples_count = function() {
+            var selected = paper.project.selectedItems;
+            var n = 0;
+            for (var i = 0; i < selected.length; i++) {
+                var item = selected[i];
+                if (item.data.id) {
+                    n++;
+                }
+            }
+            return n;
+        }
+
+        // Relabel selected samples
+        this.relabel_selected_samples = function(new_label_id, new_label_color, cb_success) {
+            var selected = paper.project.selectedItems;
+            var n = 0;
+            for (var i = 0; i < selected.length; i++) {
+                var item = selected[i];
+                if (item.data.id && item.data.label_id != new_label_id) {
+                    item.data.label_id = new_label_id;
+                    item.data.label_color = new_label_color;
+                    item.strokeColor = new_label_color;
+                    item.selectedColor = new_label_color;
+                    self.modify_sample(item, cb_success);
+                }
+            }
+        }
+
+
+    };
+
+    // Instantiate API for getting samples
+    var sample_api = undefined;
+    if(seg_mode == 'dltrain') {
+        sample_api = new SampleAPI();
+    }
+
+
+    var press_handler = function(event) {
+        if(curr_mode == 'DRAW') {
+            curr_path = new paper.Path({
+                segments: [ev_point(event)],
+                strokeColor: 'black',
+                strokeCap: 'round'});
+            set_paperjs_item_strokewidth(curr_path, 4);
+        }
+        else if(curr_mode == 'NAV') {
+            hit = my_hit_test(ev_point(event));
+            moving_object=null;
+            if(hit) {
+                if(!hit.item.selected) {
+                    // Hitting an unselected target
+                    deselect_all_manipulables();
+                    hit.item.selected = true;
+                    if(seg_mode == 'dltrain' && hit.item.data.label_id) {
+                        select_label(hit.item.data.label_id);
+                        load_samples_table_ajax(hit.item.data.label_id);
+                    }
+                    fn_update_button_state();
+                    paper.view.draw();
+                    moving_object = hit.item;
+                    moving_object_moved = true;
+                }
+                else {
+                    moving_object = hit.item;
+                    moving_object_moved = false;
+                    if (seg_mode == 'dltrain') {
+                        if(hit.type == 'segment') {
+                            moving_object_handle = hit.segment.index;
+                        } else {
+                            moving_object_handle = null;
+                        }
+                    }
+                }
+            }
+            else {
+                deselect_all_manipulables()
+                set_slide_mouse_nav(true);
+                paper.view.draw();
+            }
+        }
+        else if (curr_mode == 'BOX') {
+
+            // Record the starting point
+            curr_box_drag_start = ev_point(event);
+
+            // Create an empty rectangle at the point
+            curr_box = sample_api.create_box(curr_box_drag_start.x, curr_box_drag_start.y,
+                curr_box_drag_start.x, curr_box_drag_start.y,
+                get_current_label_id(), get_current_label_color(), 2);
+
+            // Redraw canvas (probably pointless)
+            paper.view.draw();
+        }
+    }
+
+    var drag_handler = function(event) {
+        if(curr_mode == 'DRAW') {
+            curr_path.add(ev_point(event))
+            paper.view.draw();
+        }
+        else if(curr_mode == 'BOX') {
+            var p0 = curr_box_drag_start;
+            var p1 = ev_point(event);
+            sample_api.update_box(curr_box,
+                Math.min(p0.x, p1.x), Math.min(p0.y,p1.y),
+                Math.max(p0.x, p1.x), Math.max(p0.y,p1.y));
+            paper.view.draw();
+        }
+        else if(curr_mode == 'NAV' && moving_object) {
+            if(event.delta.x != 0 || event.delta.y != 0) {
+                // Move the object by the delta
+                if(seg_mode == 'annot') {
+                    moving_object.position = moving_object.position.add(ev_delta(event));
+                }
+                else if(seg_mode == 'dltrain') {
+                    var delta = ev_delta(event);
+                    if(moving_object_handle != null) {
+                        sample_api.move_box_corner(moving_object, moving_object_handle, delta.x, delta.y);
+                    }
+                    else {
+                        sample_api.move_box(moving_object, delta.x, delta.y);
+                    }
+                }
+
+                // Mark object as having moved
+                moving_object_moved = true;
+                paper.view.draw();
+            }
+        }
+    }
+
+    // Something to do about overlapping timers
+    var timer_map = {}
+    var do_delay = function(fn, t_wait) {
+        if(timer_map[fn.name])
+            clearTimeout(timer_map[fn.name])
+        timer_map[fn.name] = setTimeout(fn, t_wait)
+    }
+
+    var dragEnd_handler = function(event) {
+        if(curr_mode == 'DRAW') {
+            curr_path.simplify(10)
+            upload_annot()
+            paper.view.draw();
+            nav_pressed_handler();
+        }
+        else if(curr_mode == 'BOX') {
+            // Send the completed marker to the server
+            sample_api.upload_new_sample(curr_box, function() {
+                do_delay(reload_label_and_sample_tables, 1000)
+            });
+            curr_box = undefined;
+            nav_pressed_handler();
+        }
+        else if(curr_mode == 'NAV' && moving_object)
+        {
+            if(moving_object_moved) {
+                if(seg_mode == 'annot') {
+                    upload_annot();
+                }
+                else if(seg_mode == 'dltrain') {
+                    sample_api.modify_sample(moving_object, function() {
+                        do_delay(reload_label_and_sample_tables, 1000)
+                    });
+                }
+            }
+            else {
+                // Just toggle selection
+                moving_object.selected = false;
+            }
+
+            moving_object = null;
+            paper.view.draw();
+        }
+    }
+
+    var show_marker_editor = function(event, target_item) {
+        var p = ev_point(event);
+        var input = document.getElementById("marker");
+        input.style.left = "" + event.position.x - 50 + "px";
+        input.style.top = "" + event.position.y - 20 + "px";
+        input.style.width = "100px";
+        input.style.height = "40px";
+        input.style.display = "block";
+        input.style.textAlign = "center";
+        input.style.zIndex = 100;
+
+        if(target_item) { input.value = target_item.content; } else { input.value = null; }
+
+        input.focus();
+
+        input.onkeypress = function(e) {
+            if(!e) e = window.event;
+            if (e.keyCode == '13') {
+                this.style.display = "none";
+                if(target_item) {
+                    target_item.content = this.value;
+                    target_item.visible = true;
+                    target_item.selected = false;
+                } else {
+
+                    var newtext = new paper.PointText(p);
+                    newtext.content = this.value;
+                    newtext.style = {
+                        fontWeight: 'bold',
+                        fontSize: get_width_in_canvas_units(10),
+                        justification: 'center'
+                    };
+                }
+                paper.view.draw();
+                nav_pressed_handler();
+                upload_annot();
+                return false;
+            }
+        }
+    }
+
+    var release_handler = function(event) {
+        if(curr_mode == 'NAV' && moving_object) {
+            if(!moving_object_moved)
+                moving_object.selected = false;
+        }
+        else if(curr_mode == 'MARKER') {
+            show_marker_editor(event, null);
+        }
+
+    }
+
+    // Customized hit testing to include paths and text
+    var my_hit_test = function(point) {
+        if(seg_mode == 'annot') {
+            return paper.project.hitTest(point);
+        } else if (seg_mode == 'dltrain') {
+            var hit_test_options = {
+                segments: true,
+                stroke: true,
+                fill: false,
+                tolerance: 3
+            }
+            return paper.project.hitTest(point, hit_test_options);
+        }
+    }
+
+    var move_handler = function(event) {
+        var pointer = "default";
+        var curs_arr = [ "nwse-resize", "nesw-resize", "nwse-resize", "nesw-resize" ];
+
+        if(curr_mode == 'NAV' && paper.project) {
+            hit = my_hit_test(ev_point(event));
+            if(hit) {
+                if(seg_mode == 'annot') {
+                    pointer = "pointer";
+                }
+                else if(seg_mode == 'dltrain') {
+                    if(!hit.item.selected) {
+                        pointer = "pointer";
+                    }
+                    else {
+                        if(hit.type=='segment') {
+                            pointer = curs_arr[hit.segment.index];
+                        }
+                        else {
+                            pointer = "move";
+                        }
+                    }
+                }
+                set_slide_mouse_nav(false);
+            }
+            else {
+                pointer = "default";
+                var sel_size = get_number_selected_manipulables();
+                // Nav behavior only available if no selection
+                if(sel_size == 0)
+                    set_slide_mouse_nav(true);
+                else
+                    set_slide_mouse_nav(false);
+            }
+        }
+
+        document.getElementById("view").style.cursor = pointer;
+    }
+
+    var dblClick_handler = function(event) {
+        if(curr_mode == 'NAV') {
+            hit = my_hit_test(ev_point(event));
+            if(hit && hit.item instanceof paper.PointText) {
+                hit.item.visible = false;
+                show_marker_editor(event, hit.item);
+            }
+        }
+    }
+
+    var mouse_tracker = new OpenSeadragon.MouseTracker({
+        element: viewer.canvas,
+        pressHandler: press_handler,
+        releaseHandler: release_handler,
+        dragHandler: drag_handler,
+        dragEndHandler: dragEnd_handler,
+        dblClickHandler: dblClick_handler,
+        moveHandler: move_handler });
+
+    mouse_tracker.setTracking(true);
+
+    // Update button active state
+    var fn_update_button_state = function() {
+        // Is there an active selection
+        if(get_number_selected_manipulables() > 0)
+            document.getElementById("del_button").className =
+                document.getElementById("del_button").className.replace(" disabled", " enabled");
         else
-          set_slide_mouse_nav(false);
-      }
+            document.getElementById("del_button").className =
+                document.getElementById("del_button").className.replace(" enabled", " disabled");
+
     }
 
-    document.getElementById("view").style.cursor = pointer;
-  }
-
-  var dblClick_handler = function(event) {
-    if(curr_mode == 'NAV') {
-      hit = my_hit_test(ev_point(event));
-      if(hit && hit.item instanceof paper.PointText) {
-        hit.item.visible = false;
-        show_marker_editor(event, hit.item);
-      }
-    }
-  }
-
-  var mouse_tracker = new OpenSeadragon.MouseTracker({
-    element: viewer.canvas,
-    pressHandler: press_handler,
-    releaseHandler: release_handler,
-    dragHandler: drag_handler,
-    dragEndHandler: dragEnd_handler,
-    dblClickHandler: dblClick_handler,
-    moveHandler: move_handler });
-
-  mouse_tracker.setTracking(true);
-
-  // Update button active state
-  var fn_update_button_state = function() {
-    // Is there an active selection
-    if(get_number_selected_manipulables() > 0)
-      document.getElementById("del_button").className = 
-        document.getElementById("del_button").className.replace(" disabled", " enabled");
-    else
-      document.getElementById("del_button").className = 
-        document.getElementById("del_button").className.replace(" enabled", " disabled");
-
-  }
-
-  // Give focus to the viewer. Call this at the beginning and when done interacting
-  // with other elements
-  var fn_focus_on_viewer = function() {
-    document.getElementById('view').querySelector('.openseadragon-canvas').focus();
-  }
-
-
-  // Active button decoration
-  var fn_active_button = function(element) {
-    var current = document.getElementsByClassName("active");
-    current[0].className = current[0].className.replace(" active", "");
-    element.className += " active";
-  }
-
-  // Event handler
-  var draw_pressed_handler = function(options) {
-    set_slide_mouse_nav(false);
-    viewer.outerTracker.setTracking(false);
-    curr_mode = 'DRAW';
-    fn_active_button(document.getElementById('draw_button'))
-    document.getElementById("view").style.cursor = "crosshair";
-  }
-
-  var nav_pressed_handler = function(options) {
-    set_slide_mouse_nav(true);
-    viewer.outerTracker.setTracking(true);
-    curr_mode = 'NAV';
-    fn_active_button(document.getElementById('nav_button'))
-    document.getElementById("view").style.cursor = "default";
-    fn_focus_on_viewer()
-  }
-
-  var marker_pressed_handler = function(options) {
-    set_slide_mouse_nav(false);
-    viewer.outerTracker.setTracking(false);
-    curr_mode = 'MARKER';
-    fn_active_button(document.getElementById('marker_button'))
-    document.getElementById("view").style.cursor = "crosshair";
-  }
-
-  var box_pressed_handler = function(options) {
-    set_slide_mouse_nav(false);
-    viewer.outerTracker.setTracking(false);
-    curr_mode = 'BOX';
-    fn_active_button(document.getElementById('box_button'))
-    document.getElementById("view").style.cursor = "crosshair";
-    fn_focus_on_viewer()
-  }
-
-  var del_pressed_handler = function(options) {
-    if(document.getElementById("del_button").className.includes(" enabled")) {
-      var selected = paper.project.selectedItems;
-      if(seg_mode == 'annot') {
-        for (var i = 0; i < selected.length; i++) {
-          var item = selected[i];
-          if (item instanceof paper.Path || item instanceof paper.PointText) {
-            item.remove()
-          }
-        }
-        fn_update_button_state()
-        upload_annot();
-        paper.view.draw();
-      }
-      else if(seg_mode == 'dltrain') {
-        // Iterate over the selected items
-        paper.project.selectedItems.forEach(function(item, index) {
-          // This box needs to be deleted
-          sample_api.delete_sample(item);
-          reload_label_and_sample_tables();
-          fn_update_button_state()
-        });
-      }
-
-      fn_focus_on_viewer();
-    }
-  }
-
-  var add_seadragon_button = function(html_id, btn_tooltip, btn_anchor, press_handler) {
-    var html_elt = document.getElementById(html_id);
-    var button = new OpenSeadragon.Button({element: html_elt, tooltip: btn_tooltip});
-    viewer.addControl(button.element, {anchor: btn_anchor});
-    button.addHandler('press', press_handler);
-    return button;
-  }
-
-  // Create a drawing button
-  var navButton = add_seadragon_button('nav_button', 'Navigate around the slide using zoom and pan', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, nav_pressed_handler);
-  Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
-  Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
-
-  if (seg_mode=='annot') {
-    var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);
-    Mousetrap.bind('l', function() { draw_pressed_handler() });
-
-    var markerButton = add_seadragon_button('marker_button', 'Place anatomical marker', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, marker_pressed_handler);
-    Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
-  }
-
-  else if(seg_mode=='dltrain') {
-    var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
-    Mousetrap.bind('b', function() { box_pressed_handler() });
-
-    // TODO: remote
-    Mousetrap.bind('o', function() { add_overlay_dzi('d_tangles',function() { console.log('loaded') }) })
-  }
-
-  if(seg_mode == 'annot' || seg_mode == 'dltrain') {
-    var delButton = add_seadragon_button('del_button', 'Delete selected line or text', OpenSeadragon.ControlAnchor.BOTTOM_RIGHT, del_pressed_handler);
-    Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
-  }
-
-  // Sometimes the scrolling is messed up
-  document.body.scrollTop = document.documentElement.scrollTop = 0;
-
-  window.onresize = function() {
-    document.body.scrollTop = document.documentElement.scrollTop = 0;
-    overlay.resize();
-    overlay.resizecanvas(); }
-
-  // Disable viewer keyboard
-  var default_osd_keyDownHandler = viewer.innerTracker.keyDownHandler;
-  viewer.innerTracker.keyDownHandler = function(event) {
-    if((event.keyCode == 'R'.charCodeAt(0) && !event.ctrl && !event.meta) 
-        || (event.keyCode == 'F'.charCodeAt(0) && !event.ctrl && !event.meta)) {
-      return null;
+    // Give focus to the viewer. Call this at the beginning and when done interacting
+    // with other elements
+    var fn_focus_on_viewer = function() {
+        document.getElementById('view').querySelector('.openseadragon-canvas').focus();
     }
 
-    return default_osd_keyDownHandler(event)
-  };
 
-  // viewer.innerTracker.keyDownHandler = null;
-  // viewer.innerTracker.keyPressHandler = null;
-  // viewer.innerTracker.keyHandler = null;
-
-  // Initialize the parts of the UI corresponding to labels
-  if (seg_mode == 'dltrain') {
-
-    // Function to focus on a specific sample
-    var focus_on_sample = function(id, cx, cy) {
-
-      // Navigate there
-      pt_im = new OpenSeadragon.Point(Number(cx), Number(cy));
-      pt_vp = viewer.world.getItemAt(0).imageToViewportCoordinates(pt_im);
-      zoom_vp = viewer.world.getItemAt(0).imageToViewportZoom(0.2);
-      viewer.viewport.zoomTo(zoom_vp, false);
-      viewer.viewport.panTo(pt_vp, false);
-
-      // Select the sample with this id
-      var items = paper.project.getItems({
-        data: { id: Number(id) }
-      })
-
-      // Select the sample
-      deselect_all_manipulables()
-      items[0].selected = true;
-      select_label(items[0].data.label_id);
-      load_samples_table_ajax(items[0].data.label_id);
-      fn_update_button_state();
-      fn_focus_on_viewer()
+    // Active button decoration
+    var fn_active_button = function(element) {
+        var current = document.getElementsByClassName("active");
+        current[0].className = current[0].className.replace(" active", "");
+        element.className += " active";
     }
 
-    // Function to reload labels in a loop
-    var reload_label_and_sample_tables = function() {
-      console.log('RELOAD:', new Date())
-      load_label_table_ajax(function() {
-        var id = get_current_label_id();
-        load_samples_table_ajax(id, function() {
-          do_delay(reload_label_and_sample_tables, 10000);
-        });
-      });
+    // Event handler
+    var draw_pressed_handler = function(options) {
+        set_slide_mouse_nav(false);
+        viewer.outerTracker.setTracking(false);
+        curr_mode = 'DRAW';
+        fn_active_button(document.getElementById('draw_button'))
+        document.getElementById("view").style.cursor = "crosshair";
     }
 
-    // Create the labels table
-    create_label_table_html($('#div_dltrain_labels'));
-
-    // Create the samples table
-    create_samples_table_withcontrols_html($('#div_dltrain_samples'), reload_label_and_sample_tables);
-
-    // Initialize tables with data
-    reload_label_and_sample_tables()
-
-    // A callback function for when a label is clicked
-    var label_select_callback = function(id) {
-      console.log('LABEL SELECTED')
-      if(curr_mode == 'NAV' && sample_api.get_selected_samples_count() > 0) {
-        console.log('Gotta relabel some')
-        sample_api.relabel_selected_samples(id, get_current_label_color(), function() {
-          reload_label_and_sample_tables();
-        });
-        paper.view.draw();
-      }
-      else {
-        load_samples_table_ajax(id);
-      }
-      fn_focus_on_viewer()
-    }
-
-    // A callback function for when a sample is clicked
-    var sample_select_callback = function(id, cx, cy, slide_id) {
-      if(slide_id == "{{slide_id}}") {
-        focus_on_sample(id, cx, cy)
+    var nav_pressed_handler = function(options) {
+        set_slide_mouse_nav(true);
+        viewer.outerTracker.setTracking(true);
+        curr_mode = 'NAV';
+        fn_active_button(document.getElementById('nav_button'))
+        document.getElementById("view").style.cursor = "default";
         fn_focus_on_viewer()
-      }
-      else {
-        if(confirm("Are you sure you want to navigate to another slide?")) {
-          // Generate a URL for the new slide
-          var url="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=affine_mode, resolution=resolution)}}";
-          url = url.replace('999999', slide_id);
-          $('<form>').attr('method','post').attr('action',url).append(
-              $('<input type="hidden" name="sample_id">').attr("value", id),
-              $('<input type="hidden" name="sample_cx">').attr("value", cx),
-              $('<input type="hidden" name="sample_cy">').attr("value", cy)).appendTo('body').submit();
+    }
+
+    var marker_pressed_handler = function(options) {
+        set_slide_mouse_nav(false);
+        viewer.outerTracker.setTracking(false);
+        curr_mode = 'MARKER';
+        fn_active_button(document.getElementById('marker_button'))
+        document.getElementById("view").style.cursor = "crosshair";
+    }
+
+    var box_pressed_handler = function(options) {
+        set_slide_mouse_nav(false);
+        viewer.outerTracker.setTracking(false);
+        curr_mode = 'BOX';
+        fn_active_button(document.getElementById('box_button'))
+        document.getElementById("view").style.cursor = "crosshair";
+        fn_focus_on_viewer()
+    }
+
+    var del_pressed_handler = function(options) {
+        if(document.getElementById("del_button").className.includes(" enabled")) {
+            var selected = paper.project.selectedItems;
+            if(seg_mode == 'annot') {
+                for (var i = 0; i < selected.length; i++) {
+                    var item = selected[i];
+                    if (item instanceof paper.Path || item instanceof paper.PointText) {
+                        item.remove()
+                    }
+                }
+                fn_update_button_state()
+                upload_annot();
+                paper.view.draw();
+            }
+            else if(seg_mode == 'dltrain') {
+                // Iterate over the selected items
+                paper.project.selectedItems.forEach(function(item, index) {
+                    // This box needs to be deleted
+                    sample_api.delete_sample(item);
+                    reload_label_and_sample_tables();
+                    fn_update_button_state()
+                });
+            }
+
+            fn_focus_on_viewer();
         }
-      }
     }
 
-    set_label_table_click_callback(label_select_callback)
-    set_sample_table_click_callback(sample_select_callback)
-
-    // Check if we should be navigating to a specific sample
-    var focus_on_initial_sample = function() {
-      var focus_sample_id='{{sample_id}}';
-      if(focus_sample_id && focus_sample_id.length > 0) {
-        focus_on_sample(Number(focus_sample_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));A
-      }
+    var add_seadragon_button = function(html_id, btn_tooltip, btn_anchor, press_handler) {
+        var html_elt = document.getElementById(html_id);
+        var button = new OpenSeadragon.Button({element: html_elt, tooltip: btn_tooltip});
+        viewer.addControl(button.element, {anchor: btn_anchor});
+        button.addHandler('press', press_handler);
+        return button;
     }
 
-    fn_focus_on_viewer();
+    // Create a drawing button
+    var navButton = add_seadragon_button('nav_button', 'Navigate around the slide using zoom and pan', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, nav_pressed_handler);
+    Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
+    Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
 
-  }
-  // Initialize parts of UI related to annotation
-  else if (seg_mode == 'annot') {
+    if (seg_mode=='annot') {
+        var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);
+        Mousetrap.bind('l', function() { draw_pressed_handler() });
 
-    // Populate the trasform form
-    $("#form_mode_select").val("{{affine_mode}}");
+        var markerButton = add_seadragon_button('marker_button', 'Place anatomical marker', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, marker_pressed_handler);
+        Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
+    }
 
-    // Listen to changes on the form
-    $("#form_mode_select").change(function() {
-      tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='XXXX', resolution=resolution) }}"
-      url = tmpl.replace('XXXX', $("#form_mode_select").val())
-      $("#form_mode").attr("method","post").attr("action", url).submit()
+    else if(seg_mode=='dltrain') {
+        var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
+        Mousetrap.bind('b', function() { box_pressed_handler() });
+
+        // TODO: remote
+        Mousetrap.bind('o', function() { add_overlay_dzi('d_tangles',function() { console.log('loaded') }) })
+    }
+
+    if(seg_mode == 'annot' || seg_mode == 'dltrain') {
+        var delButton = add_seadragon_button('del_button', 'Delete selected line or text', OpenSeadragon.ControlAnchor.BOTTOM_RIGHT, del_pressed_handler);
+        Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
+    }
+
+    // Sometimes the scrolling is messed up
+    document.body.scrollTop = document.documentElement.scrollTop = 0;
+
+    window.onresize = function() {
+        document.body.scrollTop = document.documentElement.scrollTop = 0;
+        overlay.resize();
+        overlay.resizecanvas(); }
+
+    // Disable viewer keyboard
+    var default_osd_keyDownHandler = viewer.innerTracker.keyDownHandler;
+    viewer.innerTracker.keyDownHandler = function(event) {
+        if((event.keyCode == 'R'.charCodeAt(0) && !event.ctrl && !event.meta)
+            || (event.keyCode == 'F'.charCodeAt(0) && !event.ctrl && !event.meta)) {
+            return null;
+        }
+
+        return default_osd_keyDownHandler(event)
+    };
+
+    // viewer.innerTracker.keyDownHandler = null;
+    // viewer.innerTracker.keyPressHandler = null;
+    // viewer.innerTracker.keyHandler = null;
+
+    // Initialize the slide selection form
+    $("#form_stain_select").val("{{slide_id}}");
+
+    $("#form_stain_select").change(function() {
+        tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=123456, affine_mode=affine_mode, resolution=resolution) }}";
+        url = tmpl.replace('123456', $("#form_stain_select").val());
+        $("#form_stain").attr("method","post").attr("action", url).submit();
     });
 
-    // Populate the trasform form
-    $("#form_res_select").val("{{resolution}}");
+    // Initialize the parts of the UI corresponding to labels
+    if (seg_mode == 'dltrain') {
 
-    $("#form_res_select").change(function() {
-      tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}"
-      url = tmpl.replace('XXXX', $("#form_res_select").val())
-      $("#form_res").attr("method","post").attr("action", url).submit()
-    });
-  }
+        // Function to focus on a specific sample
+        var focus_on_sample = function(id, cx, cy) {
+
+            // Navigate there
+            pt_im = new OpenSeadragon.Point(Number(cx), Number(cy));
+            pt_vp = viewer.world.getItemAt(0).imageToViewportCoordinates(pt_im);
+            zoom_vp = viewer.world.getItemAt(0).imageToViewportZoom(0.2);
+            viewer.viewport.zoomTo(zoom_vp, false);
+            viewer.viewport.panTo(pt_vp, false);
+
+            // Select the sample with this id
+            var items = paper.project.getItems({
+                data: { id: Number(id) }
+            })
+
+            // Select the sample
+            deselect_all_manipulables()
+            items[0].selected = true;
+            select_label(items[0].data.label_id);
+            load_samples_table_ajax(items[0].data.label_id);
+            fn_update_button_state();
+            fn_focus_on_viewer()
+        }
+
+        // Function to reload labels in a loop
+        var reload_label_and_sample_tables = function() {
+            console.log('RELOAD:', new Date())
+            load_label_table_ajax(function() {
+                var id = get_current_label_id();
+                load_samples_table_ajax(id, function() {
+                    do_delay(reload_label_and_sample_tables, 10000);
+                });
+            });
+        }
+
+        // Create the labels table
+        create_label_table_html($('#div_dltrain_labels'));
+
+        // Create the samples table
+        create_samples_table_withcontrols_html($('#div_dltrain_samples'), reload_label_and_sample_tables);
+
+        // Initialize tables with data
+        reload_label_and_sample_tables()
+
+        // A callback function for when a label is clicked
+        var label_select_callback = function(id) {
+            console.log('LABEL SELECTED')
+            if(curr_mode == 'NAV' && sample_api.get_selected_samples_count() > 0) {
+                console.log('Gotta relabel some')
+                sample_api.relabel_selected_samples(id, get_current_label_color(), function() {
+                    reload_label_and_sample_tables();
+                });
+                paper.view.draw();
+            }
+            else {
+                load_samples_table_ajax(id);
+            }
+            fn_focus_on_viewer()
+        }
+
+        // A callback function for when a sample is clicked
+        var sample_select_callback = function(id, cx, cy, slide_id) {
+            if(slide_id == "{{slide_id}}") {
+                focus_on_sample(id, cx, cy)
+                fn_focus_on_viewer()
+            }
+            else {
+                if(confirm("Are you sure you want to navigate to another slide?")) {
+                    // Generate a URL for the new slide
+                    var url="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=affine_mode, resolution=resolution)}}";
+                    url = url.replace('999999', slide_id);
+                    $('<form>').attr('method','post').attr('action',url).append(
+                        $('<input type="hidden" name="sample_id">').attr("value", id),
+                        $('<input type="hidden" name="sample_cx">').attr("value", cx),
+                        $('<input type="hidden" name="sample_cy">').attr("value", cy)).appendTo('body').submit();
+                }
+            }
+        }
+
+        set_label_table_click_callback(label_select_callback)
+        set_sample_table_click_callback(sample_select_callback)
+
+        // Check if we should be navigating to a specific sample
+        var focus_on_initial_sample = function() {
+            var focus_sample_id='{{sample_id}}';
+            if(focus_sample_id && focus_sample_id.length > 0) {
+                focus_on_sample(Number(focus_sample_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));A
+            }
+        }
+
+        fn_focus_on_viewer();
+
+    }
+    // Initialize parts of UI related to annotation
+    else if (seg_mode == 'annot') {
+
+        // Populate the trasform form
+        $("#form_mode_select").val("{{affine_mode}}");
+
+        // Listen to changes on the form
+        $("#form_mode_select").change(function() {
+            tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='XXXX', resolution=resolution) }}";
+            url = tmpl.replace('XXXX', $("#form_mode_select").val())
+            $("#form_mode").attr("method","post").attr("action", url).submit()
+        });
+
+        // Populate the trasform form
+        $("#form_res_select").val("{{resolution}}");
+
+        $("#form_res_select").change(function() {
+            tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}"
+            url = tmpl.replace('XXXX', $("#form_res_select").val())
+            $("#form_res").attr("method","post").attr("action", url).submit()
+        });
+    }
 
 
 });

@@ -68,43 +68,9 @@ def index():
 @login_required
 def project_detail(project_name):
 
-    # Output list of dicts
-    t = []
+    # Render the entry page
+    return render_template('slide/projects_tasks.html', project_name=project_name)
 
-    # Must have a valid project
-    pr = ProjectRef(project_name)
-
-    # List the available tasks (TODO: check user access to task)
-    db = get_db()
-    rc_task = db.execute('SELECT * FROM task_info WHERE project=? ORDER BY id',
-                         (project_name,))
-
-    for row in rc_task.fetchall():
-
-        # Parse the json
-        task = json.loads(row['json'])
-
-        # Generate the where clause
-        where = get_task_slide_where_clause(task)
-
-        # Get the subset of stains to which the task applies
-        stat = db.execute(
-            'SELECT COUNT (S.id) as nslides, '
-            '       COUNT(DISTINCT block_id) as nblocks, '
-            '       COUNT(DISTINCT specimen_name) as nspecimens '
-            'FROM slide S LEFT JOIN block B on S.block_id = B.id '
-            'WHERE %s ' % (where[0],), 
-            where[1]).fetchone()
-
-        # Create a dict
-        d = { 'id' : row['id'], 'name': task['name'], 'desc': task['desc'] }
-        for key in ('nspecimens', 'nblocks', 'nslides'):
-            d[key] = stat[key]
-
-        t.append(d)
-
-    # Render the template
-    return render_template('slide/index.html', tasks=t)
 
 
 # Project listing for the current user
@@ -238,9 +204,22 @@ def task_detail(task_id):
 
     # Get the current task data
     project,task = get_task_data(task_id)
-    return render_template('slide/task_detail.html', 
-            task=task, task_id=task_id, specimen_name=None, block_name=None)
+    pr = ProjectRef(project)
+    return render_template('slide/task_detail.html',
+                           project=project, project_name=pr.disp_name,
+                           task=task, task_id=task_id, specimen_name=None, block_name=None)
 
+# Specimen detail (same template as the task detail, but points to a specimen
+@bp.route('/task/<int:task_id>/specimen/<specimen_name>')
+@login_required
+def specimen_detail_by_name(task_id, specimen_name):
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+    pr = ProjectRef(project)
+    return render_template('slide/task_detail.html',
+                           project=project, project_name=pr.disp_name, task=task, task_id=task_id,
+                           specimen_name=specimen_name, block_name=None)
 
 # Block detail (same template as the task detail, but points to a block
 @bp.route('/task/<int:task_id>/specimen/<specimen_name>/block/<block_name>')
@@ -249,9 +228,10 @@ def block_detail_by_name(task_id, specimen_name, block_name):
 
     # Get the current task data
     project,task = get_task_data(task_id)
-    return render_template('slide/task_detail.html', 
-            task=task, task_id=task_id, 
-            specimen_name=specimen_name, block_name=block_name)
+    pr = ProjectRef(project)
+    return render_template('slide/task_detail.html',
+                           project=project, project_name=pr.disp_name, task=task, task_id=task_id,
+                           specimen_name=specimen_name, block_name=block_name)
 
 # Task detail
 @bp.route('/api/task/<int:task_id>/specimen/<specimen_name>/blocks')
@@ -394,25 +374,53 @@ def get_slide_info(task_id, slide_id):
     block_id = slide_info['block_id']
     section = slide_info['section']
     slideno = slide_info['slide']
+    stain = slide_info['stain']
 
     # Get the task-specific where clause
     project,task = get_task_data(task_id)
     where = get_task_slide_where_clause(task)
 
-    # Get the previous and next slides
-    prev_slide = db.execute(
-        'SELECT id FROM slide S'
-        ' WHERE %s AND block_id=? AND section * 1000 + slide <= ? AND id != ?'
-        ' ORDER BY section DESC, slide DESC limit 1' % where[0], 
-        where[1] + (block_id, section * 1000 + slideno, slide_id)).fetchone()
+    # Get a list of slides/stains for this section (for drop-down menu)
+    rc_slide = db.execute(
+        'SELECT id, slide, stain FROM slide S '
+        'WHERE block_id=? AND section=? '
+        'ORDER BY slide', (block_id, section))
 
-    next_slide = db.execute(
-        'SELECT id FROM slide S'
-        ' WHERE %s AND block_id=? AND section * 1000 + slide >= ? AND id != ?'
-        ' ORDER BY section ASC, slide ASC limit 1' % where[0], 
-        where[1] + (block_id, section * 1000 + slideno, slide_id)).fetchone()
+    stain_list = [dict(row) for row in rc_slide.fetchall()]
 
-    return slide_info, prev_slide, next_slide
+    # Get the corresponding slide in the previous section. A corresponding slide
+    # has the same stain and the closest slide to the current section. If the
+    # same stain is not available, then just the closest slide.
+
+    # Find the previous section number
+    prev_sec = db.execute('SELECT section FROM slide '
+                          'WHERE block_id=? AND section<? '
+                          'ORDER BY section DESC limit 1',
+                          (block_id, section)).fetchone()
+
+    # Find the closest slide in the section
+    if prev_sec is not None:
+        prev_slide = db.execute('SELECT *,(stain<>?)*1000+abs(slide-?) AS X '
+                                'FROM slide WHERE block_id=? AND section=? '
+                                'ORDER BY X LIMIT 1', (stain, slideno, block_id, prev_sec['section'])).fetchone()
+    else:
+        prev_slide = None
+
+    # Find the previous section number
+    next_sec = db.execute('SELECT section FROM slide '
+                          'WHERE block_id=? AND section>? '
+                          'ORDER BY section ASC limit 1',
+                          (block_id, section)).fetchone()
+
+    # Find the closest slide in the section
+    if next_sec is not None:
+        next_slide = db.execute('SELECT *,(stain<>?)*1000+abs(slide-?) AS X '
+                                'FROM slide WHERE block_id=? AND section=? '
+                                'ORDER BY X LIMIT 1', (stain, slideno, block_id, next_sec['section'])).fetchone()
+    else:
+        next_slide = None
+
+    return slide_info, prev_slide, next_slide, stain_list
 
 
 # The slide view
@@ -424,7 +432,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     project,task = get_task_data(task_id)
 
     # Get the next/previous slides for this task
-    (si, prev_slide, next_slide) = get_slide_info(task_id, slide_id)
+    si, prev_slide, next_slide, stain_list = get_slide_info(task_id, slide_id)
 
     # Check that the affine mode and resolution requested are available
     pr = ProjectRef(project)
@@ -445,6 +453,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     del_url = find_delegate_for_slide(slide_id)
     del_url = del_url if del_url is not None else ''
 
+    # Get additional project info
+    pr = ProjectRef(si['project'])
+
     # Form the URL templates for preloading and actual dzi access, so that in JS we
     # can just do a quick substitution
     url_ctx = {
@@ -464,13 +475,16 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'slide_id': slide_id, 
             'slide_info': si,
             'next_slide':next_slide, 
-            'prev_slide':prev_slide, 
+            'prev_slide':prev_slide,
+            'stain_list':stain_list,
             'affine_mode':affine_mode,
             'have_affine':have_affine,
             'have_x16':have_x16,
             'resolution':resolution,
             'seg_mode':task['mode'], 
             'task_id': task_id, 
+            'project':si['project'],
+            'project_name':pr.disp_name,
             'block_id': si['block_id'],
             'dzi_url': del_url,
             'url_tmpl_preload': url_tmpl_preload,

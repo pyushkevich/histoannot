@@ -107,6 +107,9 @@ $(document).ready(function() {
     { data: "nslides" }
   ];
 
+  var py2js = function(str) { return str=="None" ? null : str; }
+  var request_prj=py2js("{{project_name}}");
+
   var t_project = $('#project').DataTable( {
     "ajax": function(data, callback, settings) {
       $.ajax({

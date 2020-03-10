@@ -89,11 +89,16 @@
                 paper.view.viewSize = new paper.Size(this._containerWidth, this._containerHeight);
                 var viewportZoom = this._viewer.viewport.getZoom(true);
                 var image1 = this._viewer.world.getItemAt(0);
-                paper.view.zoom = image1.viewportToImageZoom(viewportZoom);
 		// PY: this line causes issues when working with multiple layers
 		// var center = this._viewer.viewport.viewportToImageCoordinates(this._viewer.viewport.getCenter(true));
 		var center = image1.viewportToImageCoordinates(this._viewer.viewport.getCenter(true));
+
+		var degrees = this._viewer.viewport.getRotation();
+		paper.view.matrix.reset();
                 paper.view.center = new paper.Point(center.x, center.y);
+                paper.view.zoom = image1.viewportToImageZoom(viewportZoom);
+		paper.view.matrix.rotate(degrees, paper.view.center);
+		paper.view.update();
        }
     };
 })();

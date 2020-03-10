@@ -19,7 +19,7 @@ for line in $(cat /tmp/slides.csv); do
   fn_out=$DEST_PATH/${SPECIMEN}_${BLOCK}_annot_${SECTION}_${SLIDE}_${STAIN}__${S_NAME}.svg
 
   # Write the svg
-  flask annot-export-svg -s 48.0 $TASK_ID $ID $fn_out
+  flask annot-export-svg --strip-width 1000 $TASK_ID $ID $fn_out
   echo "Wrote $fn_out"
 
 done

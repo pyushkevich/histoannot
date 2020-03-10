@@ -86,79 +86,77 @@
 
 
 </style>
-<div>
-    <table style="width:100%"><tr>
-        <td>
-            <a href="{{ url_for('slide.index')}}">Home</a> :
-            <a href="{{ url_for('slide.project_detail', project=project_name)}}">{{project_name}}</a> :
-            <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
-            <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
-            <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
-        </td>
-        <td align="center">
-            {% if prev_slide %}
-                <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">&nbsp ❮ &nbsp</a>
-            {% endif %}
-            <span style="color:black;">Section {{ slide_info['section'] }}</span>
-            {% if next_slide  %}
-            <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode,resolution=resolution)}}">&nbsp ❯ &nbsp</a>
-            {% endif %}
-        </td>
-        <td align="right">
-            <form id="form_stain" target="#" style="display: inline;">
-                <label for="form_stain_select">Stain:</label>
-                <select id="form_stain_select" style="font-size: 80%; color: black;">
-                    {% for s in stain_list %}
-                    <option value="{{s['id']}}">{{s['stain']}}</option>
-                    {% endfor %}
-                </select>
-            </form>
-            <!-- affine or raw mode -->
-            &nbsp
-            {% if seg_mode != 'dltrain' %}
-            <form id="form_mode" target="#" style="display: inline;">
-                <label for="form_mode_select">Transform:</label>
-                <select id="form_mode_select" style="font-size: 80%;  color: black;">
-                    {% if have_affine  %}
-                    <option value="affine">Aligned to MRI</option>
-                    {% endif %}
-                    <option value="raw">Native Space</option>
-                </select>
-            </form>
-            &nbsp
-            <form id="form_res" target="#" style="display: inline;">
-                <label for="form_res_select">Resolution:</label>
-                <select id="form_res_select" style="font-size: 80%; color: black;">
-                    {% if have_x16  %}
-                    <option value="x16">1:16</option>
-                    {% endif %}
-                    <option value="raw">1:1</option>
-                </select>
-            </form>
-            &nbsp
-            {% endif %}
-        </td>
-    </tr></table>
-</div>
 
-<!-- A dialog showing slide loading progress -->
-<div id="progress_dialog_container" title="Downloading Slide from Cloud Storage">
-    Download progress: <div id="progress_bar"></div>
-    <div id="progress_comment" style="font-size:80%; color:red;" ></div>
-</div>
-
-{% if seg_mode == 'annot' or seg_mode == 'browse' %}
+<!-- The main div. In browse/annot modes it spans the whole window, in dltrain, only 4/5 of the window -->
 <div class="pure-g">
-    <div id="view">
-    <input id="marker" placeholder="Enter Text" style="display:none; position: absolute; left:0px; top:0px; width:100px; height:40px;"></input>
-    </div>
-</div>
-{% elif seg_mode == 'dltrain' %}
-<div class="pure-g">
+    {% if seg_mode == 'annot' or seg_mode == 'browse' %}
+    <div class="pure-u-5-5">
+    {% elif seg_mode == 'dltrain' %}
     <div class="pure-u-4-5">
+    {% endif %}
+
+        <div><table style="width:100%"><tr>
+            <td>
+                <a href="{{ url_for('slide.index')}}">Home</a> :
+                <a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
+                <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
+                <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
+                <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
+            </td>
+            <td align="center">
+                {% if prev_slide %}
+                    <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">&nbsp ❮ &nbsp</a>
+                {% endif %}
+                <span style="color:black;">Section {{ slide_info['section'] }}</span>
+                {% if next_slide  %}
+                <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode,resolution=resolution)}}">&nbsp ❯ &nbsp</a>
+                {% endif %}
+            </td>
+            <td align="right">
+                <form id="form_stain" target="#" style="display: inline;">
+                    <label for="form_stain_select">Stain:</label>
+                    <select id="form_stain_select" style="font-size: 80%; color: black;">
+                        {% for s in stain_list %}
+                        <option value="{{s['id']}}">{{s['stain']}}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                <!-- affine or raw mode -->
+                &nbsp
+                {% if seg_mode != 'dltrain' %}
+                <form id="form_mode" target="#" style="display: inline;">
+                    <label for="form_mode_select">Transform:</label>
+                    <select id="form_mode_select" style="font-size: 80%;  color: black;">
+                        {% if have_affine  %}
+                        <option value="affine">Aligned to MRI</option>
+                        {% endif %}
+                        <option value="raw">Native Space</option>
+                    </select>
+                </form>
+                &nbsp
+                <form id="form_res" target="#" style="display: inline;">
+                    <label for="form_res_select">Resolution:</label>
+                    <select id="form_res_select" style="font-size: 80%; color: black;">
+                        {% if have_x16  %}
+                        <option value="x16">1:16</option>
+                        {% endif %}
+                        <option value="raw">1:1</option>
+                    </select>
+                </form>
+                &nbsp
+                {% endif %}
+            </td>
+        </tr></table></div>
+
+        <!-- The main slide view -->
         <div id="view">
+            {% if seg_mode == 'dltrain' %}
+            <input id="marker" placeholder="Enter Text" style="display:none; position: absolute; left:0px; top:0px; width:100px; height:40px;"></input>
+            {% endif %}
         </div>
-    </div>
+    </div> 
+
+    {% if seg_mode == 'dltrain' %}
     <div class="pure-u-1-5">
         <div id="div_dltrain_labels" style="padding-left: 1em">
         </div>
@@ -166,8 +164,14 @@
         <div id="div_dltrain_samples" style="padding-left: 1em;">
         </div>
     </div>
+    {% endif %}
 </div>
-{% endif %}
+
+<!-- A dialog showing slide loading progress -->
+<div id="progress_dialog_container" title="Downloading Slide from Cloud Storage">
+    Download progress: <div id="progress_bar"></div>
+    <div id="progress_comment" style="font-size:80%; color:red;" ></div>
+</div>
 
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
 

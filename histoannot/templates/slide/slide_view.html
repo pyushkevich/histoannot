@@ -90,7 +90,7 @@
     <table style="width:100%"><tr>
         <td>
             <a href="{{ url_for('slide.index')}}">Home</a> :
-            <a href="{{ url_for('slide.project_detail', project_name=project)}}">{{project_name}}</a> :
+            <a href="{{ url_for('slide.project_detail', project=project_name)}}">{{project_name}}</a> :
             <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
             <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
             <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
@@ -147,7 +147,7 @@
     <div id="progress_comment" style="font-size:80%; color:red;" ></div>
 </div>
 
-{% if seg_mode == 'annot' %}
+{% if seg_mode == 'annot' or seg_mode == 'browse' %}
 <div class="pure-g">
     <div id="view">
     <input id="marker" placeholder="Enter Text" style="display:none; position: absolute; left:0px; top:0px; width:100px; height:40px;"></input>

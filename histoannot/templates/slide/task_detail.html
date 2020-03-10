@@ -25,7 +25,7 @@ Specimen Listing - {{task['name']}}
 
 
 <a href="{{ url_for('slide.index')}}">Home</a> : 
-<a href="{{ url_for('slide.project_detail', project_name=project)}}">{{project_name}}</a> :
+<a href="{{ url_for('slide.project_detail', project=project_name)}}">{{project_name}}</a> :
 {{task['name']}}
 <span id="span_specimen_name"></span>
 <span id="span_block_name"></span>
@@ -119,18 +119,23 @@ $(document).ready(function() {
   var fn_render_thumb = function(data, type, row) {
     var url = url_tmb.replace('999999',data);
     return '<div class="spanner"><img class="zoom" src="'+url+'" /></div>';
-  }
+  };
 
   // Render functions with URLs
   var fn_annot_link = function(data, type, row) {
     var url = url_ann.replace('999999',data);
     return '<a class="action" href="'+url+'">Annotate</a>';
-  }
+  };
 
   var fn_dltrain_link = function(data, type, row) {
     var url = url_dlt.replace('999999',data);
     return '<a class="action" href="'+url+'">Train</a>';
-  }
+  };
+
+  var fn_browse_link = function(data, type, row) {
+    var url = url_dlt.replace('999999',data);
+    return '<a class="action" href="'+url+'">View</a>';
+  };
 
   // Column descriptions for different tables
   col_desc = [ 
@@ -149,19 +154,22 @@ $(document).ready(function() {
     { data: "section" },
     { data: "slide" },
     { data: "stain" }
-  ]
+  ];
 
-  if(mode == 'annot') {
+  if(mode === 'annot') {
     col_desc.push({ data: "nannot"});
     blk_col_desc.push({ data: "nannot"});
     sld_col_desc.push({ data: "n_annot"});
     sld_col_desc.push({ data: "id", render: fn_annot_link});
   }
-  else if(mode == 'dltrain') {
+  else if(mode === 'dltrain') {
     col_desc.push({ data: "nsamples"});
     blk_col_desc.push({ data: "nsamples"});
     sld_col_desc.push({ data: "n_samples"});
     sld_col_desc.push({ data: "id", render: fn_dltrain_link});
+  }
+  else if(mode === 'browse') {
+    sld_col_desc.push({ data: "id", render: fn_browse_link});
   }
 
   t_specimen = $('#specimen').DataTable( {
@@ -211,18 +219,18 @@ $(document).ready(function() {
   var selected_spc = null;
   var selected_blk = null;
 
-  var py2js = function(str) { return str=="None" ? null : str; }
+  var py2js = function(str) { return str==="None" ? null : str; }
   var request_spc=py2js("{{specimen_name}}");
   var request_blk=py2js("{{block_name}}");
 
   var fn_select_row = function(table, col, value) {
     var indexes = table.rows().eq( 0 ).filter( function (rowIdx) {
-          return table.cell( rowIdx, col ).data() === value ? true : false;
+          return table.cell( rowIdx, col ).data() === value;
     } );
-    if(indexes.length == 1) {
+    if(indexes.length === 1) {
       table.row(indexes[0]).select();
     }
-  }
+  };
 
   t_slide = $('#slide').DataTable( {
     "ajax": function(data, callback, settings) {
@@ -243,7 +251,7 @@ $(document).ready(function() {
   } );
 
   t_specimen.on('select', function(e,dt,type,indexes) {
-    if(type=='row') {
+    if(type==='row') {
       // Set the target url
       selected_spc = t_specimen.rows(indexes).data().pluck('specimen_name')[0];
       t_block.ajax.reload();
@@ -254,7 +262,7 @@ $(document).ready(function() {
       selected_blk = null;
       $('#d_slides').css('display','none');
     }
-  })
+  });
 
   t_specimen.on('deselect', function(e,dt,type,indexes) {
     selected_spc = null;
@@ -263,7 +271,7 @@ $(document).ready(function() {
   })
 
   t_block.on('select', function(e,dt,type,indexes) {
-    if(type=='row') {
+    if(type==='row') {
 
       selected_blk=t_block.rows(indexes).data().pluck('block_name')[0];
       t_slide.ajax.reload();
@@ -272,7 +280,7 @@ $(document).ready(function() {
       var new_url=url_self.replace('XXXX', selected_spc).replace('YYYY', selected_blk);
       history.pushState({urlPath:new_url},selected_spc+":"+selected_blk,new_url);
     }
-  })
+  });
 
   t_block.on('deselect', function(e,dt,type,indexes) {
     selected_blk = null;

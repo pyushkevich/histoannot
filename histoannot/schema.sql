@@ -45,7 +45,7 @@ CREATE TABLE slide (
 DROP TABLE IF EXISTS task;
 CREATE TABLE task (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
   json TEXT NOT NULL,
   restrict_access BOOLEAN NOT NULL
 );
@@ -125,10 +125,12 @@ CREATE TABLE project_block (
 DROP TABLE IF EXISTS project_task;
 CREATE TABLE project_task (
   project TEXT NOT NULL,
-  task INT UNIQUE NOT NULL,
-  PRIMARY KEY(project,task),
+  task_id INT UNIQUE NOT NULL,
+  task_name TEXT NOT NULL,
+  PRIMARY KEY(project,task_name),
   FOREIGN KEY(project) REFERENCES project(id),
-  FOREIGN KEY(task) REFERENCES task(id)
+  FOREIGN KEY(task_id) REFERENCES task(id),
+  FOREIGN KEY(task_name) REFERENCES task(name)
 );
 
 DROP TABLE IF EXISTS project_access;

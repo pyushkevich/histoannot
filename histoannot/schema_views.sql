@@ -15,7 +15,7 @@ CREATE VIEW block_info AS
 DROP VIEW IF EXISTS task_info;
 CREATE VIEW task_info AS
    SELECT T.*, PT.project as project
-   FROM task T LEFT JOIN project_task PT on T.id = PT.task;
+   FROM task T LEFT JOIN project_task PT on T.id = PT.task_id;
 
 DROP VIEW IF EXISTS labelset_info;
 CREATE VIEW labelset_info AS

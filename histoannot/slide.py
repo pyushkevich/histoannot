@@ -21,7 +21,7 @@ from flask import(
 )
 from werkzeug.exceptions import abort
 
-from histoannot.auth import login_required
+from histoannot.auth import login_required, project_access_required, task_access_required
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef
@@ -64,12 +64,12 @@ def index():
 
 
 # The index
-@bp.route('/project/<project_name>')
-@login_required
-def project_detail(project_name):
+@bp.route('/project/<project>')
+@project_access_required
+def project_detail(project):
 
     # Render the entry page
-    return render_template('slide/projects_tasks.html', project_name=project_name)
+    return render_template('slide/projects_tasks.html', project_name=project)
 
 
 
@@ -112,7 +112,7 @@ def project_listing():
 
 
 @bp.route('/api/project/<project>/tasks')
-@login_required
+@project_access_required
 def task_listing(project):
     db=get_db()
 
@@ -151,7 +151,7 @@ def task_listing(project):
 
 # Specimen listing for a task
 @bp.route('/api/task/<int:task_id>/specimens')
-@login_required
+@task_access_required
 def task_specimen_listing(task_id):
     db = get_db()
 
@@ -189,7 +189,7 @@ def task_specimen_listing(task_id):
 
     elif task['mode'] == 'browse':
         blocks = db.execute(
-            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (S.id) as nslides, '
+            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (S.id) as nslides '
             'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
             'WHERE B.project=? AND %s '
             'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
@@ -199,7 +199,7 @@ def task_specimen_listing(task_id):
 
 # Task detail
 @bp.route('/task/<int:task_id>')
-@login_required
+@task_access_required
 def task_detail(task_id):
 
     # Get the current task data
@@ -211,7 +211,7 @@ def task_detail(task_id):
 
 # Specimen detail (same template as the task detail, but points to a specimen
 @bp.route('/task/<int:task_id>/specimen/<specimen_name>')
-@login_required
+@task_access_required
 def specimen_detail_by_name(task_id, specimen_name):
 
     # Get the current task data
@@ -223,7 +223,7 @@ def specimen_detail_by_name(task_id, specimen_name):
 
 # Block detail (same template as the task detail, but points to a block
 @bp.route('/task/<int:task_id>/specimen/<specimen_name>/block/<block_name>')
-@login_required
+@task_access_required
 def block_detail_by_name(task_id, specimen_name, block_name):
 
     # Get the current task data
@@ -235,7 +235,7 @@ def block_detail_by_name(task_id, specimen_name, block_name):
 
 # Task detail
 @bp.route('/api/task/<int:task_id>/specimen/<specimen_name>/blocks')
-@login_required
+@task_access_required
 def specimen_block_listing(task_id, specimen_name):
 
     db = get_db()
@@ -276,7 +276,7 @@ def specimen_block_listing(task_id, specimen_name):
             'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
             'WHERE project=? AND specimen_name=? AND %s '
             'GROUP BY B.id ORDER BY block_name' % where[0], 
-            (task_id, project, specimen_name) + where[1]).fetchall()
+            (project, specimen_name) + where[1]).fetchall()
 
     return json.dumps([dict(row) for row in blocks])
 
@@ -286,6 +286,7 @@ def make_slide_dbview(task_id, view_name):
 
     db=get_db()
 
+    # This call guarantees that there is no database spoofing
     project,task = get_task_data(task_id)
 
     # Create a where clause
@@ -314,10 +315,19 @@ def make_slide_dbview(task_id, view_name):
                       GROUP BY S.id
                       ORDER BY specimen_name, block_name, section, slide""" % (view_name,task_id,project,wcl))
 
+    elif task['mode'] == 'browse':
+
+        db.execute("""CREATE TEMP VIEW %s AS
+                      SELECT S.*
+                      FROM slide_info S
+                      WHERE S.project='%s' %s
+                      ORDER BY specimen_name, block_name, section, slide""" % (view_name,project,wcl))
+
+
 
 # The block detail listing
 @bp.route('/api/task/<int:task_id>/specimen/<specimen_name>/block/<block_name>/slides', methods=('GET', 'POST'))
-@login_required
+@task_access_required
 def block_slide_listing(task_id, specimen_name, block_name):
     db = get_db()
 
@@ -359,6 +369,15 @@ def block_slide_listing(task_id, specimen_name, block_name):
             'WHERE %s AND S.block_id = ?'
             'GROUP BY S.id ORDER BY section, slide ASC' % where[0], 
             (task_id,) + where[1] + (block_id,)).fetchall()
+
+    elif task['mode'] == 'browse':
+
+        slides = db.execute(
+            'SELECT S.* '
+            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
+            'WHERE %s AND S.block_id = ? '
+            'GROUP BY S.id ORDER BY section, slide ASC' % where[0],
+            where[1] + (block_id,)).fetchall()
 
     return json.dumps([dict(row) for row in slides])
 
@@ -429,7 +448,7 @@ def get_slide_info(task_id, slide_id):
 
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<resolution>/<affine_mode>', methods=('GET', 'POST'))
-@login_required
+@task_access_required
 def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the current task data
@@ -707,7 +726,7 @@ def _do_update_annot(task_id, slide_id, annot, stats):
 
 # Receive updated json for the slide
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/set', methods=('POST',))
-@login_required
+@task_access_required
 def update_annot_json(task_id, mode, resolution, slide_id):
 
     # Get the raw json
@@ -727,7 +746,7 @@ def update_annot_json(task_id, mode, resolution, slide_id):
 
 # Send the json for the slide
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/get', methods=('GET',))
-@login_required
+@task_access_required
 def get_annot_json(task_id, mode, resolution, slide_id):
 
     # Find the annotation in the database

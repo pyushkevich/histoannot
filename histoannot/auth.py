@@ -88,13 +88,70 @@ def load_logged_in_user():
 def login_required(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
+        # The user must exist
         if g.user is None:
+            current_app.logger.warning('Unauthorized access to %s' % request.url if request is not None else None)
             return redirect(url_for('auth.login'))
+
+        # The user should have a completed profile
+        if g.user['email'] is None:
+            return redirect(url_for('auth.edit_user_profile'))
+
 
         return view(**kwargs)
 
     return wrapped_view
 
+
+def project_access_required(view):
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+
+        # The project keyword must exist
+        if 'project' not in kwargs:
+            abort(404, "Project not specified")
+
+        project = kwargs['project']
+        db = get_db()
+        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
+                        (g.user['id'], project)).fetchone()
+
+        if rc is None:
+            current_app.logger.warning('Unauthorized access to project %s at URL %s'
+                                       % (project, request.url if request is not None else None))
+            abort(403, "You are not authorized to access project %s" % project)
+        else:
+            return view(**kwargs)
+
+    return wrapped_view
+
+
+def task_access_required(view):
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+
+        # The project keyword must exist
+        if 'task_id' not in kwargs:
+            abort(404, "Task ID not specified")
+
+        task_id = kwargs['task_id']
+
+        db = get_db()
+        rc = db.execute('SELECT * FROM project_access PA '
+                        '         LEFT JOIN project_task PT on PA.project = PT.project '
+                        'WHERE PA.user=? AND PT.task_id=?',
+                        (g.user['id'], task_id)).fetchone()
+
+        if rc is None:
+            current_app.logger.warning('Unauthorized access to task %d at URL %s'
+                                       % (task_id, request.url if request is not None else None))
+            abort(403, "You are not authorized to access task %d" % task_id)
+        else:
+            return view(**kwargs)
+
+    return wrapped_view
 
 def get_mail():
     if 'mail' not in g:
@@ -192,15 +249,14 @@ def email_exists(email, user_id=None):
     return rc_email['n'] > 0
 
 
-
 @bp.route('/pwreset/<resetkey>', methods=('GET', 'POST'))
 def reset_password(resetkey):
 
     # Check the reset key against the database
     db=get_db()
     rc = db.execute('SELECT U.*, t_expires, activated '
-               'FROM user U LEFT JOIN password_reset PR on U.id = PR.user '
-               'WHERE reset_key = ?', (resetkey,)).fetchone()
+                    'FROM user U LEFT JOIN password_reset PR on U.id = PR.user '
+                    'WHERE reset_key = ?', (resetkey,)).fetchone()
 
     # If nothing is found, then this is an invalid key, hacking attempt
     if rc is None:
@@ -217,43 +273,28 @@ def reset_password(resetkey):
     if rc['disabled'] > 0:
         abort(404, description="This link is for a non-active user.")
 
-    # If the request is empty, we need to have the user provide information
-    if request.method == 'GET':
-        return render_template('auth/reset.html',
-                               username=rc['username'],
-                               email=rc['email'] if rc['email'] is not None else '')
-
-    # The user is posting a completed profile. We must now update their password
-    rq_username = request.form['username']
-    rq_password = request.form['password']
-    rq_email = request.form['email']
-
+    # Error that will be flashed to the user
     error = None
 
-    # TODO: perform additional validation outside of JS in case robot was used
-    if not rq_username:
-        error = 'Username is required.'
-    elif not rq_email:
-        error = 'Email address is required.'
-    elif not rq_password:
-        error = 'Password is required.'
-    else:
-        # TODO: implement user prototypes and invitation codes (create user here)
+    # If the request is empty, we need to have the user provide information
+    if request.method == 'POST':
 
-        # Make sure that we are not duplicating another email address in the
-        # system. Every active user must have a unique email address
-        if email_exists(rq_email, rc['id']):
-            error = 'This email address is already in use by another user.'
+        # The user is posting a completed profile. We must now update their password
+        rq_password = request.form['password']
 
+        # TODO: perform additional validation outside of JS in case robot was used
+        if not rq_password:
+            error = 'Password is required.'
         else:
-
+            # TODO: implement user prototypes and invitation codes (create user here)
             # Update user's profile
-            db.execute('UPDATE user SET email=?, password=? WHERE id=?',
-                       (rq_email, generate_password_hash(rq_password), rc['id']))
+            db.execute('UPDATE user SET password=? WHERE id=?',
+                       (generate_password_hash(rq_password), rc['id']))
 
             # Disable the activation link
-            db.execute('UPDATE password_reset SET activated=1 WHERE reset_key=?',
-                       (resetkey,))
+            if resetkey is not None:
+                db.execute('UPDATE password_reset SET activated=1 WHERE reset_key=?',
+                           (resetkey,))
 
             db.commit()
 
@@ -269,18 +310,60 @@ def reset_password(resetkey):
     if error is not None:
         flash(error)
 
-    return render_template('auth/reset.html',
-                           username=rq_username,
-                           email=rq_email)
+    return render_template('auth/reset.html', username=rc['username'])
 
 
+@bp.route('/profile/edit', methods=('GET', 'POST'))
+def edit_user_profile():
+    db=get_db()
+
+    # The user must exist (same logic as @login_required)
+    if g.user is None:
+        return redirect(url_for('auth.login'))
+
+    # Get the user information
+    rc = db.execute('SELECT U.* FROM user U where U.id = ? ', (g.user['id'],)).fetchone()
+
+    error = None
+    rq_email = None
+    if request.method == 'POST':
+
+        # The user is posting a completed profile.
+        rq_email = request.form['email']
+
+        if not rq_email:
+            error = 'Email address is required.'
+        elif email_exists(rq_email, rc['id']):
+            # Make sure that we are not duplicating another email address in the
+            # system. Every active user must have a unique email address
+            error = 'This email address is already in use by another user.'
+        else:
+
+            # Update user's profile
+            db.execute('UPDATE user SET email=?WHERE id=?', (rq_email, rc['id']))
+            db.commit()
+
+            # Go to the home page
+            return redirect(url_for('index'))
+
+    else:
+        # If the user is missing some part of the profile, flash that
+        if rc['email'] is None:
+            error = "Please update your email address before proceeding to the site."
+
+    # Render the page again
+    if error is not None:
+        flash(error)
+
+    return render_template('auth/edit_profile.html',
+                           username=rc['username'],
+                           email = rq_email if rq_email is not None else rc['email'])
 
 
 def get_user_id(username):
     db=get_db()
     rc = db.execute('SELECT id FROM user WHERE username=?',(username,)).fetchone()
     return rc['id'] if rc is not None else None
-
 
 
 def create_password_reset_link(user_id, expiry = 86400):

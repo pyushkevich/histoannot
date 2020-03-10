@@ -392,9 +392,11 @@ def project_assign_unclaimed_command(project):
         db.execute('INSERT INTO project_block (project,block) VALUES (?,?)', (project, row['id']))
 
     # Assign all the tasks to the new project
-    rc = db.execute('SELECT id FROM task WHERE id NOT IN (SELECT DISTINCT(task) FROM project_task)')
+    rc = db.execute('SELECT id,name FROM task '
+                    'WHERE id NOT IN (SELECT DISTINCT(task_id) FROM project_task)')
     for row in rc.fetchall():
-        db.execute('INSERT INTO project_task (project,task) VALUES (?,?)', (project, row['id']))
+        db.execute('INSERT INTO project_task (project,task_id,task_name) VALUES (?,?,?)',
+                   (project, row['id'],row['name']))
 
     # Assign all the users to the new project
     rc = db.execute('SELECT id FROM user WHERE id NOT IN (SELECT DISTINCT(user) FROM project_access)')
@@ -704,8 +706,8 @@ def add_task(project, json_file, update_existing_task_id=None):
                             (data['name'], json.dumps(data), data['restrict-access']))
 
             # Associate the task with the project
-            rc = db.execute('INSERT INTO project_task (project, task) VALUES (?,?)',
-                            (project, rc.lastrowid))
+            rc = db.execute('INSERT INTO project_task (project, task_id, task_name) VALUES (?,?,?)',
+                            (project, rc.lastrowid, data['name']))
 
             print("Successfully inserted task %s with id %d" % (data['name'], rc.lastrowid))
 
@@ -719,7 +721,7 @@ def add_task(project, json_file, update_existing_task_id=None):
                 raise ValueError("Task %d not found" % int(update_existing_task_id))
 
             # If the task is currently not associated with the same project, update
-            db.execute('UPDATE project_task SET project=? WHERE task=?',
+            db.execute('UPDATE project_task SET project=? WHERE task_id=?',
                        (project, update_existing_task_id))
 
             print("Successfully updated task %d" % int(update_existing_task_id))
@@ -930,28 +932,41 @@ def create_edit_meta():
 # User permissions
 # --------------------------------
 @click.command('users-grant-permission')
-@click.argument('user_id')
+@click.argument('username', type=click.STRING)
 @click.option('--project','-p', help="Grant permission to specified project")
 @click.option('--project-admin',help="Grant permission to specified project as admin")
 @click.option('--site-admin', type=click.BOOL, help="Grant side-wide administrative permission")
 @with_appcontext
-def users_grant_permission_command(user_id, project, project_admin, site_admin):
+def users_grant_permission_command(username, project, project_admin, site_admin):
     """Grant permissions to users on projects and globally"""
     db=get_db()
 
+    # Check that the user is in the system
+    rc = db.execute('SELECT id FROM user WHERE username=?', (username,)).fetchone()
+    if rc is None:
+        current_app.logger.info('User %s does not exist' % (username,))
+        sys.exit(1)
+
+    user_id = rc['id']
+
     if site_admin is True:
         db.execute('UPDATE user SET site_admin=1 WHERE id=?', (user_id,))
-        print('User %d added as site administrator' % (user_id,))
+        current_app.logger.info('User %s added as site administrator' % (username,))
 
     if project_admin is not None:
         pr = ProjectRef(project_admin)
         db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,1)',
                    (project_admin, user_id))
+        current_app.logger.info('User %s added as administrator for project %s' % (username,project))
 
     if project is not None:
         pr = ProjectRef(project)
         db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,0)',
                    (project, user_id))
+        current_app.logger.info('User %s added as user for project %s' % (username,project))
+
+    db.commit()
+
 
 
 @click.command('users-list')

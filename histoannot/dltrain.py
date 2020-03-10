@@ -19,7 +19,7 @@ from flask import (
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, abort, Response
 )
 from werkzeug.exceptions import abort
-from histoannot.auth import login_required
+from histoannot.auth import login_required, task_access_required
 from histoannot.db import get_db
 
 # TODO: these should be moved to another module
@@ -52,7 +52,7 @@ bp = Blueprint('dltrain', __name__)
 
 # Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table/json', methods=('GET',))
-@login_required
+@task_access_required
 def get_labelset_labels_table_json(task_id, slide_id):
     db = get_db()
 
@@ -73,7 +73,7 @@ def get_labelset_labels_table_json(task_id, slide_id):
 
 # Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table', methods=('GET',))
-@login_required
+@task_access_required
 def get_labelset_labels_table(task_id, slide_id):
     db = get_db()
 
@@ -92,7 +92,7 @@ def get_labelset_labels_table(task_id, slide_id):
 
 # Get a table of recently created annotations
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/label/<int:label_id>/samples/table/json', methods=('POST','GET'))
-@login_required
+@task_access_required
 def get_samples_for_label(task_id, slide_id, label_id):
     db = get_db()
 
@@ -137,7 +137,7 @@ def get_samples_for_label(task_id, slide_id, label_id):
 
 
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/samples/table', methods=('GET',))
-@login_required
+@task_access_required
 def get_samples_for_label_table(task_id, slide_id):
 
     return render_template('dbtrain/sample_table.html', task_id=task_id, slide_id=slide_id, label_id=1)
@@ -145,7 +145,7 @@ def get_samples_for_label_table(task_id, slide_id):
 
 
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/picker', methods=('GET',))
-@login_required
+@task_access_required
 def get_labelset_labels_picker(task_id, slide_id):
 
     return render_template('dbtrain/label_picker.html', task_id=task_id, slide_id=slide_id)
@@ -172,7 +172,7 @@ def get_label_id_in_task(task_id, label_name):
 
 
 @bp.route('/dltrain/task/<int:task_id>/labelset/addlabel', methods=('POST',))
-@login_required
+@task_access_required
 def add_labelset_label(task_id):
 
     db = get_db()
@@ -234,7 +234,7 @@ def check_rect(task_id, rect):
     
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/create', methods=('POST',))
-@login_required
+@task_access_required
 def create_sample(task_id, slide_id):
 
     data = json.loads(request.get_data())
@@ -247,7 +247,7 @@ def create_sample(task_id, slide_id):
 
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/samples', methods=('GET',))
-@login_required
+@task_access_required
 def get_samples(task_id, slide_id):
     db = get_db()
     ll = db.execute(
@@ -258,7 +258,7 @@ def get_samples(task_id, slide_id):
         (slide_id, task_id));
     return json.dumps([dict(row) for row in ll.fetchall()])
 
-
+# TODO: login_required is insufficient here
 @bp.route('/dltrain/api/sample/delete', methods=('POST',))
 @login_required
 def delete_sample():
@@ -285,6 +285,7 @@ def delete_sample():
     return "success"
 
 
+# TODO: login_required is insufficient here
 @bp.route('/dltrain/api/sample/update', methods=('POST',))
 @login_required
 def update_sample():

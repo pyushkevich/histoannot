@@ -17,6 +17,7 @@ CREATE TABLE password_reset (
 PRAGMA foreign_keys=off;
 BEGIN TRANSACTION;
 
+/* Fix labelset */
 CREATE TABLE labelset_temp (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -29,6 +30,23 @@ FROM labelset;
 
 DROP TABLE labelset;
 ALTER TABLE labelset_temp RENAME TO labelset;
+
+
+/* Fix task */
+CREATE TABLE task_temp (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  json TEXT NOT NULL,
+  restrict_access BOOLEAN NOT NULL
+);
+
+INSERT INTO task_temp(id,name,json,restrict_access)
+SELECT id,name,json,restrict_access
+FROM task;
+
+DROP TABlE task;
+ALTER TABLE task_temp RENAME TO task;
+
 COMMIT;
 PRAGMA foreign_keys=on;
 
@@ -49,13 +67,16 @@ CREATE TABLE project_block (
   FOREIGN KEY(block) REFERENCES block(id)
 );
 
-/* Unique constraint on task means it can belong to only one project */
+/* Unique constraint on task means it can belong to only one project.
+   Also, within each project, the task name must be unique */
 CREATE TABLE project_task (
   project TEXT NOT NULL,
-  task INT UNIQUE NOT NULL,
-  PRIMARY KEY(project,task),
+  task_id INT UNIQUE NOT NULL,
+  task_name TEXT NOT NULL,
+  PRIMARY KEY(project,task_name),
   FOREIGN KEY(project) REFERENCES project(id),
-  FOREIGN KEY(task) REFERENCES task(id)
+  FOREIGN KEY(task_id) REFERENCES task(id),
+  FOREIGN KEY(task_name) REFERENCES task(name)
 );
 
 CREATE TABLE project_access (

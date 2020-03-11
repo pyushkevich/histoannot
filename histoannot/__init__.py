@@ -119,6 +119,10 @@ def create_app(test_config = None):
     # Supporting 'dzi' node (serves images/tiles but no database)
     elif app.config['HISTOANNOT_SERVER_MODE'] == "dzi_node":
 
+        # A master must be configured
+        if 'HISTOANNOT_MASTER_URL' not in app.config:
+            raise ValueError('Missing HISTOANNOT_MASTER_URL in config')
+
         # a simple page that says hello. This is needed for load balancers
         @app.route('/')
         def hello():

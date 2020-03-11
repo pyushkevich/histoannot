@@ -57,12 +57,54 @@ def do_preload_file(project, specimen, block, resource, slide_name, slide_ext):
     return tiff_file
 
 
+# Retrieve a ProjectRef from a 'secret' hash. Locally this is trivial, but for delegate nodes
+# this may involve pinging the master note to decipher the key
+def get_project_ref_from_hash(project_hash):
+
+    if current_app.config['HISTOANNOT_SERVER_MODE'] == "master":
+        for k in g.project_hash:
+            if g.project_hash[k] == project_hash:
+                return ProjectRef(k)
+
+    else:
+        if 'remote_project_hash' not in g:
+            g.remote_project_hash = {}
+
+        if project_hash not in g.remote_project_hash:
+
+            # Get the URL to ping on the master
+            master_url = "%s/delegate/project/%s" % \
+                         (current_app.config['HISTOANNOT_MASTER_URL'], project_hash)
+
+            # Ping the URL on the master
+            response = urllib2.urlopen(master_url, timeout=10)
+            proj_data = json.load(response)
+
+            # Create a project ref
+            g.remote_project_hash[project_hash] = ProjectRef(proj_data['name'],proj_data['dict'])
+
+        # Return the project ref
+        return g.remote_project_hash[project_hash]
+
+
+# On the server side, get the project details from a hash
+@bp.route('/delegate/project/<project_hash>', methods=('GET', 'POST'))
+def get_project_json_from_hash(project_hash):
+    for k in g.project_hash:
+        if g.project_hash[k] == project_hash:
+            pr = ProjectRef(k)
+            return json.dump({'name': k, 'dict': pr.get_dict()})
+
+
 # Prepare the DZI for a slide. Must be called first
 @bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
 def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
+    # The project code is a hash, from which the actual project reference needs to be generated.
+    pr = get_project_ref_from_hash(project)
+
     # Check if the file exists locally. If so, there is no need to queue a worker
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
     if tiff_file is not None:
         return json.dumps({ "status" : JobStatus.FINISHED })
@@ -153,9 +195,12 @@ def get_slide_raw_dims(slide_ref):
 @bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
 def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
 
+    # The project code is a hash, from which the actual project reference needs to be generated.
+    pr = get_project_ref_from_hash(project)
+
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
 
     tiff_file = sr.get_local_copy(resource, check_hash=True)
 
@@ -188,9 +233,12 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
         return 'bad format'
         abort(404)
 
+    # The project code is a hash, from which the actual project reference needs to be generated.
+    pr = get_project_ref_from_hash(project)
+
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
 
     os = None
@@ -221,9 +269,12 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
         return 'bad format'
         abort(404)
 
+    # The project code is a hash, from which the actual project reference needs to be generated.
+    pr = get_project_ref_from_hash(project)
+
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
     
     # Read the region centered on the box of size 512x512

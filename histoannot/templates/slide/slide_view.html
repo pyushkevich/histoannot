@@ -103,7 +103,7 @@
                 <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
                 <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
             </td>
-            <td align="center">
+            <td align="center" style="white-space: nowrap;"> 
                 {% if prev_slide %}
                     <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">&nbsp ❮ &nbsp</a>
                 {% endif %}
@@ -113,7 +113,7 @@
                 {% endif %}
             </td>
             <td align="right">
-                <form id="form_stain" target="#" style="display: inline;">
+                <form id="form_stain" target="#" style="display: inline; white-space: nowrap;">
                     <label for="form_stain_select">Stain:</label>
                     <select id="form_stain_select" style="font-size: 80%; color: black;">
                         {% for s in stain_list %}
@@ -124,7 +124,7 @@
                 <!-- affine or raw mode -->
                 &nbsp
                 {% if seg_mode != 'dltrain' %}
-                <form id="form_mode" target="#" style="display: inline;">
+                <form id="form_mode" target="#" style="display: inline; white-space: nowrap;">
                     <label for="form_mode_select">Transform:</label>
                     <select id="form_mode_select" style="font-size: 80%;  color: black;">
                         {% if have_affine  %}
@@ -134,7 +134,7 @@
                     </select>
                 </form>
                 &nbsp
-                <form id="form_res" target="#" style="display: inline;">
+                <form id="form_res" target="#" style="display: inline; white-space: nowrap;">
                     <label for="form_res_select">Resolution:</label>
                     <select id="form_res_select" style="font-size: 80%; color: black;">
                         {% if have_x16  %}
@@ -1274,7 +1274,7 @@ $(document).ready(function() {
 
     }
     // Initialize parts of UI related to annotation
-    else if (seg_mode == 'annot') {
+    else if (seg_mode == 'annot' || seg_mode == 'browse') {
 
         // Populate the trasform form
         $("#form_mode_select").val("{{affine_mode}}");

@@ -15,6 +15,8 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import uuid
+
 from flask import(
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response,
     current_app, send_from_directory, session
@@ -476,13 +478,23 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     del_url = find_delegate_for_slide(slide_id)
     del_url = del_url if del_url is not None else ''
 
+    # When delegating to a different node, we need to create a one-time hash that can be used
+    # by the node to retrieve the ProjectRef. This way a hacker cannot use the remote nodes to
+    # access restricted data. The hash is specific to each project and simply maps to a project
+    # ID
+    if 'project_hash' not in g:
+        g.project_hash = {}
+
+    if si['project'] not in g.project_hash:
+        g.project_hash[project] = uuid.uuid4()
+
     # Get additional project info
-    pr = ProjectRef(si['project'])
+    pr = ProjectRef()
 
     # Form the URL templates for preloading and actual dzi access, so that in JS we
     # can just do a quick substitution
     url_ctx = {
-            'project':si['project'],
+            'project':g.project_hash[project],
             'specimen':si['specimen_name'],
             'block':si['block_name'],
             'slide_name':si['slide_name'],

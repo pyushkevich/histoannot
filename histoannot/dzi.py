@@ -71,23 +71,23 @@ def get_project_ref_from_master(api_key, project):
         # See if the project data is locally cached
         if 'proj_data_cache' not in g:
             g.proj_data_cache = {}
-        if (api_key,project) in proj_data_cache:
-            return p.proj_data_cache[(api_key,project)]
+        if (api_key,project) in g.proj_data_cache:
+            return g.proj_data_cache[(api_key,project)]
 
         # Get the URL to ping on the master
-        master_url = "%s/delegate/%s/project/%s" % \
+        master_url = '%s/auth/%s/project/%s' % \
                      (current_app.config['HISTOANNOT_MASTER_URL'], api_key, project)
 
         # Ping the URL on the master
+        print('URL: %s' % (master_url,))
         response = urllib2.urlopen(master_url, timeout=10)
         proj_data = json.load(response)
 
         # Create a local copy
-        p.proj_data_cache[(api_key,project)] = proj_data
-
+        g.proj_data_cache[(api_key,project)] = proj_data
 
     # Create a project ref
-    return ProjectRef(project, json.loads(proj_data))
+    return ProjectRef(project, proj_data)
 
 
 # Prepare the DZI for a slide. Must be called first

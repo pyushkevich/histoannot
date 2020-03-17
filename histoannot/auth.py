@@ -26,12 +26,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from flask_mail import Message, Mail
 
 from histoannot.db import get_db
+from histoannot.project_ref import ProjectRef
 import os
 import click
 import hashlib
 import getpass
 import sys
 import uuid
+import json
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -376,6 +378,46 @@ def create_password_reset_link(user_id, expiry = 86400):
     return url_for('auth.reset_password', _external=True, resetkey=reset_key)
 
 
+# The API key is like a reset link, but used for API calls.
+def create_api_key(user_id, expiry=3600*24*7):
+    db=get_db()
+
+    # Delete all the expired API keys
+    db.execute('DELETE FROM api_key WHERE t_expires < ?', (time.time(),))
+
+    # Find the API key if it exists
+    rc = db.execute('SELECT * FROM api_key WHERE user=?', (user_id,)).fetchone()
+    key = rc['key'] if rc is not None else str(uuid.uuid4())
+
+    # Update the entry with the new expiration date and key
+    db.execute('REPLACE INTO api_key (user,key,t_expires) VALUES (?,?,?)',
+               (user_id, key, time.time() + expiry))
+    db.commit()
+
+    return key
+    
+
+# On the server side, get the project details from a hash
+@bp.route('/<api_key>/project/<project>', methods=('GET', 'POST'))
+def get_project_ref_json(api_key, project):
+    db=get_db()
+
+    # Check if the hash is valid and user has access to project
+    rc=db.execute('SELECT * FROM api_key AK LEFT JOIN project_access PA on AK.user=PA.user '
+                  'WHERE AK.key=? AND AK.t_expires > ? AND PA.project=?',
+                  (api_key, time.time(), project)).fetchone()
+    print('WTF*********************')
+    print('RC is ', rc)
+    if rc is not None:
+        pr = ProjectRef(project)
+        return json.dumps(pr.get_dict())
+    else:
+        return 'chicken'
+
+
+
+
+
 @click.command('users-add')
 @click.argument('username')
 @click.option('-p', '--projects', multiple=True, help='Add user to specified project')
@@ -441,6 +483,23 @@ def user_get_reset_link_command(username, expiry):
         print('User is not in the system')
         sys.exit(1)
 
+
+@click.command('users-get-api-key')
+@click.argument('username')
+@click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=3600*24*7)
+@with_appcontext
+def user_get_api_key_command(username, expiry):
+    user_id = get_user_id(username)
+    if user_id is not None:
+        key = create_api_key(user_id, expiry)
+        print('API key for user %s: %s' % (username,key))
+    else:
+        print('User is not in the system')
+        sys.exit(1)
+
+
+
 def init_app(app):
     app.cli.add_command(user_add_command)
     app.cli.add_command(user_get_reset_link_command)
+    app.cli.add_command(user_get_api_key_command)

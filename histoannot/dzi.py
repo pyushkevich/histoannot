@@ -49,9 +49,9 @@ from flask.cli import with_appcontext
 
 
 # The function that is enqueued in RQ
-def do_preload_file(project, specimen, block, resource, slide_name, slide_ext):
+def do_preload_file(project, proj_dict, specimen, block, resource, slide_name, slide_ext):
 
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(ProjectRef(project, proj_dict), specimen, block, slide_name, slide_ext)
     print('Fetching %s %s %s %s.%s' % (project, specimen, block, slide_name, slide_ext))
     tiff_file = sr.get_local_copy(resource, check_hash=True)
     print('Fetched to %s' % tiff_file)
@@ -64,7 +64,7 @@ def get_project_ref_from_master(api_key, project):
     if current_app.config['HISTOANNOT_SERVER_MODE'] == "master":
 
         # Simply call the method
-        proj_data = get_project_ref_json(api_key, project)
+        proj_data = json.loads(get_project_ref_json(api_key, project))
 
     else:
 
@@ -95,7 +95,7 @@ def get_project_ref_from_master(api_key, project):
           methods=('GET', 'POST'))
 def dzi_preload(api_key, project, specimen, block, resource, slide_name, slide_ext):
 
-    # The project code is a hash, from which the actual project reference needs to be generated.
+    # Use the API key to obtain the project ref
     pr = get_project_ref_from_master(api_key, project)
 
     # Check if the file exists locally. If so, there is no need to queue a worker
@@ -106,7 +106,8 @@ def dzi_preload(api_key, project, specimen, block, resource, slide_name, slide_e
 
     # Get a redis queue
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, specimen, block, resource, slide_name, slide_ext,
+    job = q.enqueue(do_preload_file, project, pr.get_dict(),
+            specimen, block, resource, slide_name, slide_ext,
             job_timeout="300s", result_ttl="60s")
 
     # Stick the properties into the job

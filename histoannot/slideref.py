@@ -17,7 +17,8 @@
 #
 from urlparse import urlparse
 
-from project_ref import ProjectRef
+from histoannot.project_ref import ProjectRef
+from histoannot.db import get_db
 import os
 from flask import g, current_app
 
@@ -77,4 +78,32 @@ class SlideRef:
     # Get the download progress (fraction of local file size to remote)
     def get_download_progress(self, resource):
         return self._proj.get_download_progress(resource, self._d)
+
+
+# Get a slide ref by database ID
+def get_slide_ref(slice_id, project=None):
+    """
+    Create a slide reference from a database slide ID
+    :param slice_id: database ID of a slide
+    :type slide_id: int
+    :param project: optional project reference to associate with
+    :type project: ProjectRef
+    :return:
+    """
+    db = get_db()
+
+    # Load slide from database
+    row = db.execute('SELECT * from slide_info WHERE id = ?', (slice_id,)).fetchone()
+
+    # Handle missing data
+    if row is None:
+        return None
+
+    # Create a project reference
+    if project is None:
+        project = ProjectRef(row['project'])
+
+    # Create a slide reference
+    return SlideRef(project, row['specimen_name'], row['block_name'], row['slide_name'], row['slide_ext'])
+
 

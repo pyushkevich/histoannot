@@ -23,11 +23,11 @@ from flask import(
 )
 from werkzeug.exceptions import abort
 
-from histoannot.auth import login_required, project_access_required, task_access_required, create_api_key
+from histoannot.auth import login_required, project_access_required, task_access_required
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
-from histoannot.slideref import SlideRef
-from histoannot.project_cli import get_slide_ref, get_task_data, update_edit_meta, create_edit_meta
+from histoannot.slideref import SlideRef, get_slide_ref
+from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_affine_matrix, get_slide_raw_dims
 from io import BytesIO
@@ -474,20 +474,12 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             task_id=task_id, slide_id=slide_id,
             resolution=rd_resolution, affine_mode=rd_affine_mode))
 
-    # Are we delegating DZI service to separate nodes?
-    del_url = find_delegate_for_slide(slide_id)
-    del_url = del_url if del_url is not None else ''
-
     # Get additional project info
     pr = ProjectRef(project)
-
-    # Get the user's API key (so that dzi helper nodes do not circumvent security)
-    api_key = create_api_key(g.user['id'])
 
     # Form the URL templates for preloading and actual dzi access, so that in JS we
     # can just do a quick substitution
     url_ctx = {
-            'api_key': api_key,
             'project':project,
             'specimen':si['specimen_name'],
             'block':si['block_name'],
@@ -496,8 +488,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'mode':affine_mode,
             'resource':'XXXXX'}
 
-    url_tmpl_preload = del_url + url_for('dzi.dzi_preload', **url_ctx)
-    url_tmpl_dzi = del_url + url_for('dzi.dzi', **url_ctx)
+    url_tmpl_preload = url_for('dzi.dzi_preload', **url_ctx)
+    url_tmpl_dzi = url_for('dzi.dzi', **url_ctx)
 
     # Build a dictionary to call
     context = {
@@ -515,7 +507,6 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'project':si['project'],
             'project_name':pr.disp_name,
             'block_id': si['block_id'],
-            'dzi_url': del_url,
             'url_tmpl_preload': url_tmpl_preload,
             'url_tmpl_dzi': url_tmpl_dzi,
             'task':task }

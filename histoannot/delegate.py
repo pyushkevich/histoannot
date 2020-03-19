@@ -57,13 +57,13 @@ def check_dzi_node_alive(url, timeout=5):
     return False
 
 
-
 # Find a delegate to handle a slide. Returns URL of a verified live delegate or
 # None if delegation is disabled or there are no live delegates
-def find_delegate_for_slide(slide_id, ping_timeout=120):
+def find_delegate_for_slide(slide_id=None, project=None, slide_name=None,
+                            ping_timeout=120, check_alive=False):
 
     # Are we delegating DZI service to separate nodes?
-    if not current_app.config['HISTOANNOT_DELEGATE_DZI']:
+    if not current_app.config.get('HISTOANNOT_DELEGATE_DZI', False):
         return None
 
     # Initialize return value to None
@@ -75,6 +75,12 @@ def find_delegate_for_slide(slide_id, ping_timeout=120):
     # Need database
     db=get_db()
 
+    # If missing slide_id, we need to get it
+    if slide_id is None:
+        rc = db.execute('SELECT id FROM slide_info WHERE project=? AND slide_name=?',
+                        (project, slide_name)).fetchone()
+        slide_id=rc['id']
+
     # Check if the slide is already being delegated
     rc = db.execute(
             "SELECT DN.* FROM slide_dzi_node SDN "
@@ -85,7 +91,7 @@ def find_delegate_for_slide(slide_id, ping_timeout=120):
     del_url = rc['url'] if rc is not None else None
 
     # Check if the delegation node is alive
-    if del_url is None or not check_dzi_node_alive(del_url):
+    if del_url is None or (check_alive is True and not check_dzi_node_alive(del_url)):
 
         # Need to assign a new url to the slide
         rc_all = db.execute(
@@ -100,13 +106,8 @@ def find_delegate_for_slide(slide_id, ping_timeout=120):
     # If we found a delegate, store it with the node
     if del_url is not None:
         print('DELEGATING slide %d to %s' % (slide_id, del_url))
-        rc_upd = db.execute(
-                "UPDATE slide_dzi_node SET url=? WHERE slide_id=?",
-                (del_url, slide_id))
-        if rc_upd.rowcount != 1:
-            db.execute(
-                    "INSERT INTO slide_dzi_node(url,slide_id) VALUES (?,?)",
-                    (del_url, slide_id))
+        db.execute("REPLACE INTO slide_dzi_node(url,slide_id) VALUES (?,?)",
+                   (del_url, slide_id))
     else:
         print('NOT DELEGATING slide %d', (slide_id, del_url))
         db.execute("DELETE FROM slide_dzi_node WHERE slide_id=?", (slide_id,));

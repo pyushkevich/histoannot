@@ -63,7 +63,7 @@ def find_delegate_for_slide(slide_id=None, project=None, slide_name=None,
                             ping_timeout=120, check_alive=False):
 
     # Are we delegating DZI service to separate nodes?
-    if not current_app.config.get('HISTOANNOT_DELEGATE_DZI', False):
+    if current_app.config.get('HISTOANNOT_DELEGATE_DZI', False) is False:
         return None
 
     # Initialize return value to None

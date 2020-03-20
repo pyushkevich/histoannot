@@ -33,7 +33,7 @@ import urllib2
 from PIL import Image
 
 from project_ref import ProjectRef
-from histoannot.slideref import SlideRef
+from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.db import get_db
 
 def init_db_dltrain():

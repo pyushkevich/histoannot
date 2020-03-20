@@ -73,11 +73,11 @@ def forward_to_worker(view):
             return view(**kwargs)
 
         # Call the worker's method
-        full_url = '%s/%s' % (worker_url, request.url)
+        full_url = '%s/%s' % (worker_url, request.full_path)
 
         # Take the project information and embed it in the call as a POST parameter
         pr = ProjectRef(kwargs['project'])
-        post_data = {'project_data': urllib.urlencode(pr.get_dict())}
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
         return urllib2.urlopen(full_url, post_data).read()
 
     return wrapped_view

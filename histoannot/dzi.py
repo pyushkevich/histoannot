@@ -40,7 +40,6 @@ from openslide.deepzoom import DeepZoomGenerator
 from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
-from histoannot.auth import get_project_ref_json
 from histoannot.delegate import find_delegate_for_slide
 
 bp = Blueprint('dzi', __name__)

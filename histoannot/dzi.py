@@ -89,7 +89,7 @@ def forward_to_worker(view):
 def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, request.form.get('project_data'))
+    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
 
     # Check if the file exists locally. If so, there is no need to queue a worker
     sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
@@ -115,6 +115,7 @@ def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 @bp.route('/dzi/job/<project>/<slide_name>/<job_id>/status', methods=('GET', 'POST'))
 @forward_to_worker
 def dzi_job_status(project, slide_name, job_id):
+    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     j = q.fetch_job(job_id)
 
@@ -126,7 +127,7 @@ def dzi_job_status(project, slide_name, job_id):
 
     if j.get_status() == JobStatus.STARTED:
         (project, specimen, block, resource, slide_name, slide_ext) = j.meta['args']
-        sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+        sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
         res['progress'] = sr.get_download_progress(resource)
 
     return json.dumps(res)
@@ -187,7 +188,7 @@ def get_slide_raw_dims(slide_ref):
 def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, request.form.get('project_data'))
+    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
@@ -226,7 +227,7 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
         abort(404)
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, request.form.get('project_data'))
+    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
@@ -263,7 +264,7 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
         abort(404)
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, request.form.get('project_data'))
+    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
@@ -310,15 +311,8 @@ def delegate_dzi_ping_command():
         print('Missing HISTOANNOT_MASTER_URL in config')
         return 2
 
-    # Get the external IP address (GCP-specific)
-    opener = urllib2.build_opener()
-    opener.addheaders = [('Metadata-Flavor','Google')]
-    external_ip = opener.open(
-            'http://metadata/computeMetadata/v1/instance'
-            '/network-interfaces/0/access-configs/0/external-ip').read()
-
     # Store our URL (TODO: read port from config)
-    node_url = 'http://%s:5000' % (external_ip,)
+    node_url = url_for('hello')
     master_url = current_app.config['HISTOANNOT_MASTER_URL'] + '/delegate/ping'
 
     while True:

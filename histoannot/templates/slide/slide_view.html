@@ -337,9 +337,8 @@ $(document).ready(function() {
     var check_preload_progress = function(job_id) {
         var myurl =
             $.ajax({
-                url: "{{ dzi_url + url_for('dzi.dzi_job_status', job_id=999999) }}".replace("999999",job_id),
+                url: "{{ url_for('dzi.dzi_job_status', project=project, slide_name=slide_info['slide_name'], job_id=999999) }}".replace("999999",job_id),
                 success: function(response_text) {
-                    console.log(response_text);
                     data = JSON.parse(response_text);
                     if(data.status === 'queued' || data.status === 'started') {
                         progress_dialog.dialog("open");

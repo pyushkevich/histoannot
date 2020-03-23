@@ -29,6 +29,7 @@ import urllib
 import urllib2
 import psutil
 import re
+import functools
 
 from rq import Queue, Connection, Worker
 from rq.job import Job, JobStatus
@@ -36,9 +37,11 @@ from redis import Redis
 
 from openslide import OpenSlide, OpenSlideError
 from openslide.deepzoom import DeepZoomGenerator
-from histoannot.slideref import SlideRef
+from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
+from histoannot.delegate import find_delegate_for_slide
+from histoannot.auth import project_access_required
 
 bp = Blueprint('dzi', __name__)
 
@@ -48,28 +51,69 @@ from flask.cli import with_appcontext
 
 
 # The function that is enqueued in RQ
-def do_preload_file(project, specimen, block, resource, slide_name, slide_ext):
+def do_preload_file(project, proj_dict, specimen, block, resource, slide_name, slide_ext):
 
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(ProjectRef(project, proj_dict), specimen, block, slide_name, slide_ext)
     print('Fetching %s %s %s %s.%s' % (project, specimen, block, slide_name, slide_ext))
     tiff_file = sr.get_local_copy(resource, check_hash=True)
     print('Fetched to %s' % tiff_file)
     return tiff_file
 
 
+# Forward to a worker if possible
+def forward_to_worker(view):
+    @functools.wraps(view)
+    def wrapped_view(**kwargs):
+
+        # Find or allocate an assigned worker for this slide
+        worker_url = find_delegate_for_slide(project=kwargs['project'], slide_name=kwargs['slide_name'])
+
+        # If no worker, just call the method
+        if worker_url is None:
+            return view(**kwargs)
+
+        # Call the worker's method
+        full_url = '%s/%s' % (worker_url, request.full_path)
+
+        # Take the project information and embed it in the call as a POST parameter
+        pr = ProjectRef(kwargs['project'])
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
+        return urllib2.urlopen(full_url, post_data).read()
+
+    return wrapped_view
+
+
+# Get the project data if present in the request
+def dzi_get_project_ref(project):
+
+    if current_app.config['HISTOANNOT_SERVER_MODE'] != 'dzi_node':
+        # TODO: Check permission!
+        return ProjectRef(project)
+
+    else:
+        pdata = json.loads(request.form.get('project_data'))
+        return ProjectRef(project, pdata)
+
+
 # Prepare the DZI for a slide. Must be called first
 @bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+@project_access_required
+@forward_to_worker
 def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
+    # Get a project reference, using either local database or remotely supplied dict
+    pr = dzi_get_project_ref(project)
+
     # Check if the file exists locally. If so, there is no need to queue a worker
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
     if tiff_file is not None:
         return json.dumps({ "status" : JobStatus.FINISHED })
 
     # Get a redis queue
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, specimen, block, resource, slide_name, slide_ext,
+    job = q.enqueue(do_preload_file, project, pr.get_dict(),
+            specimen, block, resource, slide_name, slide_ext,
             job_timeout="300s", result_ttl="60s")
 
     # Stick the properties into the job
@@ -81,8 +125,10 @@ def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
 
 # Check the status of a job
-@bp.route('/dzi/job/<job_id>/status', methods=('GET', 'POST'))
-def dzi_job_status(job_id):
+@bp.route('/dzi/job/<project>/<slide_name>/<job_id>/status', methods=('GET', 'POST'))
+@forward_to_worker
+def dzi_job_status(project, slide_name, job_id):
+    pr = dzi_get_project_ref(project)
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     j = q.fetch_job(job_id)
 
@@ -94,11 +140,10 @@ def dzi_job_status(job_id):
 
     if j.get_status() == JobStatus.STARTED:
         (project, specimen, block, resource, slide_name, slide_ext) = j.meta['args']
-        sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+        sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
         res['progress'] = sr.get_download_progress(resource)
 
     return json.dumps(res)
-
 
 
 # Get affine matrix corresponding to affine mode and resolution
@@ -150,12 +195,18 @@ def get_slide_raw_dims(slide_ref):
 
 
 # Get the DZI for a slide
-@bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+@bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi',
+          methods=('GET', 'POST'))
+@project_access_required
+@forward_to_worker
 def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
+
+    # Get a project reference, using either local database or remotely supplied dict
+    pr = dzi_get_project_ref(project)
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
 
     tiff_file = sr.get_local_copy(resource, check_hash=True)
 
@@ -181,6 +232,8 @@ class PILBytesIO(BytesIO):
 # Get the tiles for a slide
 @bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
+@project_access_required
+@forward_to_worker
 def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
@@ -188,9 +241,12 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
         return 'bad format'
         abort(404)
 
+    # Get a project reference, using either local database or remotely supplied dict
+    pr = dzi_get_project_ref(project)
+
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
 
     os = None
@@ -213,6 +269,8 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
+@project_access_required
+@forward_to_worker
 def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
 
     format = format.lower()
@@ -221,9 +279,12 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
         return 'bad format'
         abort(404)
 
+    # Get a project reference, using either local database or remotely supplied dict
+    pr = dzi_get_project_ref(project)
+
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(ProjectRef(project), specimen, block, slide_name, slide_ext)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
     
     # Read the region centered on the box of size 512x512
@@ -266,15 +327,8 @@ def delegate_dzi_ping_command():
         print('Missing HISTOANNOT_MASTER_URL in config')
         return 2
 
-    # Get the external IP address (GCP-specific)
-    opener = urllib2.build_opener()
-    opener.addheaders = [('Metadata-Flavor','Google')]
-    external_ip = opener.open(
-            'http://metadata/computeMetadata/v1/instance'
-            '/network-interfaces/0/access-configs/0/external-ip').read()
-
     # Store our URL (TODO: read port from config)
-    node_url = 'http://%s:5000' % (external_ip,)
+    node_url = url_for('hello')
     master_url = current_app.config['HISTOANNOT_MASTER_URL'] + '/delegate/ping'
 
     while True:

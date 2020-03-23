@@ -29,6 +29,7 @@ from . import project_ref
 from . import project_cli
 from glob import glob
 from project_ref import RemoteResourceCache, ProjectRef
+from socket import gethostname
 
 # Needed for AJAX redirects to DZI nodes
 def _add_cors_headers(response):
@@ -46,25 +47,30 @@ def create_app(test_config = None):
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True)
 
+    # ensure the instance folder exists
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
+
     # Handle configurtion
     app.config['SECRET_KEY'] = 'dev'
     app.config['HISTOANNOT_DELEGATE_DZI'] = False
 
     # Descriptive keys
-    app.config['HISTOANNOT_PUBLIC_NAME'] = app.config.get('HISTOANNOT_PUBLIC_NAME','PICSL Histology Annotation System')
+    app.config['HISTOANNOT_PUBLIC_NAME'] = 'PICSL Histology Annotation System'
 
+    # Server name. Should ideally be specified in the config file, but
+    # for DZI worker nodes, it is easier to set it to the hostname
+    app.config['SERVER_NAME'] = gethostname()
+
+    # Read the config file
     if test_config is None:
         # load the instance config, if it exists, when not testing
         app.config.from_pyfile('config.py', silent=True)
     else:
         # load the test config if passed in
         app.config.from_mapping(test_config)
-
-    # ensure the instance folder exists
-    try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
 
     # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)

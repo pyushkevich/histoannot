@@ -90,6 +90,12 @@ def load_logged_in_user():
 def login_required(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
+
+        # On the dzi worker node, there is no database, access is managed through
+        # nginx server and firewall
+        if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
+            return view(**kwargs)
+
         # The user must exist
         if g.user is None:
             current_app.logger.warning('Unauthorized access to %s' % request.url if request is not None else None)
@@ -109,6 +115,11 @@ def project_access_required(view):
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
+
+        # On the dzi worker node, there is no database, access is managed through
+        # nginx server and firewall
+        if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
+            return view(**kwargs)
 
         # The project keyword must exist
         if 'project' not in kwargs:
@@ -375,7 +386,7 @@ def create_password_reset_link(user_id, expiry = 86400):
     db.execute('INSERT INTO password_reset(reset_key,user,t_expires) '
                'VALUES (?,?,?)', (reset_key, user_id, time.time() + expiry))
     db.commit()
-    return url_for('auth.reset_password', _external=True, resetkey=reset_key)
+    return "%s/pwreset/%s" % (current_app.config.get('HISTOANNOT_PUBLIC_URL'), reset_key)
 
 
 @click.command('users-add')

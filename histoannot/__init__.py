@@ -60,10 +60,6 @@ def create_app(test_config = None):
     # Descriptive keys
     app.config['HISTOANNOT_PUBLIC_NAME'] = 'PICSL Histology Annotation System'
 
-    # Server name. Should ideally be specified in the config file, but
-    # for DZI worker nodes, it is easier to set it to the hostname
-    app.config['SERVER_NAME'] = gethostname()
-
     # Read the config file
     if test_config is None:
         # load the instance config, if it exists, when not testing
@@ -71,6 +67,16 @@ def create_app(test_config = None):
     else:
         # load the test config if passed in
         app.config.from_mapping(test_config)
+
+
+    # SERVER_NAME in Flask is a mess. It should only be set for dzi_node 
+    # (worker) instances, but avoid it for master instances, because it will
+    # cause havoc with requests that refer to the server differently (by IP, etc)
+    if not app.config.get('SERVER_NAME'):
+        if app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
+            # When server name is missing and we are on a worker node, this is
+            # a problem. It is also a problem if we are running in command-line mode
+            app.config['SERVER_NAME'] = gethostname()
 
     # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)

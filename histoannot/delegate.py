@@ -31,6 +31,7 @@ bp = Blueprint('delegate', __name__)
 
 @bp.route('/delegate/ping', methods=('POST','GET'))
 def ping():
+    print("GETTING PINGED")
     db=get_db()
     if 'url' in request.form and 'cpu_percent' in request.form:
         db.execute('INSERT OR REPLACE INTO dzi_node(url,t_ping,cpu_percent) VALUES(?,?,?)',

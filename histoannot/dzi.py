@@ -41,6 +41,7 @@ from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
 from histoannot.delegate import find_delegate_for_slide
+from histoannot.auth import project_access_required
 
 bp = Blueprint('dzi', __name__)
 
@@ -82,13 +83,26 @@ def forward_to_worker(view):
     return wrapped_view
 
 
+# Get the project data if present in the request
+def dzi_get_project_ref(project):
+
+    if current_app.config['HISTOANNOT_SERVER_MODE'] != 'dzi_node':
+        # TODO: Check permission!
+        return ProjectRef(project)
+
+    else:
+        pdata = json.loads(request.form.get('project_data'))
+        return ProjectRef(project, pdata)
+
+
 # Prepare the DZI for a slide. Must be called first
 @bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+@project_access_required
 @forward_to_worker
 def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
+    pr = dzi_get_project_ref(project)
 
     # Check if the file exists locally. If so, there is no need to queue a worker
     sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
@@ -114,7 +128,7 @@ def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 @bp.route('/dzi/job/<project>/<slide_name>/<job_id>/status', methods=('GET', 'POST'))
 @forward_to_worker
 def dzi_job_status(project, slide_name, job_id):
-    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
+    pr = dzi_get_project_ref(project)
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     j = q.fetch_job(job_id)
 
@@ -183,11 +197,12 @@ def get_slide_raw_dims(slide_ref):
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi',
           methods=('GET', 'POST'))
+@project_access_required
 @forward_to_worker
 def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
+    pr = dzi_get_project_ref(project)
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
@@ -217,6 +232,7 @@ class PILBytesIO(BytesIO):
 # Get the tiles for a slide
 @bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
+@project_access_required
 @forward_to_worker
 def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level, col, row, format):
     format = format.lower()
@@ -226,7 +242,7 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
         abort(404)
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
+    pr = dzi_get_project_ref(project)
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
@@ -253,6 +269,7 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
+@project_access_required
 @forward_to_worker
 def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
 
@@ -263,7 +280,7 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
         abort(404)
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = ProjectRef(project, json.loads(request.form.get('project_data')))
+    pr = dzi_get_project_ref(project)
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)

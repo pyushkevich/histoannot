@@ -170,7 +170,7 @@ def reset():
     error = None
 
     rq_email = request.form['email']
-    rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = 0', (rq_email,)).fetchone()
+    rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = 0 COLLATE NOCASE', (rq_email,)).fetchone()
 
     if rc is None:
         error = "There is no active user with email address %s" % (rq_email,)
@@ -240,11 +240,13 @@ def email_exists(email, user_id=None):
 
     if user_id is None:
         rc_email = db.execute('SELECT COUNT(id) as n FROM user '
-                              'WHERE email=? AND disabled=0',
+                              'WHERE email=? AND disabled=0 '
+                              'COLLATE NOCASE',
                               (email,)).fetchone()
     else:
         rc_email = db.execute('SELECT COUNT(id) as n FROM user '
-                              'WHERE email=? AND id <> ? AND disabled=0',
+                              'WHERE email=? AND id <> ? AND disabled=0 ',
+                              'COLLATE NOCASE',
                               (email, user_id)).fetchone()
     return rc_email['n'] > 0
 
@@ -373,7 +375,10 @@ def create_password_reset_link(user_id, expiry = 86400):
     db.execute('INSERT INTO password_reset(reset_key,user,t_expires) '
                'VALUES (?,?,?)', (reset_key, user_id, time.time() + expiry))
     db.commit()
-    return url_for('auth.reset_password', _external=True, resetkey=reset_key)
+    return '%s/auth/pwreset/%s' % \
+            (current_app.config.get('HISTOANNOT_PUBLIC_URL', 
+                current_app.config.get('SERVER_NAME')),
+            reset_key)
 
 
 @click.command('users-add')

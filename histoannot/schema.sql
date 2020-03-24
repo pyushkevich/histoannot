@@ -142,6 +142,3 @@ CREATE TABLE project_access (
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY (user) REFERENCES user (id)
 );
-
-
-

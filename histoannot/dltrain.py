@@ -23,10 +23,11 @@ from histoannot.auth import login_required, task_access_required
 from histoannot.db import get_db
 
 # TODO: these should be moved to another module
-from histoannot.project_cli import get_slide_ref, get_task_data, create_edit_meta, update_edit_meta
+from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_patch
 from histoannot.slide import make_slide_dbview, annot_sample_path_curves
+from histoannot.slideref import get_slide_ref
 
 import sqlite3
 import json

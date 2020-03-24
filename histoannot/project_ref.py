@@ -100,21 +100,31 @@ class ProjectRef:
 
     # Constructor reads and checks the json file for the project. The
     # name of the json file must match the name of the project in the
-    # database
-    def __init__(self, name):
+    # database. An alternative invocation is to pass None for the name
+    # and provide all the necessary fields directly in the dict
+    def __init__(self, name, dict=None):
 
-        # Read the database entry for the project
-        db = get_db()
-        rc = db.execute('SELECT * FROM project WHERE id=?', (name,)).fetchone()
-        if rc is None:
-            raise ValueError('Project %s is not in the database' % (name,))
-
-        # Read the database entries into local vars
         self.name = name
-        self.disp_name = rc['disp_name']
-        self.desc = rc['desc']
-        self.url_base = rc['base_url']
-        self._dict = json.loads(rc['json'])
+
+        if dict is None:
+            # When JSON is not provided, we read the entry from the database
+            db = get_db()
+            rc = db.execute('SELECT * FROM project WHERE id=?', (name,)).fetchone()
+            if rc is None:
+                raise ValueError('Project %s is not in the database' % (name,))
+
+            # Read the database entries into local vars
+            self.disp_name = rc['disp_name']
+            self.desc = rc['desc']
+            self.url_base = rc['base_url']
+            self._dict = json.loads(rc['json'])
+
+        else:
+            # Use dict
+            self.disp_name = dict['disp_name']
+            self.desc = dict['desc']
+            self.url_base = dict['base_url']
+            self._dict = dict
 
         # Initialize the URL handler
         if self.url_base.startswith('gs://'):
@@ -127,6 +137,9 @@ class ProjectRef:
 
     def get_url_handler(self):
         return self._url_handler
+
+    def get_dict(self):
+        return self._dict
 
     def get_resource_relative_path(self, resource, d):
         """
@@ -253,4 +266,6 @@ class ProjectRef:
                         (slide_name, self.name)).fetchone()
 
         return rc['id'] if rc is not None else None
+
+
 

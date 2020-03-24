@@ -69,18 +69,20 @@ RUN mkdir -p libs/os_affine/build \
 ENV FLASK_APP "histoannot"
 ENV PYTHONPATH $PYTHONPATH:/tk/node_dzi/libs/os_affine/build
 
+# Read the server mode argument
+ARG SERVER_MODE=master
+
 # Install uwsgi
 RUN pip install uwsgi && mkdir -p /var/log/uwsgi  
 
 # Configure nginx
 COPY docker/dzi_node/nginx_master.conf /etc/nginx/nginx.conf
-COPY docker/dzi_node/histoannot_nginx.conf /etc/nginx/conf.d/
+COPY docker/dzi_node/${SERVER_MODE}_nginx.conf /etc/nginx/conf.d/
 
 # Configure worker services
 COPY docker/dzi_node/histoannot_uwsgi.ini .
 
 # Configure Supervisor
-ARG SERVER_MODE=master
 COPY docker/dzi_node/${SERVER_MODE}_supervisor.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Copy the actual code (at the end of Dockerfile for faster builds)

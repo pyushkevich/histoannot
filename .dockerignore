@@ -6,3 +6,4 @@ libs/os_affine/build
 instance
 docker/*/Dockerfile
 docs
+conf

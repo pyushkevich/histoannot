@@ -33,7 +33,7 @@ import urllib2
 from PIL import Image
 
 from project_ref import ProjectRef
-from histoannot.slideref import SlideRef
+from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.db import get_db
 
 def init_db_dltrain():
@@ -589,32 +589,6 @@ def refresh_slide_db(project, manifest, single_specimen=None):
                 # We are here because no URL was found
                 if not found:
                     print('Raw image was not found for slide %s' % slide_name)
-
-
-def get_slide_ref(slice_id, prj=None):
-    """
-    Create a slide reference from a database slide ID
-    :param slice_id: database ID of a slide
-    :type slide_id: int
-    :param prj: optional project reference to associate with
-    :type prj: ProjectRef
-    :return:
-    """
-    db = get_db()
-
-    # Load slide from database
-    row = db.execute('SELECT * from slide_info WHERE id = ?', (slice_id,)).fetchone()
-
-    # Handle missing data
-    if row is None:
-        return None
-
-    # Create a project reference
-    if prj is None:
-        prj = ProjectRef(row['project'])
-
-    # Create a slide reference
-    return SlideRef(prj, row['specimen_name'], row['block_name'], row['slide_name'], row['slide_ext'])
 
 
 def load_raw_slide_to_cache(slide_id, resource):

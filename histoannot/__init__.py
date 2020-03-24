@@ -29,6 +29,7 @@ from . import project_ref
 from . import project_cli
 from glob import glob
 from project_ref import RemoteResourceCache, ProjectRef
+from socket import gethostname
 
 # Needed for AJAX redirects to DZI nodes
 def _add_cors_headers(response):
@@ -46,13 +47,20 @@ def create_app(test_config = None):
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True)
 
+    # ensure the instance folder exists
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
+
     # Handle configurtion
     app.config['SECRET_KEY'] = 'dev'
     app.config['HISTOANNOT_DELEGATE_DZI'] = False
 
     # Descriptive keys
-    app.config['HISTOANNOT_PUBLIC_NAME'] = app.config.get('HISTOANNOT_PUBLIC_NAME','PICSL Histology Annotation System')
+    app.config['HISTOANNOT_PUBLIC_NAME'] = 'PICSL Histology Annotation System'
 
+    # Read the config file
     if test_config is None:
         # load the instance config, if it exists, when not testing
         app.config.from_pyfile('config.py', silent=True)
@@ -60,11 +68,15 @@ def create_app(test_config = None):
         # load the test config if passed in
         app.config.from_mapping(test_config)
 
-    # ensure the instance folder exists
-    try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
+
+    # SERVER_NAME in Flask is a mess. It should only be set for dzi_node 
+    # (worker) instances, but avoid it for master instances, because it will
+    # cause havoc with requests that refer to the server differently (by IP, etc)
+    if not app.config.get('SERVER_NAME'):
+        if app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
+            # When server name is missing and we are on a worker node, this is
+            # a problem. It is also a problem if we are running in command-line mode
+            app.config['SERVER_NAME'] = gethostname()
 
     # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)
@@ -118,6 +130,10 @@ def create_app(test_config = None):
 
     # Supporting 'dzi' node (serves images/tiles but no database)
     elif app.config['HISTOANNOT_SERVER_MODE'] == "dzi_node":
+
+        # A master must be configured
+        if 'HISTOANNOT_MASTER_URL' not in app.config:
+            raise ValueError('Missing HISTOANNOT_MASTER_URL in config')
 
         # a simple page that says hello. This is needed for load balancers
         @app.route('/')

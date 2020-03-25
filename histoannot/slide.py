@@ -333,17 +333,17 @@ def make_slide_dbview(task_id, view_name):
 def block_slide_listing(task_id, specimen_name, block_name):
     db = get_db()
 
+    # Get the current task data
+    project,task = get_task_data(task_id)
+
     # Get the block descriptor
-    block = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', 
-            (specimen_name,block_name)).fetchone()
+    block = db.execute('SELECT * FROM block_info WHERE specimen_name=? AND block_name=? AND project=?',
+            (specimen_name,block_name,project)).fetchone()
 
     if block is None:
         return json.dumps([])
 
     block_id = block['id']
-
-    # Get the current task data
-    project,task = get_task_data(task_id)
 
     # Generate the where clause
     where = get_task_slide_where_clause(task)

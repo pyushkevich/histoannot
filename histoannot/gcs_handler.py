@@ -18,10 +18,8 @@
 import urlparse
 import os
 import threading
-
-from flask.cli import with_appcontext
 from google.cloud import storage
-from flask import g, current_app
+import StringIO
 
 # This class handles remote URLs for Google cloud. The remote URLs must have format
 # "gs://bucket/path/to/blob.ext"
@@ -93,6 +91,13 @@ class GCSHandler:
             while worker.isAlive():
                 worker.join(1.0)
                 print('GCS: downloaded: %d of %s' % (os.stat(local_file).st_size, uri))
+
+    # Download a text file directory to memory
+    def download_text_file(self, uri):
+        blob = self._get_blob(uri)
+        sfile = StringIO.StringIO()
+        self.get_client().download_blob_to_file(blob, sfile)
+        return sfile.getvalue()
 
     # Get the remote download size
     def get_size(self, uri):

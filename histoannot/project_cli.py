@@ -29,12 +29,14 @@ from flask.cli import with_appcontext
 import openslide
 import time
 import urllib2
+import logging
 
 from PIL import Image
 
 from project_ref import ProjectRef
 from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.db import get_db
+from histoannot.gcs_handler import GCSHandler
 
 def init_db_dltrain():
     db = get_db()
@@ -486,6 +488,23 @@ def update_slide_derived_data(slide_id):
         x.save(thumb_fn)
 
 
+# Generic function to load a URL or local file into a string
+def load_url(url, parent_dir=None):
+    if url.startswith('http://') or url.startswith('https://'):
+        resp = urllib2.urlopen(url)
+        return resp.read()
+    elif url.startswith('gs://'):
+        gcsh = GCSHandler()
+        return gcsh.download_text_file(url)
+    else:
+        if not os.path.isabs(url) and parent_dir is not None:
+            url = os.path.join(parent_dir, url)
+        with open(url) as f:
+            return f.read()
+
+    return None
+
+
 # Builds up a slide database. Scans a manifest file that contains names of specimens
 # and URLs to Google Sheet spreadsheets in which individual slides are matched to the
 # block/section/slice/stain information. Checks if the corresponding files exist in
@@ -497,98 +516,98 @@ def refresh_slide_db(project, manifest, single_specimen=None):
     # Get the project object
     pr = ProjectRef(project)
 
+    # Load the manifest file
+    manifest_contents = load_url(manifest)
+    if manifest_contents is None:
+        logging.error("Cannot read URL or file: %s" % (manifest,))
+        sys.exit(-1)
+
     # Read from the manifest file
-    with open(manifest) as f_manifest:
-        for line in f_manifest:
+    for line in manifest_contents.splitlines():
 
-            # Split into words
-            words = line.split()
-            if len(words) != 2:
-                continue
+        # Split into words
+        words = line.split()
+        if len(words) != 2:
+            continue
 
-            # Check for single specimen selector
-            specimen = line.split()[0]
-            if single_specimen is not None and single_specimen != specimen:
-                continue
+        # Check for single specimen selector
+        specimen = line.split()[0]
+        if single_specimen is not None and single_specimen != specimen:
+            continue
 
-            url = line.split()[1]
-            print('Parsing specimen "%s" with URL "%s"' % (specimen, url))
+        url = line.split()[1]
+        print('Parsing specimen "%s" with URL "%s"' % (specimen, url))
 
-            # Get the lines from the URL
-            specimen_manifest=None
-            if url.startswith('http://') or url.startswith('https://'):
-                resp = urllib2.urlopen(url)
-                specimen_manifest=resp.read().splitlines()[1:]
-            else:
-                if not os.path.isabs(url):
-                    url = os.path.join(os.path.dirname(manifest), url)
-                with open(url) as f:
-                    specimen_manifest = f.read().splitlines()[1:]
+        # Get the lines from the URL
+        specimen_manifest_contents = load_url(url, os.path.dirname(manifest))
+        if specimen_manifest_contents is None:
+            logging.warning("Cannot read URL or file: %s" % (url,))
+            continue
 
-            # For each line in the URL consider it as a new slide
-            r = csv.reader(specimen_manifest)
-            for spec_line in r:
+        # For each line in the URL consider it as a new slide
+        r = csv.reader(specimen_manifest_contents.splitlines()[1:])
+        for spec_line in r:
 
-                # Read the elements from the string
-                (slide_name, stain, block, section, slide_no, cert) = spec_line[0:6]
+            # Read the elements from the string
+            (slide_name, stain, block, section, slide_no, cert) = spec_line[0:6]
 
-                # Remap slide_name to string
-                slide_name = str(slide_name)
+            # Remap slide_name to string
+            slide_name = str(slide_name)
 
-                # Check if the slide has already been imported into the database
-                slide_id = pr.get_slide_by_name(slide_name)
+            # Check if the slide has already been imported into the database
+            slide_id = pr.get_slide_by_name(slide_name)
 
-                if slide_id is not None:
-                    print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
+            if slide_id is not None:
+                print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
 
-                    # If the slide is a duplicate, we should make it disappear
-                    # but the problem is that we might have already done some annotation
-                    # for that slide. I guess it still makes sense to delete the slide
-                    if cert == 'duplicate':
-                        print('DELETING slide %s as DUPLICATE' % (slide_name,))
-                        db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
-                        db.commit()
-                        continue
-
-                    # Check if the metadata matches
-                    t0 = db.execute('SELECT * FROM slide '
-                                    'WHERE section=? AND slide=? AND stain=? AND id=?',
-                                    (section, slide_no, stain, slide_id)).fetchone()
-
-                    # We may need to update the properties
-                    if t0 is None:
-                        print('UPDATING metadata for slide %s' % (slide_name,))
-                        db.execute('UPDATE slide SET section=?, slide=?, stain=? '
-                                   'WHERE slide_id=?', (section, slide_no, stain, slide_id))
-                        db.commit()
-
-                    update_slide_derived_data(slide_id)
+                # If the slide is a duplicate, we should make it disappear
+                # but the problem is that we might have already done some annotation
+                # for that slide. I guess it still makes sense to delete the slide
+                if cert == 'duplicate':
+                    print('DELETING slide %s as DUPLICATE' % (slide_name,))
+                    db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
+                    db.commit()
                     continue
 
-                # Create a slideref for this object. The way we have set all of this up,
-                # the extension is not coded anywhere in the manifests, so we dynamically
-                # check for multiple extensions
-                found = False
-                for slide_ext in ('svs', 'tif', 'tiff'):
+                # Check if the metadata matches
+                t0 = db.execute('SELECT * FROM slide '
+                                'WHERE section=? AND slide=? AND stain=? AND id=?',
+                                (section, slide_no, stain, slide_id)).fetchone()
 
-                    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+                # We may need to update the properties
+                if t0 is None:
+                    print('UPDATING metadata for slide %s' % (slide_name,))
+                    db.execute('UPDATE slide SET section=?, slide=?, stain=? '
+                               'WHERE slide_id=?', (section, slide_no, stain, slide_id))
+                    db.commit()
 
-                    if sr.resource_exists('raw', False):
-                        # The raw slide has been found, so the slide will be entered into the database.
-                        sid = db_create_slide(project, specimen, block, section, slide_no, stain, slide_name,
-                                              slide_ext)
+                update_slide_derived_data(slide_id)
+                continue
 
-                        print('Slide %s located with url %s and assigned new id %d' %
-                              (slide_name, sr.get_resource_url('raw', False), sid))
+            # Create a slideref for this object. The way we have set all of this up,
+            # the extension is not coded anywhere in the manifests, so we dynamically
+            # check for multiple extensions
+            found = False
+            for slide_ext in ('svs', 'tif', 'tiff'):
 
-                        # Update thumbnail and such
-                        update_slide_derived_data(sid)
-                        found = True
-                        break
+                sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
 
-                # We are here because no URL was found
-                if not found:
-                    print('Raw image was not found for slide %s' % slide_name)
+                if sr.resource_exists('raw', False):
+                    # The raw slide has been found, so the slide will be entered into the database.
+                    sid = db_create_slide(project, specimen, block, section, slide_no, stain, slide_name,
+                                          slide_ext)
+
+                    print('Slide %s located with url %s and assigned new id %d' %
+                          (slide_name, sr.get_resource_url('raw', False), sid))
+
+                    # Update thumbnail and such
+                    update_slide_derived_data(sid)
+                    found = True
+                    break
+
+            # We are here because no URL was found
+            if not found:
+                print('Raw image was not found for slide %s' % slide_name)
 
 
 def load_raw_slide_to_cache(slide_id, resource):

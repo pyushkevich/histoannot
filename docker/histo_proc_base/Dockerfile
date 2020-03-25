@@ -28,6 +28,10 @@ RUN wget ${VIPS_URL}/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz \
 # Install ImageMagick
 RUN apt-get update && apt-get install -y imagemagick
 
+# Install OpenSlide for Python
+RUN pip install --upgrade pip
+RUN pip install openslide-python
+
 # Adding the package path to local
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 ENV LD_LIBRARY_PATH /usr/local/lib:$LD_LIBRARY_PATH

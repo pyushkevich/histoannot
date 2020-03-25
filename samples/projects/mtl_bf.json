@@ -1,0 +1,11 @@
+{
+    "base_url": "gs://mtl_histology",
+    "disp_name": "MTL Blockface",
+    "desc" : "Blockface images from the MTL project",
+    "url_schema": {
+        "pattern": {
+            "raw": "{specimen}/bf_proc/{slide_name}/{slide_name}_pyramidal.{slide_ext}",
+            "thumb": "{specimen}/bf_proc/{slide_name}/{slide_name}_thumb.png"
+        }
+    }
+}

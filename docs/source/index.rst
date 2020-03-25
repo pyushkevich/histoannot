@@ -10,6 +10,7 @@ PICSL Histology Annotation Server
    :maxdepth: 2
    :caption: Contents:
 
+   org_data
    quick_start
    notes_tval
 

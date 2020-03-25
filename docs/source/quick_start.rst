@@ -27,84 +27,10 @@ For every histology slide, a minimum of two files are required:
 * A pyramidal TIFF file (in ``.svs`` or ``.tiff`` format)
 * A thumbnail (about 1000 pixels in width, in ``.png`` or ``.jpeg`` format)
 
-How Histology Slides are Organized in PHAS
-------------------------------------------
-PHAS has a hierarchical organization of slide data. At the top of the hierarchy is the **project**.
-
-* **project**: A collection of data that is accessible to a set of users.
-
-  * **task**: An activity that is performed by the members of a project. Common tasks include browsing, annotation, or training of machine learning classifiers.
-
-    * **specimen**: Typically refers to tissue from an individual tissue donor. Each specimen has a name.
-
-      * **block**: A specific region of tissue extracted from the specimen. Each block has a name, e.g., "left amygdala".
-
-        * **section**: The concept of a section makes sense when serially sectioning tissue. For example, in one block, we may obtain a NISSL slide every 10 slices, with each NISSL slide followed immediately by a Myelin stain. Each set of 10 slides is then considered a section. In diagnostic pathology, we would typically have only one section per block.
-
-          * **slide**: Individual slides within a section. These will typically have different stains.
-
-
-Converting to Pyramid BigTIFF
------------------------------
-Your data needs to be in pyramid bigtiff format. If it is not, PHAS will not work, or will work poorly. To convert your data to this format, you can use software **vips**, available from `<https://jcupitt.github.io/libvips/API/current/>`_:: 
-
-    vips tiffsave input.tif output.tif \
-        --vips-progress --compression=jpeg --Q=80 \
-        --tile --tile-width=256 --tile-height=256 \
-        --pyramid --bigtiff
-
-The input file can be in a number of formats (`tif`, `svs`) but the output file should be a `tif` file. We assume that all of your data has been preprocessed with **vips**. 
-
-Generating thumbnails
------------------------------
-VIPS can also be used to generate a thumbnail. The command below will generate a 1000 pixel wide thumbnail from an Aperio ``.svs`` file::
-
-    vips thumbnail input.svs[level=2] thumb.png 1000 --vips-progress
-
-Organizing Histology Images on Disk or Bucket
----------------------------------------------
-You have some freedom as to how to organize data on the filesystem. The following organization is the default. It groups slides by specimen name. Within each specimen, it places raw data separately from the derived/post-processed data (in case you want to be able to delete the latter).
-
-On the filesystem, the following directory organization is recommended::
-
-    /home/phas/hdata/SPECIMEN1/histo_raw/FILE1.tif
-    /home/phas/hdata/SPECIMEN1/histo_raw/FILE2.tif
-    ...
-    /home/phas/hdata/SPECIMEN1/histo_proc/FILE1/FILE1_thumbnail.tiff
-    /home/phas/hdata/SPECIMEN1/histo_proc/FILE2/FILE2_thumbnail.tiff
-    ...
-    /home/phas/hdata/SPECIMEN2/...
-
-Above `SPECIMEN1` refers to the name of the specimen, and `FILE1` refers to the filenames of the individual `.tif` files for that specimen.
-
-
-Generating Manifest Files
--------------------------
-In addition to organizing the images in the filesystem, you need to create a separate manifest file for each specimen and a master manifest file. Individal manifest files can be stored in `/home/phas/hdata`::
-
-    /home/phas/hdata/SPECIMEN1/manifest.csv
-    /home/phas/hdata/SPECIMEN2/manifest.csv
-    ...
-
-Each manifest file will be in comma separated value (CSV) format, as follows::
-
-    FileNameNoExt,Stain,Block,Section,Slice,Certainty,Notes
-    FILE1,Nissl,BLK1,2,1,"certain",""
-    FILE2,Myelin,BLK1,2,2,"certain",""
-    FILE3,Nissl,BLK1,2,1,"certain",""
-    ...
-
-The columns that matter here are `FileNameNoExt` (which is the **filename of the slide image without extension**), `Stain` (which is the name of the stain), `Section` and `Slice`, discussed above. The other fields can be left blank. Make sure your manifest includes the header row, as above.
-
-Finally, a master manifest file should be created in `/home/phas/hdata/master_manifest.txt` with the following contents::
-
-    SPECIMEN1   /home/phas/hdata/SPECIMEN1/manifest.csv
-    SPECIMEN2   /home/phas/hdata/SPECIMEN2/manifest.csv
-    ...
-
+Please see :ref:`DataOrg` for a tutorial on how to organize your data
 
 Projects
---------
+========
 A single PHAS server can serve multiple projects. Each project represents a separate collection of histology data, e.g., different set of scanned slides. Each project can have its own root directory, and its own manifest files.
 
 Starting PHAS in a Docker Container

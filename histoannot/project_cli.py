@@ -660,7 +660,8 @@ task_schema = {
             "properties": {
                 "labelset": {"type": "string"},
                 "min-size": {"type": "integer"},
-                "max-size": {"type": "integer"}
+                "max-size": {"type": "integer"},
+                "display-patch-size": {"type": "integer"}
             },
             "required": ["labelset"]
         },
@@ -739,12 +740,13 @@ def add_task_command(project, json):
 
 
 @click.command('tasks-update')
-@click.option('--json', prompt='JSON descriptor for the task')
-@click.option('--task', prompt='ID of the task to update')
+@click.argument('task', type=click.INT)
+@click.argument('json', type=click.Path(exists=True))
 @with_appcontext
-def update_task_command(json, task):
+def update_task_command(task, json):
     """Update an existing task"""
-    add_task(json, task)
+    (project,t_data) = get_task_data(task)
+    add_task(project, json, update_existing_task_id=task)
 
 
 @click.command('tasks-list')

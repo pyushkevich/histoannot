@@ -1,0 +1,15 @@
+{
+    "restrict-access": true, 
+    "name": "Blockface Training",
+    "stains": [
+        "Blockface"
+    ], 
+    "dltrain": {
+        "labelset": "blockface",
+        "min-size": 32,
+        "max-size": 512,
+        "display-patch-size": 128
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to segment blockface"
+}

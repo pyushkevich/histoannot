@@ -436,6 +436,8 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
 # Callable function for creating a sample
 def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
 
+    project,t_data = get_task_data(task_id)
+
     db = get_db()
 
     # Create a meta record
@@ -447,11 +449,15 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
         (meta_id, rect[0], rect[1], rect[2], rect[3], label_id, slide_id, task_id)
     ).lastrowid
 
+    # Get the preferred patch size
+    patch_dim = t_data['dltrain'].get('display-patch-size', 512)
+
     # Create a job that will sample the patch from the image. The reason we do this in a queue
     # is that a server hosting the slide might have gone down and the slide would need to be
     # downloaded again, and we don't want to hold up returning to the user for so long
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, (512,512), osl_level, job_timeout="120s", result_ttl="60s")
+    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, 
+                    (patch_dim, patch_dim), osl_level, job_timeout="120s", result_ttl="60s")
 
     # Stick the properties into the job
     job.meta['args']=(slide_id, sample_id, rect)
@@ -688,13 +694,17 @@ def samples_fix_patches_cmd(task):
             'SELECT * FROM v_full '
             'WHERE task=? ORDER BY slide_name', (task,)).fetchall()
 
+    # Get the required patch dimensions
+    (project,t_data)=get_task_data(task)
+    patch_dim = t_data['dltrain'].get('display-patch-size', 512)
+
     # For each patch check if it is there
     for row in rc:
         id=row['id']
         fn=get_sample_patch_filename(id)
         if os.path.exists(fn):
             w,h = Image.open(fn).size
-            if w == 512 and h == 512:
+            if w == patch_dim and h == patch_dim:
                 continue
         print('Missing or corrupt patch for sample %d' % id)
 

@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import os
-from flask import Blueprint, Flask, request, current_app
+from flask import Blueprint, Flask, request, current_app, url_for
 import click
 import time
 from flask.cli import with_appcontext
@@ -117,7 +117,6 @@ def find_delegate_for_slide(slide_id=None, project=None, slide_name=None,
 
     # Return the URL
     return del_url
-
 
 
 # -------------------------------------------------

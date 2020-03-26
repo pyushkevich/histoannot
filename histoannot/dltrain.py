@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, abort, Response
+    Blueprint, flash, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response
 )
 from werkzeug.exceptions import abort
 from histoannot.auth import login_required, task_access_required
@@ -34,6 +34,7 @@ import json
 import time
 import datetime
 import os
+import urllib
 import urllib2
 import random
 from PIL import Image
@@ -344,7 +345,7 @@ def get_sample_custom_png(id, level, w, h):
     # TODO: what to do with project name here
     (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
 
-    # Are we de this slide to a different node?
+    # Are we delegating this slide to a different node?
     del_url = find_delegate_for_slide(slide_id)
 
     # Compute the parameters
@@ -356,12 +357,16 @@ def get_sample_custom_png(id, level, w, h):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(project,specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
+        rawbytes = get_patch(project,specimen,block,'raw',
+                             slide_name,slide_ext,level,
+                             ctr_x,ctr_y,w,h,'png').data
     else:
-        subs = (del_url, project, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
-        url = '%s/dzi/patch/%s/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
-        print(url)
-        rawbytes = urllib2.urlopen(url).read()
+        url = '%s/dzi/patch/%s/%s/%s/raw/%s.%s/%d/%d_%d_%d_%d.png' % (
+                del_url, project, specimen, block, slide_name, slide_ext, 
+                level, ctr_x, ctr_y, w, h)
+        pr = sr.get_project_ref()
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
+        rawbytes = urllib2.urlopen(url, post_data).read()
 
     resp = make_response(rawbytes)
     resp.mimetype = 'image/%s' % format
@@ -408,12 +413,16 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(project,specimen,block,'raw',slide_name,slide_ext,level,ctr_x,ctr_y,w,h,'png').data
+        rawbytes = get_patch(project,specimen,block,'raw',
+                             slide_name,slide_ext,level,
+                             ctr_x,ctr_y,w,h,'png').data
     else:
-        subs = (del_url, project, specimen, block, slide_name, slide_ext, level, ctr_x, ctr_y, w, h)
-        url = '%s/dzi/patch/%s/%s/%s/%s.%s/%d/%d_%d_%d_%d.png' % subs
-        print(url)
-        rawbytes = urllib2.urlopen(url).read()
+        url = '%s/dzi/patch/%s/%s/%s/raw/%s.%s/%d/%d_%d_%d_%d.png' % (
+                del_url, project, specimen, block, slide_name, slide_ext, 
+                level, ctr_x, ctr_y, w, h)
+        pr = sr.get_project_ref()
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
+        rawbytes = urllib2.urlopen(url, post_data).read()
 
     # Save as PNG
     with open(get_sample_patch_filename(sample_id), 'wb') as f:

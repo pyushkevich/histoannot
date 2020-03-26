@@ -79,6 +79,10 @@ class SlideRef:
     def get_download_progress(self, resource):
         return self._proj.get_download_progress(resource, self._d)
 
+    # Get the project of this slide ref
+    def get_project_ref(self):
+        return self._proj
+
 
 # Get a slide ref by database ID
 def get_slide_ref(slice_id, project=None):

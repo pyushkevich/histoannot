@@ -786,7 +786,8 @@ def list_labelsets_command(project):
     print('%-8s %-32s %-8s %-8s' % ('Id', 'Name', '#Labels', '#Samples'))
 
     db = get_db()
-    rc = db.execute('SELECT S.id, S.name, count(distinct L.id) as n_labels, count(D.id) as n_samples '
+    rc = db.execute('SELECT S.id as id, S.name as name, '
+                    '       count(distinct L.id) as n_labels, count(D.id) as n_samples '
                     'FROM labelset_info S left join label L on S.id=L.labelset '
                     '                     left join training_sample D on L.id = D.label '
                     'WHERE S.project=? '

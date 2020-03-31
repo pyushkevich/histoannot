@@ -189,7 +189,12 @@
 <script type="text/javascript">
 $(document).ready(function() {
 
-    var seg_mode='{{seg_mode}}';
+    const seg_mode='{{seg_mode}}';
+
+    // Load the initial rotation and flip
+    const user_prefs = {{user_prefs|tojson}};
+    const init_rotation = user_prefs.rotation || 0;
+    const init_flip = user_prefs.flip || false;
 
     // Initialize the viewer
     var viewer = new OpenSeadragon({
@@ -197,6 +202,7 @@ $(document).ready(function() {
         prefixUrl: "{{ url_for('static', filename='openseadragon-bin-2.4.0/images/') }}",
         showNavigator: true,
         showRotationControl: true,
+        showFlipControl: true,
         showSequenceControl: true,
         animationTime: 0.5,
         blendTime: 0.1,
@@ -206,7 +212,9 @@ $(document).ready(function() {
         minZoomLevel: 1,
         visibilityRatio: 0.25,
         zoomPerScroll: 2,
-        timeout: 120000
+        timeout: 120000,
+        degrees: init_rotation,
+        flipped: init_flip
     });
 
     viewer.addHandler("open", function() {
@@ -216,6 +224,26 @@ $(document).ready(function() {
         // from DZI XML.
         viewer.source.minLevel = 8;
     });
+
+    // This handler for rotate and zoom events stores them in a server-side cookie
+    // so that these preferences can be retained. The advantage for doing this on
+    // the server is that it will be consistent between browsers
+    let fn_update_user_pose = function () {
+        // These are the settings we want to send to the server
+        let data = {"rotation": viewer.viewport.getRotation(), "flip": viewer.viewport.getFlip()};
+
+        // Make the ajax call
+        const url = "{{url_for('slide.set_slide_user_preferences', task_id = task_id, slide_id = slide_id)}}";
+        $.post(url, JSON.stringify(data),
+            function (response_text) {
+                console.log("AJAX response");
+                console.log(response_text)
+            });
+    };
+
+    // Add handlers for rotate and flip events
+    viewer.addHandler("rotate", fn_update_user_pose);
+    viewer.addHandler("flip", fn_update_user_pose);
 
     // Get the current image zoom level
     get_image_zoomlevel = function() {
@@ -487,7 +515,7 @@ $(document).ready(function() {
         payload = paper.project.exportJSON();
         $.post(url , payload,
             function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
-    }
+    };
 
     // An object that is being moved
     var moving_object=null;
@@ -1108,7 +1136,7 @@ $(document).ready(function() {
 
             fn_focus_on_viewer();
         }
-    }
+    };
 
     var add_seadragon_button = function(html_id, btn_tooltip, btn_anchor, press_handler) {
         var html_elt = document.getElementById(html_id);
@@ -1116,7 +1144,7 @@ $(document).ready(function() {
         viewer.addControl(button.element, {anchor: btn_anchor});
         button.addHandler('press', press_handler);
         return button;
-    }
+    };
 
     // Create a drawing button
     var navButton = add_seadragon_button('nav_button', 'Navigate around the slide using zoom and pan', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, nav_pressed_handler);

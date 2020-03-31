@@ -34,6 +34,7 @@ from io import BytesIO
 
 import os
 import json
+import jsonschema
 import numpy as np
 import click
 from flask.cli import with_appcontext
@@ -445,7 +446,14 @@ def get_slide_info(task_id, slide_id):
     else:
         next_slide = None
 
-    return slide_info, prev_slide, next_slide, stain_list
+    # Load the user preferences for this slide
+    rc = db.execute('SELECT json FROM user_task_slide_preferences '
+               '            WHERE user=? AND task_id=? AND slide=?',
+               (g.user['id'], task_id, slide_id)).fetchone()
+
+    user_prefs = json.loads(rc['json']) if rc is not None else {}
+
+    return slide_info, prev_slide, next_slide, stain_list, user_prefs
 
 
 # The slide view
@@ -457,7 +465,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     project,task = get_task_data(task_id)
 
     # Get the next/previous slides for this task
-    si, prev_slide, next_slide, stain_list = get_slide_info(task_id, slide_id)
+    si, prev_slide, next_slide, stain_list, user_prefs = get_slide_info(task_id, slide_id)
 
     # Check that the affine mode and resolution requested are available
     pr = ProjectRef(project)
@@ -509,7 +517,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'block_id': si['block_id'],
             'url_tmpl_preload': url_tmpl_preload,
             'url_tmpl_dzi': url_tmpl_dzi,
-            'task':task }
+            'task':task,
+            'user_prefs': user_prefs}
 
     # Add optional fields to context
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
@@ -719,6 +728,39 @@ def _do_update_annot(task_id, slide_id, annot, stats):
 
     with open(json_filename, 'w') as outfile:  
         json.dump(annot, outfile)
+
+
+# Schema for user preferences json
+user_preferences_schema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "rotation": {"type": "number"},
+        "flip": {"type": "boolean"}
+    }
+}
+
+
+# Receive user preferences for the slide, such as preferred rotation and flip
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/user_preferences/set', methods=('POST',))
+@task_access_required
+def set_slide_user_preferences(task_id, slide_id):
+
+    # Get the json and validate
+    data = json.loads(request.get_data())
+    try:
+        jsonschema.validate(data, user_preferences_schema)
+    except jsonschema.ValidationError:
+        abort("Invalid JSON")
+
+    # Store the data for the user.
+    db = get_db()
+    db.execute('REPLACE INTO user_task_slide_preferences (user, task_id, slide, json) VALUES (?,?,?,?)',
+               (g.user['id'], task_id, slide_id, json.dumps(data)))
+    db.commit()
+
+    # Return success
+    return json.dumps({'success':True}), 200, {'ContentType':'application/json'}
 
 
 # Receive updated json for the slide

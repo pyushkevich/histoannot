@@ -30,6 +30,9 @@ import openslide
 import time
 import urllib2
 import logging
+import json
+from jsonschema import validate
+
 
 from PIL import Image
 
@@ -335,8 +338,11 @@ project_schema = {
 
 
 def add_project(name, json_file, update_existing=False):
+
     # Read the JSON
     data = json.load(json_file)
+
+    # Validate the JSON
     validate(instance=data, schema=project_schema)
 
     # Update the database
@@ -644,8 +650,6 @@ def cache_load_raw_slide_command(slideid):
 # --------------------------------
 # TASKS
 # --------------------------------
-from jsonschema import validate
-import json
 
 # A schema against which the JSON is validated
 task_schema = {

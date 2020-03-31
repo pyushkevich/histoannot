@@ -234,11 +234,10 @@ $(document).ready(function() {
 
         // Make the ajax call
         const url = "{{url_for('slide.set_slide_user_preferences', task_id = task_id, slide_id = slide_id)}}";
-        $.post(url, JSON.stringify(data),
-            function (response_text) {
-                console.log("AJAX response");
-                console.log(response_text)
-            });
+        $.post(url, JSON.stringify(data));
+
+        // Also adjust the rotation of text items
+        adjust_paperjs_text_rotation();
     };
 
     // Add handlers for rotate and flip events
@@ -271,17 +270,48 @@ $(document).ready(function() {
         }
 
         // Handle markers
-        var markers = paper.project.getItems({class: paper.PointText});
+        let markers = paper.project.getItems({class: paper.PointText});
         for (i = 0; i < markers.length; i++) {
-            markers[i].style.fontSize = get_width_in_canvas_units(10)
-            markers[i].style.leading = markers[i].style.fontSize * 1.2
+            markers[i].style.fontSize = get_width_in_canvas_units(10);
+            markers[i].style.leading = markers[i].style.fontSize * 1.2;
         }
 
         paper.view.draw();
     };
 
+    // Adjust the rotation of paper.js text elements so that they look right no matter the rotation
+    let adjust_paperjs_text_rotation = function() {
+
+        let markers = paper.project.getItems({class: paper.PointText});
+        for (i = 0; i < markers.length; i++) {
+
+            // Unapply the view matrix
+            let p = markers[i].point;
+            markers[i].matrix.reset();
+            markers[i].matrix.rotate(-viewer.viewport.getRotation(), p);
+            if(viewer.viewport.getFlip())
+                markers[i].matrix.scale(-1, 1, p);
+            markers[i].matrix.translate(p);
+        }
+
+        paper.view.draw();
+    };
+
+    // Reset the rotation of paper.js text elements as if there is no viewport rotation or flip
+    let reset_paperjs_text_rotation = function() {
+        let markers = paper.project.getItems({class: paper.PointText});
+        for (i = 0; i < markers.length; i++) {
+
+            // Unapply the view matrix
+            let p = markers[i].point;
+            markers[i].matrix.reset();
+            markers[i].matrix.translate(p);
+        }
+    };
+
+
     // Handle display zoom, adjusting the styling of displayed items
-    var last_zoom = -1;
+    let last_zoom = -1;
     viewer.addHandler("update-viewport", function() {
         var viewportZoom = viewer.viewport.getZoom(true);
         if(last_zoom !== viewportZoom) {
@@ -511,8 +541,14 @@ $(document).ready(function() {
     }
 
     var upload_annot = function() {
-        var url="{{url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution)}}"
+        var url="{{url_for('slide.update_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution)}}";
+
+        // Before saving the project we want to reset the rotation of the text, so that
+        // the text is saved with a proper rotation
+        reset_paperjs_text_rotation();
         payload = paper.project.exportJSON();
+        adjust_paperjs_text_rotation();
+
         $.post(url , payload,
             function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
     };
@@ -544,6 +580,7 @@ $(document).ready(function() {
                 if(status=='success' && data.length) {
                     paper.project.importJSON(data);
                     adjust_paperjs_scaling(get_image_zoomlevel());
+                    adjust_paperjs_text_rotation();
                     deselect_all_manipulables();
                 }
             })
@@ -947,7 +984,8 @@ $(document).ready(function() {
                     target_item.selected = false;
                 } else {
 
-                    var newtext = new paper.PointText(p);
+                    // var newtext = new paper.PointText(p);
+                    let newtext = new paper.PointText(p);
                     newtext.content = this.value;
                     newtext.style = {
                         fontWeight: 'bold',

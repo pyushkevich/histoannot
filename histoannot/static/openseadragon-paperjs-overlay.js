@@ -66,7 +66,7 @@
             return this._canvas;
         },
         clear: function() {
-           // TODO: check what needs to be added here
+            // TODO: check what needs to be added here
         },
         // ----------
         resize: function() {
@@ -82,23 +82,25 @@
             }
         },
         resizecanvas: function() {
-                this._canvasdiv.setAttribute('width', this._containerWidth);
-                this._canvas.setAttribute('width', this._containerWidth);
-                this._canvasdiv.setAttribute('height', this._containerHeight);
-                this._canvas.setAttribute('height', this._containerHeight);
-                paper.view.viewSize = new paper.Size(this._containerWidth, this._containerHeight);
-                var viewportZoom = this._viewer.viewport.getZoom(true);
-                var image1 = this._viewer.world.getItemAt(0);
-		// PY: this line causes issues when working with multiple layers
-		// var center = this._viewer.viewport.viewportToImageCoordinates(this._viewer.viewport.getCenter(true));
-		var center = image1.viewportToImageCoordinates(this._viewer.viewport.getCenter(true));
+            this._canvasdiv.setAttribute('width', this._containerWidth);
+            this._canvas.setAttribute('width', this._containerWidth);
+            this._canvasdiv.setAttribute('height', this._containerHeight);
+            this._canvas.setAttribute('height', this._containerHeight);
+            paper.view.viewSize = new paper.Size(this._containerWidth, this._containerHeight);
+            var viewportZoom = this._viewer.viewport.getZoom(true);
+            var image1 = this._viewer.world.getItemAt(0);
+            // PY: this line causes issues when working with multiple layers
+            // var center = this._viewer.viewport.viewportToImageCoordinates(this._viewer.viewport.getCenter(true));
+            var center = image1.viewportToImageCoordinates(this._viewer.viewport.getCenter(true));
 
-		var degrees = this._viewer.viewport.getRotation();
-		paper.view.matrix.reset();
-                paper.view.center = new paper.Point(center.x, center.y);
-                paper.view.zoom = image1.viewportToImageZoom(viewportZoom);
-		paper.view.matrix.rotate(degrees, paper.view.center);
-		paper.view.update();
-       }
+            var degrees = this._viewer.viewport.getRotation();
+            paper.view.matrix.reset();
+            paper.view.center = new paper.Point(center.x, center.y);
+            paper.view.zoom = image1.viewportToImageZoom(viewportZoom);
+            if(this._viewer.viewport.getFlip())
+                paper.view.matrix.scale(-1, 1, paper.view.center);
+            paper.view.matrix.rotate(degrees, paper.view.center);
+            paper.view.update();
+        }
     };
 })();

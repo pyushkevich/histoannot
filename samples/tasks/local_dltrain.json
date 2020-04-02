@@ -1,13 +1,14 @@
 {
     "restrict-access": true, 
-    "name": "Dummy Task: DL Train", 
+    "name": "Blockface Training",
     "stains": [
         "Blockface"
     ], 
     "dltrain": {
-        "labelset": "dummy",
-        "min-size": 8,
-        "max-size": 512
+        "labelset": "blockface",
+        "min-size": 128,
+        "max-size": 128,
+        "display-patch-size": 128
     }, 
     "mode": "dltrain", 
     "desc": "Dummy Task to Test DL Training"

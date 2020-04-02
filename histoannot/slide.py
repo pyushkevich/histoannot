@@ -456,6 +456,22 @@ def get_slide_info(task_id, slide_id):
     return slide_info, prev_slide, next_slide, stain_list, user_prefs
 
 
+# Determine if the deep learning training task uses a fixed size box and
+# return the box size if so, None otherwise
+def get_dltrain_fixed_box_size(task):
+
+    if task['mode'] != 'dltrain' or 'dltrain' not in task:
+        return None
+
+    min_size = task['dltrain'].get('min-size', 0)
+    max_size = task['dltrain'].get('max-size', 0)
+
+    if (min_size == 0 and max_size == 0) or min_size != max_size:
+        return None
+
+    return min_size
+
+
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<resolution>/<affine_mode>', methods=('GET', 'POST'))
 @task_access_required
@@ -498,6 +514,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     url_tmpl_preload = url_for('dzi.dzi_preload', **url_ctx)
     url_tmpl_dzi = url_for('dzi.dzi', **url_ctx)
+    url_tmpl_download = url_for('dzi.dzi_download', **url_ctx)
 
     # Build a dictionary to call
     context = {
@@ -517,7 +534,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'block_id': si['block_id'],
             'url_tmpl_preload': url_tmpl_preload,
             'url_tmpl_dzi': url_tmpl_dzi,
+            'url_tmpl_download': url_tmpl_download,
             'task':task,
+            'fixed_box_size' : get_dltrain_fixed_box_size(task),
             'user_prefs': user_prefs}
 
     # Add optional fields to context

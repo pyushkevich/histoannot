@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_from_directory
+    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file
 )
 from werkzeug.exceptions import abort
 
@@ -222,6 +222,24 @@ def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
     return resp
 
 
+# Download the raw data for the slide
+@bp.route('/dzi/download/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>',
+          methods=('GET', 'POST'))
+@project_access_required
+@forward_to_worker
+def dzi_download(mode, project, specimen, block, resource, slide_name, slide_ext):
+
+    # Get a project reference, using either local database or remotely supplied dict
+    pr = dzi_get_project_ref(project)
+
+    # Get the raw SVS/tiff file for the slide (the resource should exist,
+    # or else we will spend a minute here waiting with no response to user)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+
+    # Get the resource
+    tiff_file = sr.get_local_copy(resource, check_hash=True)
+    return send_file(tiff_file)
+
 
 class PILBytesIO(BytesIO):
     def fileno(self):
@@ -266,13 +284,8 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
     return resp
 
 
-# Get an image patch at level 0 from the raw image
-@bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
-        methods=('GET','POST'))
-@project_access_required
-@forward_to_worker
+# Method to actually get a patch
 def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
-
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
@@ -282,11 +295,11 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
     # Get a project reference, using either local database or remotely supplied dict
     pr = dzi_get_project_ref(project)
 
-    # Get the raw SVS/tiff file for the slide (the resource should exist, 
+    # Get the raw SVS/tiff file for the slide (the resource should exist,
     # or else we will spend a minute here waiting with no response to user)
     sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
-    
+
     # Read the region centered on the box of size 512x512
     os = OpenSlide(tiff_file)
 
@@ -294,7 +307,7 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
     x = ctrx - int(w * 0.5 * os.level_downsamples[level])
     y = ctry - int(h * 0.5 * os.level_downsamples[level])
 
-    tile = os.read_region((x, y), level, (w,h));
+    tile = os.read_region((x, y), level, (w, h));
 
     # Convert to PNG
     buf = PILBytesIO()
@@ -302,6 +315,15 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
     return resp
+
+
+# Get an image patch at level 0 from the raw image
+@bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
+        methods=('GET','POST'))
+@project_access_required
+@forward_to_worker
+def get_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
+    return get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format)
 
 
 # Command to run preload worker

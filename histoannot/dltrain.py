@@ -221,8 +221,8 @@ def check_rect(task_id, rect):
     min_size = t_data['dltrain'].get('min-size')
     max_size = t_data['dltrain'].get('max-size')
 
-    w = abs(rect[2] - rect[0])
-    h = abs(rect[3] - rect[1])
+    w = round(abs(rect[2] - rect[0]))
+    h = round(abs(rect[3] - rect[1]))
 
     print('Checking %d %d against %d %d' % (w,h,min_size,max_size))
 
@@ -712,6 +712,7 @@ def samples_fix_patches_cmd(task):
 
         # Generate the patch
         generate_sample_patch(row['slide'], id, rect)
+
 
 # Sample boxes from curves command
 @click.command('samples-random-from-annot')

@@ -423,9 +423,10 @@ def user_add_command(username, projects, projects_admin, site_admin, expiry, ema
         print("User %s already exists" % (username,))
         sys.exit(1)
 
-    # Create the username
-    rc = db.execute('INSERT INTO user(username, email, site_admin) VALUES (?,?,?)',
-                    (username,email,site_admin))
+    # Create the username with an unguessable password
+    dummy_password = str(uuid.uuid4())
+    rc = db.execute('INSERT INTO user(username, email, site_admin, password) VALUES (?,?,?,?)',
+                    (username,email,site_admin,dummy_password))
     user_id = rc.lastrowid
 
     # Provide the user access to the requested projects

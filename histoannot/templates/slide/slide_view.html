@@ -67,19 +67,24 @@
         border: 2px solid lightgray;
     }
 
-    a.button_link {
+    input.button_link {
         background: #e0e0e0;
         text-decoration: none;
         border-radius: 4px;
-        font-size: 90%;
+        font-size: 80%;
         color: #909090;
         border: lightgray 1px solid;
         text-align: center;
         text-transform: uppercase;
-        vertical-align: top;
+        vertical-align: text-bottom;
+        display: inline;
     }
 
-    a.button_link:hover {
+    input.button_link:disabled {
+        color: #c0c0c0;
+    }
+
+    button.button_link:hover {
         filter: brightness(90%);
     }
 
@@ -103,14 +108,16 @@
                 <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
                 <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
             </td>
-            <td align="center" style="white-space: nowrap;"> 
-                {% if prev_slide %}
-                    <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'], affine_mode=affine_mode, resolution=resolution)}}">&nbsp ❮ &nbsp</a>
-                {% endif %}
+            <td align="center" style="white-space: nowrap;">
+                <form style="display:inline;" id="form-prev"
+                      action="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'] if prev_slide != None else slide_id, affine_mode=affine_mode, resolution=resolution)}}" action="get">
+                    <input class="button_link" id="prev_slide_button" type="submit" value="❮" />
+                </form>
                 <span style="color:black;">Section {{ slide_info['section'] }}</span>
-                {% if next_slide  %}
-                <a class="button_link" href="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'], affine_mode=affine_mode,resolution=resolution)}}">&nbsp ❯ &nbsp</a>
-                {% endif %}
+                <form style="display:inline;" id="form-next"
+                      action="{{url_for('slide.slide_view', task_id=task_id, slide_id=next_slide['id'] if next_slide != None else slide_id, affine_mode=affine_mode,resolution=resolution)}}" action="get">
+                    <input class="button_link" id="next_slide_button" type="submit" value="❯" />
+                </form>
             </td>
             <td align="right">
                 <form id="form_stain" target="#" style="display: inline; white-space: nowrap;">
@@ -498,6 +505,8 @@ $(document).ready(function() {
 
     // Helper function to get Point corresponding to OSD event
     var ev_point = function(event) {
+        if(!paper || !paper.view)
+            return null;
         return paper.view.viewToProject(new paper.Point(event.position.x, event.position.y));
     };
 
@@ -1291,6 +1300,19 @@ $(document).ready(function() {
     Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
     Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
     Mousetrap.bind('D', fn_download_image);
+
+    // Bind moving to next/previous slide
+    let prev_slide = "{{prev_slide if prev_slide != None else ''}}";
+    if(prev_slide === "")
+        $("#prev_slide_button").prop('disabled', true);
+    else
+        Mousetrap.bind('<', function() {$("form#form-prev").submit();});
+
+    let next_slide = "{{next_slide if next_slide != None else ''}}";
+    if(next_slide === "")
+        $("#next_slide_button").prop('disabled', true);
+    else
+        Mousetrap.bind('>', function() {$("form#form-next").submit();});
 
     if (seg_mode=='annot') {
         var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);

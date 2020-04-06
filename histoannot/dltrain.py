@@ -706,12 +706,12 @@ def samples_fix_patches_cmd(task):
             w,h = Image.open(fn).size
             if w == patch_dim and h == patch_dim:
                 continue
-        print('Missing or corrupt patch for sample %d' % id)
+        print('Missing or corrupt patch for sample %d, %s' % (id,fn))
 
         rect=(float(row['x0']), float(row['y0']), float(row['x1']), float(row['y1']))
 
         # Generate the patch
-        generate_sample_patch(row['slide'], id, rect)
+        generate_sample_patch(row['slide'], id, rect, dims=(patch_dim, patch_dim))
 
 
 # Sample boxes from curves command

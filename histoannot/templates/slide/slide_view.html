@@ -1010,7 +1010,7 @@ $(document).ready(function() {
 
         input.onkeypress = function(e) {
             if(!e) e = window.event;
-            if (e.keyCode === '13') {
+            if (e.keyCode === 13) {
                 this.style.display = "none";
                 if(target_item) {
                     target_item.content = this.value;

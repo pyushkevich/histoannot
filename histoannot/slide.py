@@ -941,7 +941,8 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                 try:
                     if x[0] == 'Path':
                         seg = x[1]['segments']
-                        if len(seg) < 1:
+                        print(seg)
+                        if len(seg) < 1 or seg[0][0][0] is None or seg[0][0][1] is None:
                             continue
 
                         # Default mode is to draw curves
@@ -976,6 +977,7 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                                 # Get the handles from the control point
                                 P1 = seg[i-1][0]
                                 P2 = seg[i][0]
+
                                 D = [P2[0]-P1[0], P2[1]-P1[1]]
                                 V1 = seg[i-1][2]
                                 V2 = seg[i][1]
@@ -984,8 +986,8 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                                 nV1 = math.sqrt(V1[0]*V1[0]+V1[1]*V1[1])
                                 nV2 = math.sqrt(V2[0]*V2[0]+V2[1]*V2[1])
 
-                                T1=[ x / nV1 for x in V1]
-                                T2=[ x / nV2 for x in V2]
+                                T1=[ x / nV1 for x in V1] if nV1 > 0 else V1
+                                T2=[ x / nV2 for x in V2] if nV2 > 0 else V2
 
                                 Q2=[P2[0]+strip_width*T2[1],P2[1]-strip_width*T2[0]]
                                 Q1=[P1[0]-strip_width*T1[1],P1[1]+strip_width*T1[0]]
@@ -1022,7 +1024,7 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                                 #        P1[0],P1[1]), stroke="#000", fill="#ddd", stroke_width=48))
 
 
-                except TypeError:
+                except ValueError:
                     raise ValueError("Unreadable path %s in slide %d task %d" % (x, slide_id, task))
 
     return svg

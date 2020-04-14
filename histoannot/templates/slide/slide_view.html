@@ -180,6 +180,21 @@
     <div id="progress_comment" style="font-size:80%; color:red;" ></div>
 </div>
 
+<!-- A dialog showing keyboard help -->
+<div id="help_dialog_container" title="Keyboard shortcuts" class="pure-table">
+    <table>
+        <tbody>
+        <tr><td>A</td><td>Pan view left</td></tr>
+        <tr><td>D</td><td>Pan view right</td></tr>
+        <tr><td>W</td><td>Pan view up</td></tr>
+        <tr><td>S</td><td>Pan view down</td></tr>
+        <tr><td>&lt;</td><td>Go to previous section</td></tr>
+        <tr><td>&gt;</td><td>Go to next section</td></tr>
+        <tr><td>D</td><td>Download current slide</td></tr>
+        </tbody>
+    </table>
+</div>
+
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
 
 {% if seg_mode == 'annot' %}
@@ -403,6 +418,15 @@ $(document).ready(function() {
     // A progress bar
     var progress_bar = $("#progress_bar").progressbar({
         value:0
+    });
+
+    // A help dialog
+    let help_dialog = $("#help_dialog_container").dialog({
+        autoOpen: false,
+        resizable: false,
+        height: "auto",
+        width: "auto",
+        modal: true
     });
 
     // Get the progress of loading the current slide
@@ -1300,6 +1324,8 @@ $(document).ready(function() {
     Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
     Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
     Mousetrap.bind('D', fn_download_image);
+
+    Mousetrap.bind('?', function() { help_dialog.dialog("open"); });
 
     // Bind moving to next/previous slide
     let prev_slide = "{{prev_slide if prev_slide != None else ''}}";

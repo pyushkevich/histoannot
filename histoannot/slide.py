@@ -19,7 +19,7 @@ import uuid
 
 from flask import(
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response,
-    current_app, send_from_directory, session
+    current_app, send_from_directory, session, send_file
 )
 from werkzeug.exceptions import abort
 
@@ -41,8 +41,9 @@ from flask.cli import with_appcontext
 import pandas
 import math
 import svgwrite
-import logging
 import sys
+import timeit
+
 
 bp = Blueprint('slide', __name__)
 
@@ -823,7 +824,19 @@ def get_annot_json(task_id, mode, resolution, slide_id):
     else:
         return "", 200, {'ContentType':'application/json'} 
 
-    
+
+
+# API to get an SVG file
+# TODO: need API keys!
+@bp.route('/api/task/<int:task_id>/annot/svg/slide_<int:slide_id>.svg', methods=('GET',))
+def api_get_annot_svg(task_id, slide_id):
+    svg = extract_svg(task_id, slide_id, 48, 48)
+    txt = svg.tostring()
+    resp = make_response(txt)
+
+    resp.mimetype = 'image/svg+xml'
+    return resp
+
 
 class PILBytesIO(BytesIO):
     def fileno(self):
@@ -896,17 +909,11 @@ def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width,
             (slide_id, task, stats['n_paths'], stats['n_markers']))
 
 
-# Export annotation
-@click.command('annot-export-svg')
-@click.argument('task', type=click.INT)
-@click.argument('slide_id', type=click.INT)
-@click.argument('out_file', type=click.File('wt'))
-@click.option('--stroke-width', '-s', type=click.FLOAT, default=48.0,
-              help='Stroke width for exported paths')
-@click.option('--strip-width', type=click.FLOAT, default=48.0)
-@with_appcontext
-def export_annot_svg(task, slide_id, out_file, stroke_width, strip_width):
-    """ Export annotations on a slide to SVG file """
+# Generate an SVG from an annotation
+def extract_svg(task, slide_id, stroke_width, strip_width):
+
+    # The return value
+    svg = None
 
     # Find the annotation in the database
     db = get_db()
@@ -921,7 +928,7 @@ def export_annot_svg(task, slide_id, out_file, stroke_width, strip_width):
         sr = get_slide_ref(slide_id)
         dims = get_slide_raw_dims(sr)
         if dims is None:
-            sys.exit("Missing slide dimensions information")
+            raise ValueError("Missing slide dimensions information")
 
         # Start writing svg
         svg = svgwrite.Drawing(size=(dims[0], dims[1]))
@@ -954,7 +961,7 @@ def export_annot_svg(task, slide_id, out_file, stroke_width, strip_width):
                                 D = [P2[0]-P1[0], P2[1]-P1[1]]
                                 V1 = seg[i-1][2]
                                 V2 = seg[i][1]
-                                cmd.append('c%f,%f %f,%f %f,%f' % 
+                                cmd.append('c%f,%f %f,%f %f,%f' %
                                         (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
 
                             # Add the path to the SVG
@@ -1015,13 +1022,29 @@ def export_annot_svg(task, slide_id, out_file, stroke_width, strip_width):
                                 #        P1[0],P1[1]), stroke="#000", fill="#ddd", stroke_width=48))
 
 
-
                 except TypeError:
-                    logging.warning("Unreadable path %s in slide %d task %d" % 
-                            (x, slide_id, task))
+                    raise ValueError("Unreadable path %s in slide %d task %d" % (x, slide_id, task))
 
-        # Write the completed thing
-        out_file.write(svg.tostring())
+    return svg
+
+
+# Export annotation
+@click.command('annot-export-svg')
+@click.argument('task', type=click.INT)
+@click.argument('slide_id', type=click.INT)
+@click.argument('out_file', type=click.File('wt'))
+@click.option('--stroke-width', '-s', type=click.FLOAT, default=48.0,
+              help='Stroke width for exported paths')
+@click.option('--strip-width', type=click.FLOAT, default=48.0)
+@with_appcontext
+def export_annot_svg(task, slide_id, out_file, stroke_width, strip_width):
+    """ Export annotations on a slide to SVG file """
+
+    # Find the annotation in the database
+    svg = extract_svg(task, slide_id, strip_width, strip_width)
+
+    # Write the completed thing
+    out_file.write(svg.tostring())
 
 
 

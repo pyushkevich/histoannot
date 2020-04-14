@@ -825,10 +825,38 @@ def get_annot_json(task_id, mode, resolution, slide_id):
         return "", 200, {'ContentType':'application/json'} 
 
 
+# API to get the timestamp when an annotation was last modified
+# TODO: need API keys!
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/timestamp', methods=('GET',))
+def api_get_annot_timestamp(task_id, slide_id):
+    db = get_db()
+    rc = db.execute('SELECT M.t_edit FROM annot A '
+                    'LEFT JOIN edit_meta M on A.meta_id = M.id '
+                    'WHERE A.task_id = ? AND A.slide_id = ?',
+                    (task_id, slide_id)).fetchone()
+    if rc is not None:
+        return json.dumps({'timestamp' : rc['t_edit']}), 200, {'ContentType':'application/json'}
+    else:
+        return json.dumps({'timestamp' : None}), 200, {'ContentType':'application/json'}
+
+
+# API to get the timestamp when an annotation was last modified
+@bp.route('/api/task/<int:task_id>/slidename/<slide_name>/annot/timestamp', methods=('GET',))
+def api_get_annot_timestamp_by_slidename(task_id, slide_name):
+    db = get_db()
+    rc = db.execute('SELECT S.id FROM annot A '
+                    'LEFT JOIN slide S on A.slide_id = S.id '
+                    'WHERE A.task_id = ? and S.slide_name = ?',
+                    (task_id, slide_name)).fetchone()
+    if rc is not None:
+        return api_get_annot_timestamp(task_id, rc['id'])
+    else:
+        return json.dumps({'timestamp': None}), 200, {'ContentType': 'application/json'}
+
 
 # API to get an SVG file
 # TODO: need API keys!
-@bp.route('/api/task/<int:task_id>/annot/svg/slide_<int:slide_id>.svg', methods=('GET',))
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/svg', methods=('GET',))
 def api_get_annot_svg(task_id, slide_id):
     svg = extract_svg(task_id, slide_id, 48, 48)
     txt = svg.tostring()
@@ -836,6 +864,21 @@ def api_get_annot_svg(task_id, slide_id):
 
     resp.mimetype = 'image/svg+xml'
     return resp
+
+
+# API to get an SVG file
+# TODO: need API keys!
+@bp.route('/api/task/<int:task_id>/slidename/<slide_name>/annot/svg', methods=('GET',))
+def api_get_annot_svg_by_slidename(task_id, slide_name):
+    db = get_db()
+    rc = db.execute('SELECT S.id FROM annot A '
+                    'LEFT JOIN slide S on A.slide_id = S.id '
+                    'WHERE A.task_id = ? and S.slide_name = ?',
+                    (task_id, slide_name)).fetchone()
+    if rc is not None:
+        return api_get_annot_svg(task_id, rc['id'])
+    else:
+        abort(404)
 
 
 class PILBytesIO(BytesIO):
@@ -1023,8 +1066,17 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                                 #        P1[0]-strip_width*T1[1],P1[1]+strip_width*T1[0],
                                 #        P1[0],P1[1]), stroke="#000", fill="#ddd", stroke_width=48))
 
+                    elif x[0] == 'PointText':
 
-                except ValueError:
+                        tpos = x[1]['matrix'][4:6]
+                        text = x[1]['content']
+                        svg.add(svg.text(text, insert=tpos, fill='black', font_size='2000px'))
+
+                        # ["PointText",
+                        #  {"applyMatrix": false, "matrix": [1, 0, 0, 1, 1416.62777, 2090.96831], "content": "CA2",
+                        #  "fontWeight": "bold", "fontSize": 44, "leading": 52.8, "justification": "center"}]
+
+                except TypeError:
                     raise ValueError("Unreadable path %s in slide %d task %d" % (x, slide_id, task))
 
     return svg

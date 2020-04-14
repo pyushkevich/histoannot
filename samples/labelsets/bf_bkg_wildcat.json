@@ -1,0 +1,6 @@
+[
+  { "name" : "Tissue Only", "color" : "#18b497", "description" : "Tissue no Background" },
+  { "name" : "Tissue with Bkg", "color" : "#1880ff", "description" : "Tissue with Background" },
+  { "name" : "Bkg with Tissue", "color" : "#2816ba", "description" : "Background with Tissue" },
+  { "name" : "Bkg Only", "color" : "#f97a8a", "description" : "Ice/Background Only" }
+]

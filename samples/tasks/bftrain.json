@@ -5,9 +5,9 @@
         "Blockface"
     ], 
     "dltrain": {
-        "labelset": "blockface",
-        "min-size": 32,
-        "max-size": 512,
+        "labelset": "bf_bkg",
+        "min-size": 128,
+        "max-size": 128,
         "display-patch-size": 128
     }, 
     "mode": "dltrain", 

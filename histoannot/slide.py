@@ -856,9 +856,14 @@ def api_get_annot_timestamp_by_slidename(task_id, slide_name):
 
 # API to get an SVG file
 # TODO: need API keys!
-@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/svg', methods=('GET',))
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/svg', methods=('GET','POST'))
 def api_get_annot_svg(task_id, slide_id):
-    svg = extract_svg(task_id, slide_id, 48, 48)
+
+    strip_width = request.form.get('strip_width', 0)
+    stroke_width = request.form.get('stroke_width', 48)
+    font_size = request.form.get('font_size', "2000px")
+
+    svg = extract_svg(task_id, slide_id, int(stroke_width), int(strip_width), font_size)
     txt = svg.tostring()
     resp = make_response(txt)
 
@@ -868,7 +873,7 @@ def api_get_annot_svg(task_id, slide_id):
 
 # API to get an SVG file
 # TODO: need API keys!
-@bp.route('/api/task/<int:task_id>/slidename/<slide_name>/annot/svg', methods=('GET',))
+@bp.route('/api/task/<int:task_id>/slidename/<slide_name>/annot/svg', methods=('GET','POST'))
 def api_get_annot_svg_by_slidename(task_id, slide_name):
     db = get_db()
     rc = db.execute('SELECT S.id FROM annot A '
@@ -953,7 +958,7 @@ def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width,
 
 
 # Generate an SVG from an annotation
-def extract_svg(task, slide_id, stroke_width, strip_width):
+def extract_svg(task, slide_id, stroke_width, strip_width, font_size):
 
     # The return value
     svg = None
@@ -988,7 +993,7 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                             continue
 
                         # Default mode is to draw curves
-                        if strip_width is None:
+                        if strip_width is None or strip_width == 0:
 
                             # List of commands for SVG path
                             cmd = []
@@ -1069,7 +1074,7 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
 
                         tpos = x[1]['matrix'][4:6]
                         text = x[1]['content']
-                        svg.add(svg.text(text, insert=tpos, fill='black', font_size='2000px'))
+                        svg.add(svg.text(text, insert=tpos, fill='black', font_size=font_size))
 
                         # ["PointText",
                         #  {"applyMatrix": false, "matrix": [1, 0, 0, 1, 1416.62777, 2090.96831], "content": "CA2",

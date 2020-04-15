@@ -29,7 +29,7 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, get_slide_raw_dims
+from histoannot.dzi import get_affine_matrix, get_slide_raw_dims, forward_to_worker
 from io import BytesIO
 
 import os
@@ -984,7 +984,6 @@ def extract_svg(task, slide_id, stroke_width, strip_width):
                 try:
                     if x[0] == 'Path':
                         seg = x[1]['segments']
-                        print(seg)
                         if len(seg) < 1 or seg[0][0][0] is None or seg[0][0][1] is None:
                             continue
 

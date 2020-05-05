@@ -29,7 +29,7 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, get_slide_raw_dims
+from histoannot.dzi import get_affine_matrix, get_slide_raw_dims, get_random_patch
 from io import BytesIO
 
 import os
@@ -42,7 +42,8 @@ import pandas
 import math
 import svgwrite
 import sys
-import timeit
+import urllib
+import urllib2
 
 
 bp = Blueprint('slide', __name__)
@@ -893,11 +894,49 @@ class PILBytesIO(BytesIO):
 
 
 # Serve up thumbnails
+# TODO: need API keys!
 @bp.route('/slide/<int:id>/thumb', methods=('GET',))
 def thumb(id):
     thumb_dir = os.path.join(current_app.instance_path, 'thumb')
     thumb_fn = "thumb%08d.png" % (id,)
     return send_from_directory(thumb_dir, thumb_fn, as_attachment=False)
+
+
+# Get a random patch from the slide
+# TODO: need API keys!
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<width>', methods=('GET','POST'))
+@task_access_required
+def api_get_slide_random_patch(task_id, slide_id, width):
+    db = get_db()
+
+    # Find out which machine the slide is currently being served from
+    # Get the tiff image from which to sample the region of interest
+    sr = get_slide_ref(slide_id)
+
+    # Get the identifiers for the slide
+    # TODO: what to do with project here?
+    (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+
+    # Are we de this slide to a different node?
+    del_url = find_delegate_for_slide(slide_id)
+
+    # If local, call the method directly
+    rawbytes = None
+    if del_url is None:
+        rawbytes = get_random_patch(project,specimen,block,'raw',slide_name,slide_ext,0,width,'png').data
+    else:
+        url = '%s/dzi/random_patch/%s/%s/%s/raw/%s.%s/%d/%d.png' % (
+                del_url, project, specimen, block, slide_name, slide_ext, 0, width)
+        pr = sr.get_project_ref()
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
+        rawbytes = urllib2.urlopen(url, post_data).read()
+
+    # Send the patch
+    resp = make_response(rawbytes)
+    resp.mimetype = 'image/png' % format
+    return resp
+
+
 
 
 # CLI commands

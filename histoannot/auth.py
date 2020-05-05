@@ -258,7 +258,7 @@ def email_exists(email, user_id=None):
                               (email,)).fetchone()
     else:
         rc_email = db.execute('SELECT COUNT(id) as n FROM user '
-                              'WHERE email=? AND id <> ? AND disabled=0 ',
+                              'WHERE email=? AND id <> ? AND disabled=0 '
                               'COLLATE NOCASE',
                               (email, user_id)).fetchone()
     return rc_email['n'] > 0

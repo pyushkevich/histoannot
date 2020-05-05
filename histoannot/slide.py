@@ -862,8 +862,9 @@ def api_get_annot_svg(task_id, slide_id):
     strip_width = request.form.get('strip_width', 0)
     stroke_width = request.form.get('stroke_width', 48)
     font_size = request.form.get('font_size', "2000px")
+    font_color = request.form.get('font_color', 'black')
 
-    svg = extract_svg(task_id, slide_id, int(stroke_width), int(strip_width), font_size)
+    svg = extract_svg(task_id, slide_id, int(stroke_width), int(strip_width), font_size, font_color)
     txt = svg.tostring()
     resp = make_response(txt)
 
@@ -957,8 +958,27 @@ def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width,
             (slide_id, task, stats['n_paths'], stats['n_markers']))
 
 
+# Check a 'child' record in an annotation
+def check_annot_child(x):
+
+    try:
+        if x[0] == 'Path':
+            seg = x[1]['segments']
+            if len(seg) < 1:
+                return False
+            for i in seg:
+                for j in i:
+                    for k in j:
+                        if k is None or not isinstance(k, (float, int)):
+                            return False
+    except ValueError:
+        return False
+
+    return True
+
+
 # Generate an SVG from an annotation
-def extract_svg(task, slide_id, stroke_width, strip_width, font_size):
+def extract_svg(task, slide_id, stroke_width, strip_width, font_size, font_color):
 
     # The return value
     svg = None
@@ -986,6 +1006,9 @@ def extract_svg(task, slide_id, stroke_width, strip_width, font_size):
             for x in data[0][1]['children']:
 
                 # Handle paths
+                if not check_annot_child(x):
+                    print('Bad element:', x)
+                    continue
                 try:
                     if x[0] == 'Path':
                         seg = x[1]['segments']
@@ -1074,7 +1097,8 @@ def extract_svg(task, slide_id, stroke_width, strip_width, font_size):
 
                         tpos = x[1]['matrix'][4:6]
                         text = x[1]['content']
-                        svg.add(svg.text(text, insert=tpos, fill='black', font_size=font_size))
+                        svg.add(svg.text(text, insert=tpos, fill=font_color, stroke=font_color,
+                            font_size=font_size))
 
                         # ["PointText",
                         #  {"applyMatrix": false, "matrix": [1, 0, 0, 1, 1416.62777, 2090.96831], "content": "CA2",

@@ -34,6 +34,7 @@ import functools
 from rq import Queue, Connection, Worker
 from rq.job import Job, JobStatus
 from redis import Redis
+from random import randint
 
 from openslide import OpenSlide, OpenSlideError
 from openslide.deepzoom import DeepZoomGenerator
@@ -290,7 +291,6 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
         return 'bad format'
-        abort(404)
 
     # Get a project reference, using either local database or remotely supplied dict
     pr = dzi_get_project_ref(project)
@@ -317,6 +317,37 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
     return resp
 
 
+# Method to get a patch sampled at random
+def get_random_patch(project, specimen, block, resource, slide_name, slide_ext, level, w, format):
+    format = format.lower()
+    if format != 'jpeg' and format != 'png':
+        # Not supported by Deep Zoom
+        return 'bad format'
+
+    # Get a project reference, using either local database or remotely supplied dict
+    pr = dzi_get_project_ref(project)
+
+    # Get the raw SVS/tiff file for the slide (the resource should exist,
+    # or else we will spend a minute here waiting with no response to user)
+    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+    tiff_file = sr.get_local_copy(resource)
+
+    # Read the region centered on the box of size 512x512
+    os = OpenSlide(tiff_file)
+
+    # Work out the offset
+    cx = randint(0, os.level_dimensions[level][0] - w * os.level_downsamples[level])
+    cy = randint(0, os.level_dimensions[level][1] - w * os.level_downsamples[level])
+    tile = os.read_region((x, y), level, (w, w))
+
+    # Convert to PNG
+    buf = PILBytesIO()
+    tile.save(buf, format)
+    resp = make_response(buf.getvalue())
+    resp.mimetype = 'image/%s' % format
+    return resp
+
+
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
@@ -324,6 +355,15 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
 @forward_to_worker
 def get_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
     return get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format)
+
+
+# Get an image patch at level 0 from the raw image
+@bp.route('/dzi/random_patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:width>.<format>',
+        methods=('GET','POST'))
+@project_access_required
+@forward_to_worker
+def get_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, width, format):
+    return get_random_patch(project, specimen, block, resource, slide_name, slide_ext, level, width, format)
 
 
 # Command to run preload worker

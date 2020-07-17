@@ -1,0 +1,11 @@
+{
+    "base_url": "gs://irwinlab_histology/FTLD-TDP",
+    "disp_name": "FTLD-TDP",
+    "desc" : "Irwin Lab FTLD-TDP Project",
+    "url_schema": {
+        "pattern": {
+            "raw": "FTLD-TDP_raw/{specimen}/{slide_name}.{slide_ext}",
+            "thumb": "FTLD-TDP_proc/{specimen}/{slide_name}/{slide_name}_thumb.png"
+        }
+    }
+}

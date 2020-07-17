@@ -584,7 +584,7 @@ def refresh_slide_db(project, manifest, single_specimen=None):
                 if t0 is None:
                     print('UPDATING metadata for slide %s' % (slide_name,))
                     db.execute('UPDATE slide SET section=?, slide=?, stain=? '
-                               'WHERE slide_id=?', (section, slide_no, stain, slide_id))
+                               'WHERE id=?', (section, slide_no, stain, slide_id))
                     db.commit()
 
                 update_slide_derived_data(slide_id)

@@ -96,10 +96,6 @@ def dzi_get_project_ref(project):
         return ProjectRef(project, pdata)
 
 
-# Prepare the DZI for a slide. Must be called first
-@bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
-@project_access_required
-@forward_to_worker
 def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
 
     # Get a project reference, using either local database or remotely supplied dict
@@ -125,9 +121,16 @@ def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
     return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
 
 
-# Check the status of a job
-@bp.route('/dzi/job/<project>/<slide_name>/<job_id>/status', methods=('GET', 'POST'))
+# Prepare the DZI for a slide. Must be called first
+@bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+@project_access_required
 @forward_to_worker
+def dzi_preload_endpoint(project, specimen, block, resource, slide_name, slide_ext):
+
+    # Get a project reference, using either local database or remotely supplied dict
+    return dzi_preload(project, specimen, block, resource, slide_name, slide_ext)
+
+
 def dzi_job_status(project, slide_name, job_id):
     pr = dzi_get_project_ref(project)
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
@@ -138,6 +141,7 @@ def dzi_job_status(project, slide_name, job_id):
         abort(404)
 
     res = { 'status' : j.get_status() }
+    print('JOB status: ', j)
 
     if j.get_status() == JobStatus.STARTED:
         (project, specimen, block, resource, slide_name, slide_ext) = j.meta['args']
@@ -145,6 +149,13 @@ def dzi_job_status(project, slide_name, job_id):
         res['progress'] = sr.get_download_progress(resource)
 
     return json.dumps(res)
+
+
+# Check the status of a job
+@bp.route('/dzi/job/<project>/<slide_name>/<job_id>/status', methods=('GET', 'POST'))
+@forward_to_worker
+def dzi_job_status_endpoint(project, slide_name, job_id):
+    return dzi_job_status(project, slide_name, job_id)
 
 
 # Get affine matrix corresponding to affine mode and resolution
@@ -336,9 +347,9 @@ def get_random_patch(project, specimen, block, resource, slide_name, slide_ext, 
     os = OpenSlide(tiff_file)
 
     # Work out the offset
-    cx = randint(0, os.level_dimensions[level][0] - w * os.level_downsamples[level])
-    cy = randint(0, os.level_dimensions[level][1] - w * os.level_downsamples[level])
-    tile = os.read_region((x, y), level, (w, w))
+    cx = randint(0, int(os.level_dimensions[level][0] - w * os.level_downsamples[level]))
+    cy = randint(0, int(os.level_dimensions[level][1] - w * os.level_downsamples[level]))
+    tile = os.read_region((cx, cy), level, (w, w))
 
     # Convert to PNG
     buf = PILBytesIO()
@@ -362,7 +373,7 @@ def get_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext
         methods=('GET','POST'))
 @project_access_required
 @forward_to_worker
-def get_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, width, format):
+def get_random_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, width, format):
     return get_random_patch(project, specimen, block, resource, slide_name, slide_ext, level, width, format)
 
 

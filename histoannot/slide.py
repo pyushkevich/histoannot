@@ -29,7 +29,7 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, get_slide_raw_dims, forward_to_worker, get_random_patch
+from histoannot.dzi import get_affine_matrix, get_slide_raw_dims, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
 from io import BytesIO
 
 import os
@@ -514,7 +514,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'mode':affine_mode,
             'resource':'XXXXX'}
 
-    url_tmpl_preload = url_for('dzi.dzi_preload', **url_ctx)
+    url_tmpl_preload = url_for('dzi.dzi_preload_endpoint', **url_ctx)
     url_tmpl_dzi = url_for('dzi.dzi', **url_ctx)
     url_tmpl_download = url_for('dzi.dzi_download', **url_ctx)
 
@@ -904,8 +904,7 @@ def thumb(id):
 
 
 # Get a random patch from the slide
-# TODO: need API keys!
-@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<width>', methods=('GET','POST'))
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<int:width>', methods=('GET','POST'))
 @task_access_required
 def api_get_slide_random_patch(task_id, slide_id, width):
     db = get_db()
@@ -934,10 +933,51 @@ def api_get_slide_random_patch(task_id, slide_id, width):
 
     # Send the patch
     resp = make_response(rawbytes)
-    resp.mimetype = 'image/png' % format
+    resp.mimetype = 'image/png'
     return resp
 
 
+# Preload a slide (using task/id)
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/preload/<resource>', methods=('GET','POST'))
+@task_access_required
+def api_slide_preload(task_id, slide_id, resource):
+    db = get_db()
+    sr = get_slide_ref(slide_id)
+    (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+
+    # Are we de this slide to a different node?
+    del_url = find_delegate_for_slide(slide_id)
+
+    # If local, call the method directly
+    if del_url is None:
+        return dzi_preload(project, specimen, block, resource, slide_name, slide_ext)
+    else:
+        url = '%s/dzi/preload/%s/%s/%s/%s/%s.%s.dzi' % (
+                del_url, project, specimen, block, resource, slide_name, slide_ext)
+        pr = sr.get_project_ref()
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
+        return urllib2.urlopen(url, post_data).read()
+
+
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/job/<jobid>/status', methods=('GET','POST'))
+@task_access_required
+def api_slide_job_status(task_id, slide_id, jobid):
+    db = get_db()
+    sr = get_slide_ref(slide_id)
+    (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
+
+    # Are we de this slide to a different node?
+    del_url = find_delegate_for_slide(slide_id)
+
+    # If local, call the method directly
+    if del_url is None:
+        return dzi_job_status(project, slide_name, jobid)
+    else:
+        url = '%s/dzi/job/%s/%s/%s/status' % (
+                del_url, project, slide_name, jobid)
+        pr = sr.get_project_ref()
+        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
+        return urllib2.urlopen(url, post_data).read()
 
 
 # CLI commands

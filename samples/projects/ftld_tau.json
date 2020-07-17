@@ -1,0 +1,11 @@
+{
+    "base_url": "gs://irwinlab_histology/FTLD-Tau",
+    "disp_name": "FTLD-Tau",
+    "desc" : "Irwin Lab FTLD-Tau Project",
+    "url_schema": {
+        "pattern": {
+            "raw": "FTLD-Tau_raw/{specimen}/{slide_name}.{slide_ext}",
+            "thumb": "FTLD-Tau_proc/{specimen}/{slide_name}/{slide_name}_thumb.png"
+        }
+    }
+}

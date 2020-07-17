@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Tau Training", 
+    "stains": [
+        "AT8"
+    ], 
+    "dltrain": {
+        "labelset": "tau",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize tau inclusions"
+}

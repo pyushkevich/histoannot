@@ -1,0 +1,87 @@
+[
+  {
+    "name": "GM_tangle",
+    "color": "#ca06c9",
+    "description": "Neurofibrillary tangle"
+  },
+  {
+    "name": "GM_pretangle",
+    "color": "#b095b8",
+    "description": "Pretangle, not a tangle yet"
+  },
+  {
+    "name": "GM_threads",
+    "color": "#18b497",
+    "description": "Area of tau threads in GM"
+  },{
+    "name": "GM_WM_tufted_astrocytes",
+    "color": "#77d4c8",
+    "description": "compact glial tau inclusions"
+  },
+  {
+    "name": "GM_WM_Astrocytic_plaque",
+    "color": "#e68a78",
+    "description": "clusters of glial tau"
+  },
+  {
+    "name": "GM_WM_Fuzzy_granular_astrocyte",
+    "color": "#dc04e6",
+    "description": "fuzzy punctate glial tau"
+  },
+  {
+    "name": "GM_WM_rammified_astrocyte",
+    "color": "#832125",
+    "description": "compact rammified glial tau"
+  },
+  {
+    "name": "GM_Pick_body",
+    "color": "#394a63",
+    "description": "spherical tau inclusion in neurons"
+  },
+  {
+    "name": "GM_Balooned_neuron",
+    "color": "#ee4068",
+    "description": "deep GM swollen tau positve neuron"
+  },
+  {
+    "name": "GM_tau_grains",
+    "color": "#42f5ad",
+    "description": "GM small dot like tau"
+  },
+  
+  {
+    "name": "GM_WM_coil_body",
+    "color": "#dd0215",
+    "description": "Coil body, oligodendrocytes in white matter"
+  },
+  {
+    "name": "WM_axonal_threads",
+    "color": "#02dd15",
+    "description": "threads of tau in WM axons"
+  },
+  {
+    "name": "tissue",
+    "color": "#2816ba",
+    "description": "Normal-appearing tissue"
+  },
+  {
+    "name": "dirt",
+    "color": "#f97a8a",
+    "description": "Dirt on the slide"
+  },
+  {
+    "name": "background",
+    "color": "#0bc027",
+    "description": "Slide background (white area)"
+  },
+  {
+    "name": "artifact",
+    "color": "#01c12a",
+    "description": "Various unexpected areas other than dirt, large starburst like brown stain"
+  },
+  {
+    "name": "ask_dave",
+    "color": "#76916b",
+    "description": "Placeholder, replace with actual label later"
+  }
+]

@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "TDP43 Training", 
+    "stains": [
+        "TDP43MP"
+    ], 
+    "dltrain": {
+        "labelset": "tdp",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize TDP43 inclusions"
+}

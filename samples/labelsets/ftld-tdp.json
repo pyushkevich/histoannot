@@ -1,0 +1,76 @@
+[
+  {
+    "name": "GM_Neuronal_Cytoplasmic_NCI",
+    "color": "#ca06c9",
+    "description": "small neuronal inclusions"
+  },
+  {
+    "name": "GM_Neuronal_Nuclear_Inclusion_NII",
+    "color": "#b095b8",
+    "description": "cat-eye nuclear inclusions"
+  },
+  {
+    "name": "GM_short_dystrophic_neurites_sDNs",
+    "color": "#18b497",
+    "description": "small threads"
+  },{
+    "name": "GM_long_dystrophic_neurites_DNs",
+    "color": "#77d4c8",
+    "description": "long DNs associated with Type C"
+  },
+  {
+    "name": "GM_GFNI",
+    "color": "#832125",
+    "description": "granular filamentous neuronal inclusions dot like in neurons"
+  },
+  {
+    "name": "GM_Grains",
+    "color": "#394a63",
+    "description": "TDP dot like inclusions in neuropil"
+  },
+  {
+    "name": "GM_Astrocytes",
+    "color": "#394a63",
+    "description": "TDP positive astrocytes rare type E"
+  },
+  {
+    "name": "WM_GM_oligo_inclusions",
+    "color": "#e68a78",
+    "description": "small oligodendroglial TDP inclusions"
+  },
+  {
+    "name": "GM_WM_astrocyte TDP",
+    "color": "#dc04e6",
+    "description": "TDP in large nucleus astrocyte often punctate"
+  },
+  {
+    "name": "WM_axonal_threads",
+    "color": "#02dd15",
+    "description": "threads of TDP in WM axons"
+  },
+  {
+    "name": "tissue",
+    "color": "#2816ba",
+    "description": "Normal-appearing tissue"
+  },
+  {
+    "name": "dirt",
+    "color": "#f97a8a",
+    "description": "Dirt on the slide"
+  },
+  {
+    "name": "background",
+    "color": "#0bc027",
+    "description": "Slide background (white area)"
+  },
+  {
+    "name": "artifact",
+    "color": "#01c12a",
+    "description": "Various unexpected areas other than dirt, large starburst like brown stain"
+  },
+  {
+    "name": "ask_dave",
+    "color": "#76916b",
+    "description": "Placeholder, replace with actual label later"
+  }
+]

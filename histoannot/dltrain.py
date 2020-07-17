@@ -19,7 +19,7 @@ from flask import (
     Blueprint, flash, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response
 )
 from werkzeug.exceptions import abort
-from histoannot.auth import login_required, task_access_required
+from histoannot.auth import login_required, task_access_required, project_access_required, project_admin_access_required
 from histoannot.db import get_db
 
 # TODO: these should be moved to another module
@@ -37,6 +37,7 @@ import os
 import urllib
 import urllib2
 import random
+import colorsys
 from PIL import Image
 
 from . import slide
@@ -73,6 +74,7 @@ def get_labelset_labels_table_json(task_id, slide_id):
     
     return json.dumps(ll_data)
 
+
 # Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table', methods=('GET',))
 @task_access_required
@@ -91,6 +93,7 @@ def get_labelset_labels_table(task_id, slide_id):
     ll_data = [dict(row) for row in ll.fetchall()]
     
     return render_template('dbtrain/label_table.html', labels = ll_data, task_id=task_id, slide_id=slide_id)
+
 
 # Get a table of recently created annotations
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/label/<int:label_id>/samples/table/json', methods=('POST','GET'))
@@ -189,6 +192,96 @@ def add_labelset_label(task_id):
         (label_name, ls_id, desc, color)).lastrowid
     db.commit()
     return json.dumps({"id":label_id})
+
+
+@bp.route('/dltrain/api/<project>/label/<int:label_id>/update', methods=('POST',))
+@project_admin_access_required
+def project_update_label(project, label_id):
+    db = get_db()
+    db.execute("UPDATE label SET name=?, description=?, color=? WHERE id=?",
+               (request.form['name'], request.form['desc'], request.form['color'], label_id))
+    db.commit()
+    return json.dumps({"status": "ok"})
+
+
+@bp.route('/dltrain/api/<project>/label/<int:label_id>/delete', methods=('POST',))
+@project_admin_access_required
+def project_delete_label(project, label_id):
+    db = get_db()
+
+    # When deleting label, the number of samples must be zero (for now, later maybe relax this)
+    nsam = db.execute('SELECT count(id) as n FROM training_sample WHERE label=?',(label_id,)).fetchone()['n']
+    if nsam > 0:
+        return json.dumps({"status": "failed", "reason": "in_use"})
+    else:
+        db.execute("DELETE FROM label WHERE id=?",(label_id,))
+        db.commit()
+        return json.dumps({"status": "ok"})
+
+
+@bp.route('/dltrain/api/<project>/labelset/<int:labelset_id>/add_label', methods=('POST',))
+@project_admin_access_required
+def project_labelset_add_label(project, labelset_id):
+    db = get_db()
+
+    # Generate a random color
+    r = lambda a,b : random.uniform(a,b)
+    clr = [int(x*255) for x in colorsys.hsv_to_rgb(r(0,1), r(0.5,1.0), r(0.5,1.0))]
+    clr_html = '#%02x%02x%02x' % tuple(clr)
+
+    label_id = db.execute(
+        'INSERT INTO label (name, labelset, description, color) VALUES (?,?,?,?)',
+        ('dummy', labelset_id, 'New Label', clr_html)).lastrowid
+
+    db.execute("UPDATE label SET name=? WHERE id=?",
+               ("Label %d" % (label_id,), label_id))
+
+    db.commit()
+    return json.dumps({"id":label_id})
+
+
+
+
+# Get a listing of labelsets with statistics
+@bp.route('/dltrain/api/<project>/labelsets', methods=('GET',))
+@project_access_required
+def get_project_labelset_listing(project):
+    db = get_db()
+
+    # List all the labelsets with counts of labels and samples
+    rc = db.execute("""
+        select LS.id, LS.name, LS.description,
+               count(L.id) as n_labels, 
+               sum(STAT.N) as n_samples 
+        from labelset_info LS left join label L on L.labelset=LS.id
+                              left join (
+                                  select L.id,count(TS.id) as N
+                                  from label L left join training_sample TS on L.id=TS.label 
+                                  group by L.id
+                                  ) STAT on L.id=STAT.id
+        where project=? group by LS.id order by LS.name""", (project,))
+
+    # Return the json dump of the listing
+    return json.dumps([dict(x) for x in rc.fetchall()])
+
+
+@bp.route('/dltrain/api/<project>/labelset/<int:lset>/labels', methods=('GET',))
+@project_access_required
+def get_labelset_label_listing(project, lset):
+    db = get_db()
+
+    rc = db.execute("""
+        select L.id, L.name, L.description, L.color, STAT.N as n_samples
+        from label L left join (select L.id,count(TS.id) as N
+                                from label L left join training_sample TS on L.id=TS.label 
+                                group by L.id) STAT on L.id=STAT.id
+        where L.labelset=? order by L.id""", (lset,))
+
+    # Return the json dump of the listing
+    return json.dumps([dict(x) for x in rc.fetchall()])
+
+
+
 
 
 
@@ -468,6 +561,17 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
 
     # Return the sample id and the patch generation job id
     return json.dumps({ 'id' : sample_id, 'patch_job_id' : job.id })
+
+
+# --------------------------------
+# Web pages
+# --------------------------------
+@bp.route('/dltrain/<project>/labelsets')
+@project_access_required
+def labelset_editor(project):
+
+    # Render the entry page
+    return render_template('dbtrain/labelset_editor.html', project=project, labelset=None)
 
 
 

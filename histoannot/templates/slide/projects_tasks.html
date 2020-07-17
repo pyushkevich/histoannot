@@ -27,7 +27,8 @@ PICSL Histology Annotation Server
 <a href="{{ url_for('slide.index')}}">Home</a>
 <span id="span_project_name"></span>
 
-<div class="pure-g" style="max-width: 1024px;">
+
+<!-- DataTable support --><div class="pure-g" style="max-width: 1024px;">
   <div class="pure-u-1 pure-u-md-12-24">
     <h3 align="center">PROJECTS</h3>
     <div id="d_project_table">
@@ -69,7 +70,6 @@ PICSL Histology Annotation Server
   </div>
 </div>
 
-<!-- DataTable support -->
 <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
 <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.1/css/select.dataTables.min.css">
 <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>

@@ -140,6 +140,31 @@ def project_access_required(view):
     return wrapped_view
 
 
+def project_admin_access_required(view):
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+
+        # The project keyword must exist
+        if 'project' not in kwargs:
+            abort(404, "Project not specified")
+
+        project = kwargs['project']
+        db = get_db()
+        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=? AND admin > 0',
+                        (g.user['id'], project)).fetchone()
+
+        if rc is None:
+            current_app.logger.warning('Unauthorized access to project %s at URL %s'
+                                       % (project, request.url if request is not None else None))
+            abort(403, "You are not authorized to access project %s" % project)
+        else:
+            return view(**kwargs)
+
+    return wrapped_view
+
+
+
 def task_access_required(view):
     @functools.wraps(view)
     @login_required

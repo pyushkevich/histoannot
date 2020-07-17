@@ -6,6 +6,7 @@ RUN apt-get update
 RUN apt-get install -y wget gcc openslide-tools python2.7
 RUN apt-get install -y build-essential pkg-config glib2.0-dev
 RUN apt-get install -y libexpat1-dev libtiff5-dev libjpeg-dev libgsf-1-dev
+RUN apt-get install -y libopenslide-dev
 
 # Downloading gcloud package
 RUN curl https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz > /tmp/google-cloud-sdk.tar.gz

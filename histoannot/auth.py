@@ -19,7 +19,7 @@ import functools
 import time
 
 from flask import (
-    Blueprint, flash, abort, g, redirect, render_template, request, session, url_for, current_app
+    Blueprint, flash, abort, g, redirect, render_template, request, session, url_for, current_app, make_response
 )
 from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -36,6 +36,7 @@ import uuid
 import json
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
+
 
 # Landing page
 @bp.route('/login', methods=('GET', 'POST'))
@@ -62,16 +63,19 @@ def login():
             session.clear()
             session['user_id'] = user['id']
             session['user_is_site_admin'] = user['site_admin']
+            session['user_api_key'] = False
             return redirect(url_for('index'))
 
         flash(error)
 
     return render_template('auth/login.html')
 
+
 @bp.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('index'))
+
 
 # Run before every page to know who the user is
 @bp.before_app_request
@@ -81,9 +85,8 @@ def load_logged_in_user():
     if user_id is None:
         g.user = None
     else:
-        g.user = get_db().execute(
-            'SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)
-        ).fetchone()
+        g.user = get_db().execute('SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)).fetchone()
+        g.login_via_api_key = session.get('user_api_key', False)
 
 
 # Decorator to require login for all views
@@ -398,6 +401,53 @@ def edit_user_profile():
     return render_template('auth/edit_profile.html',
                            username=rc['username'],
                            email = rq_email if rq_email is not None else rc['email'])
+
+
+@bp.route('/api/generate_key', methods=('GET', 'POST'))
+@login_required
+def generate_api_key():
+    """
+    Generate a new API key for the user. This invalidates previous API keys.
+    The user can login with the API key instead of username/password for limited
+    access to the site.
+    """
+
+    db = get_db()
+    api_key = str(uuid.uuid4())
+    db.execute('INSERT INTO user_api_key(api_key,user,t_expires) '
+               'VALUES (?,?,?)', (api_key, g.user['id'], time.time() + 365*24*60*60))
+    db.commit()
+
+    return json.dumps({"api_key": api_key})
+
+
+@bp.route('/api/login', methods=('POST',))
+def login_with_api_key():
+    if request.method == 'POST':
+        api_key = request.form['api_key']
+        error = None
+
+        db = get_db()
+        user = db.execute("""
+            SELECT U.*, AK.t_expires 
+            FROM user_api_key AK LEFT JOIN user U on AK.user = U.id
+            WHERE AK.api_key = ?""", (api_key,)).fetchone()
+        
+        if user is None:
+            error = 'Invalid API key'
+        elif user['disabled'] > 0:
+            error = 'User account is disabled'
+        elif user['t_expires'] < time.time():
+            error = 'API key has expired'
+
+        if error is None:
+            session.clear()
+            session['user_id'] = user['id']
+            session['user_is_site_admin'] = user['site_admin']
+            session['user_api_key'] = True
+            return make_response({"status": "ok"}, 200)
+
+        return make_response({"status": "failed", "error": error}, 401)
 
 
 def get_user_id(username):

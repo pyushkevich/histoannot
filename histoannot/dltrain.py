@@ -29,10 +29,9 @@ from histoannot.dzi import get_patch
 from histoannot.slide import make_slide_dbview, annot_sample_path_curves
 from histoannot.slideref import get_slide_ref
 
-import sqlite3
 import json
 import time
-import datetime
+import StringIO
 import os
 import urllib
 import urllib2
@@ -567,7 +566,7 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
 # Web pages
 # --------------------------------
 @bp.route('/dltrain/<project>/labelsets')
-@project_access_required
+@project_admin_access_required
 def labelset_editor(project):
 
     # Render the entry page
@@ -596,40 +595,57 @@ def make_dbview_full(view_name):
                       LEFT JOIN label L on T.label = L.id""" % (view_name,))
 
 
+def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, header = True):
 
-@click.command('samples-export-csv')
-@click.argument('task')
-@click.argument('output_file')
-@click.option('--header/--no-header', default=False, help='Include header in output CSV file')
-@click.option('--metadata/--no-metadata', default=False, help='Include metadata in output CSV file')
-@click.option('--ids/--no-ids', default=False, help='Include sample database ids in output CSV file')
-@with_appcontext
-def samples_export_csv_command(task, output_file, header, metadata, ids):
-    """Export all training samples in a task to a CSV file"""
     db = get_db()
 
     # Create the full view
     make_dbview_full('v_full')
 
     # Select keys to export
-    keys = ('slide_name','label_name','x','y','w','h')
-    if metadata:
-        keys = keys + ('t_create','creator','t_edit','editor')
-    if ids:
+    keys = ('slide_name', 'label_name', 'x', 'y', 'w', 'h')
+    if list_metadata:
+        keys = keys + ('t_create', 'creator', 't_edit', 'editor')
+    if list_block:
+        keys = keys + ('specimen_name', 'block_name')
+    if list_ids:
         keys = ('id',) + keys
 
     # Run query
     rc = db.execute(
-            'SELECT *, x0 as x, y0 as y, x1-x0 as w, y1-y0 as h FROM v_full '
-            'WHERE task=? ORDER BY id', (task,))
+        'SELECT *, x0 as x, y0 as y, x1-x0 as w, y1-y0 as h FROM v_full '
+        'WHERE task=? ORDER BY id', (task,))
 
+    if header:
+        fout.write(','.join(keys) + '\n')
+
+    for row in rc.fetchall():
+        vals = map(lambda a: str(row[a]), keys)
+        fout.write(','.join(vals) + '\n')
+
+
+@bp.route('/dltrain/api/task/<int:task_id>/samples/manifest.csv', methods=('GET',))
+@task_access_required
+def get_sample_manifest_for_task(task_id):
+    fout = StringIO.StringIO()
+    samples_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True)
+    return Response(fout.getvalue(), mimetype='text/csv')
+
+
+@click.command('samples-export-csv')
+@click.argument('task')
+@click.argument('output_file')
+@click.option('--header/--no-header', default=False, help='Include header in output CSV file')
+@click.option('--metadata/--no-metadata', default=False, help='Include metadata in output CSV file')
+@click.option('--specimen/--no-specimen', default=False, help='Include specimen ids in output CSV file')
+@click.option('--ids/--no-ids', default=False, help='Include sample database ids in output CSV file')
+@with_appcontext
+def samples_export_csv_command(task, output_file, header, metadata, specimen, ids):
+    """Export all training samples in a task to a CSV file"""
     with open(output_file, 'wt') as fout:
-        if header:
-            fout.write(','.join(keys) + '\n')
-
-        for row in rc.fetchall():
-            vals = map(lambda a : str(row[a]), keys)
-            fout.write(','.join(vals) + '\n')
+        samples_generate_csv(task, fout,
+                             list_metadata=metadata, list_ids=ids,
+                             list_block=specimen, header=header)
 
 
 @click.command('samples-import-csv')

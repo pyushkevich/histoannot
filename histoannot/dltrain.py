@@ -250,7 +250,7 @@ def get_project_labelset_listing(project):
 
     # List all the labelsets with counts of labels and samples
     rc = db.execute("""
-        select LS.id, LS.name, LS.description,
+        select LS.id as id, LS.name as name, LS.description as description,
                count(L.id) as n_labels, 
                sum(STAT.N) as n_samples 
         from labelset_info LS left join label L on L.labelset=LS.id

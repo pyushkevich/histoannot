@@ -1,0 +1,11 @@
+{
+    "base_url": "gs://irwinlab_histology/DLB-SYN303",
+    "disp_name": "DLB-SYN303",
+    "desc" : "Irwin Lab DLB/Alpha-Synucleinopathy Project",
+    "url_schema": {
+        "pattern": {
+            "raw": "DLB-UDall_proc/{specimen}/{slide_name}/{slide_name}_pyramidal.{slide_ext}",
+            "thumb": "DLB-UDall_proc/{specimen}/{slide_name}/{slide_name}_thumb.png"
+        }
+    }
+}

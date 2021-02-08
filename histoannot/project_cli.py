@@ -430,6 +430,18 @@ def list_projects_command():
         print(df)
 
 
+@click.command('project-get-json')
+@click.argument('project')
+@with_appcontext
+def project_get_json_command(project):
+    db = get_db()
+    row = db.execute('SELECT * FROM project WHERE id=?', (project,)).fetchone()
+    if row is not None:
+        print(json.dumps(row['json'], indent=2))
+    else:
+        print('Project %s not found' % (project,))
+
+
 # Find existing block or create if it does not exist
 def db_get_or_create_block(project, specimen, block):
     db = get_db()
@@ -990,6 +1002,7 @@ def init_app(app):
     app.cli.add_command(init_db_dltrain_command)
     app.cli.add_command(init_db_views_command)
     app.cli.add_command(list_projects_command)
+    app.cli.add_command(project_get_json_command)
     app.cli.add_command(create_project_command)
     app.cli.add_command(update_project_command)
     app.cli.add_command(project_assign_unclaimed_command)

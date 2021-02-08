@@ -1278,6 +1278,7 @@ def export_annot_vtk(task, slide_id, out_file):
 @with_appcontext
 def slides_list_cmd(task, specimen, block, section, slide, stain,
         min_paths, min_markers, csv):
+    """List slides in a task"""
 
     db=get_db()
 

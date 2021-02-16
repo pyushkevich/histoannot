@@ -563,17 +563,24 @@ def refresh_slide_db(project, manifest, single_specimen=None):
             # Check if the slide has already been imported into the database
             slide_id = pr.get_slide_by_name(slide_name)
 
-            if slide_id is not None:
-                print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
+            # If the slide is marked as a duplicate, we may need to delete it but regardless
+            # we do not proceed further
+            if cert == 'duplicate':
 
                 # If the slide is a duplicate, we should make it disappear
                 # but the problem is that we might have already done some annotation
                 # for that slide. I guess it still makes sense to delete the slide
-                if cert == 'duplicate':
+                if slide_id is not None:
                     print('DELETING slide %s as DUPLICATE' % (slide_name,))
                     db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
                     db.commit()
-                    continue
+
+                # Stop processing slide
+                continue
+
+            # If non-duplicate slide exists, we need to check its metadata against the database
+            if slide_id is not None:
+                print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
 
                 # Check if the metadata matches
                 t0 = db.execute('SELECT * FROM slide '
@@ -585,6 +592,20 @@ def refresh_slide_db(project, manifest, single_specimen=None):
                     print('UPDATING metadata for slide %s' % (slide_name,))
                     db.execute('UPDATE slide SET section=?, slide=?, stain=? '
                                'WHERE id=?', (section, slide_no, stain, slide_id))
+                    db.commit()
+
+                # We may also need to update the specimen/block id
+                t1 = db.execute('SELECT * FROM slide S '
+                                '         LEFT JOIN block B on S.block_id = B.id '
+                                'WHERE B.specimen_name=? AND B.block_name=? AND S.id=?',
+                                (specimen, block, slide_id)).fetchone()
+
+                # Update the specimen/block for this slide
+                if t1 is None:
+                    print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
+                    bid = db_get_or_create_block(project, specimen, block)
+                    db.execute('UPDATE slide SET block_id=? WHERE id=?',
+                               (bid, slide_id))
                     db.commit()
 
                 update_slide_derived_data(slide_id)

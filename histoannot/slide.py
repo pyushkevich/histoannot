@@ -672,7 +672,11 @@ def annot_sample_path_curves(data, max_len):
                     seg_2 = x[1]['segments'][i+1]
 
                     # Estimate the length of the curve segment
-                    pts = curve_interp(seg_1, seg_2, 100)
+                    try:
+                        pts = curve_interp(seg_1, seg_2, 100)
+                    except:
+                        print('Error interpolating segment')
+                        continue
 
                     # Determine the actual number of samples we will need
                     nsam = int(curve_length(pts) / max_len)

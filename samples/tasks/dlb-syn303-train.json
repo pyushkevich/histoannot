@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "A-Syn Training", 
+    "stains": [
+        "SYN303"
+    ], 
+    "dltrain": {
+        "labelset": "SYN303",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize a-syn inclusions"
+}

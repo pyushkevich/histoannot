@@ -430,6 +430,18 @@ def list_projects_command():
         print(df)
 
 
+@click.command('project-get-json')
+@click.argument('project')
+@with_appcontext
+def project_get_json_command(project):
+    db = get_db()
+    row = db.execute('SELECT * FROM project WHERE id=?', (project,)).fetchone()
+    if row is not None:
+        print(json.dumps(row['json'], indent=2))
+    else:
+        print('Project %s not found' % (project,))
+
+
 # Find existing block or create if it does not exist
 def db_get_or_create_block(project, specimen, block):
     db = get_db()
@@ -454,7 +466,7 @@ def db_get_or_create_block(project, specimen, block):
 
 
 # Generic function to insert a slide, creating a block descriptor of needed
-def db_create_slide(project, specimen, block, section, slide, stain, slice_name, slice_ext):
+def db_create_slide(project, specimen, block, section, slide, stain, slice_name, slice_ext, tags):
     db = get_db()
 
     # Find the block within the current project.
@@ -464,6 +476,10 @@ def db_create_slide(project, specimen, block, section, slide, stain, slice_name,
     sid = db.execute('INSERT INTO slide (block_id, section, slide, stain, slide_name, slide_ext) '
                      'VALUES (?,?,?,?,?,?)', (bid, section, slide, stain, slice_name, slice_ext)).lastrowid
 
+    # Create tags for the slide
+    for t in tags:
+        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?,?,TRUE)', (sid, t))
+
     # Commit to the database
     db.commit()
 
@@ -472,12 +488,12 @@ def db_create_slide(project, specimen, block, section, slide, stain, slice_name,
 
 
 # Function to update slide derived data (affine transform, thumbnail, etc.)
-def update_slide_derived_data(slide_id):
+def update_slide_derived_data(slide_id, check_hash=True):
     # Get the slide reference
     sr = get_slide_ref(slide_id)
 
     # Get the remote thumbnail file
-    f_thumb = sr.get_local_copy("thumb", check_hash=True)
+    f_thumb = sr.get_local_copy("thumb", check_hash=check_hash)
 
     # Get the local thumbnail
     thumb_dir = os.path.join(current_app.instance_path, 'thumb')
@@ -511,11 +527,84 @@ def load_url(url, parent_dir=None):
     return None
 
 
+# Rebuild the index of slide/task membership for a specific task
+def rebuild_task_slide_index(task_id):
+
+    db = get_db()
+
+    # Get the task information
+    (project,task) = get_task_data(task_id)
+
+    # Get the list of stains that are included, in lower case
+    stains = set()
+    if 'stains' in task:
+        for s in task['stains']:
+            stains.add(s.strip().lower())
+
+    # Get the list of all, any, and not tags
+    tags = {}
+    for kind in ('all', 'any', 'not'):
+        tags[kind] = set()
+        if 'tags' in task and kind in task['tags']:
+            for t in task['tags'][kind]:
+                tags[kind].add(t.strip().lower())
+
+    # Purge current task from the database
+    db.execute('DELETE FROM task_slide_index WHERE task_id=?', (task_id,))
+
+    # Get all the slides in this project along with their tags
+    rc = db.execute("select s.*, group_concat(st.tag,';') as tags "
+                    "from slide_info s left join slide_tags st on s.id = st.slide "
+                    "where s.project==? "
+                    "group by s.id", (project,))
+
+    # Generate all the new insert commands
+    index_size = 0
+    for row in rc.fetchall():
+
+        # Check the stain selector
+        if len(stains) and row['stain'].lower() not in stains:
+            continue
+
+        # Get the tags for the slide
+        slide_tags = set() if row['tags'] is None else set(row['tags'].strip().lower().split(';'))
+
+        # Check against the tag specifiers
+        if len(tags['all']) and len(tags['all'] - slide_tags):
+            continue
+
+        if len(tags['any']) and len(tags['any'] & slide_tags) == 0:
+            continue
+
+        if len(tags['not']) and len(tags['not'] & slide_tags):
+            continue
+
+        # The slide has survived all challenges
+        db.execute('INSERT INTO task_slide_index(slide, task_id) VALUES (?,?)', (row['id'], task_id))
+        index_size = index_size+1
+
+    # Commit to the database
+    db.commit()
+
+    # Return number of entries in the index
+    return index_size
+
+
+# Rebuild the index of slide/task membership for all tasks in a project
+def rebuild_project_slice_indices(project, specific_task_id=None):
+    db = get_db()
+    rc = db.execute('SELECT id, name FROM task_info WHERE project=? ORDER BY id', (project,))
+    for row in rc.fetchall():
+        if specific_task_id is None or specific_task_id == row['id']:
+            n = rebuild_task_slide_index(row['id'])
+            print('Index for task %d rebuilt with %d slides' % (row['id'], n))
+
+
 # Builds up a slide database. Scans a manifest file that contains names of specimens
 # and URLs to Google Sheet spreadsheets in which individual slides are matched to the
 # block/section/slice/stain information. Checks if the corresponding files exist in
 # the Google cloud and creates slide identifiers as needed
-def refresh_slide_db(project, manifest, single_specimen=None):
+def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
     # Database cursor
     db = get_db()
 
@@ -555,7 +644,7 @@ def refresh_slide_db(project, manifest, single_specimen=None):
         for spec_line in r:
 
             # Read the elements from the string
-            (slide_name, stain, block, section, slide_no, cert) = spec_line[0:6]
+            (slide_name, stain, block, section, slide_no, cert, tagline) = spec_line[0:7]
 
             # Remap slide_name to string
             slide_name = str(slide_name)
@@ -563,17 +652,28 @@ def refresh_slide_db(project, manifest, single_specimen=None):
             # Check if the slide has already been imported into the database
             slide_id = pr.get_slide_by_name(slide_name)
 
-            if slide_id is not None:
-                print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
+            # Get the current set of tags
+            tagline = tagline.lower().strip()
+            tags = set(tagline.split(';')) if len(tagline) > 0 else set()
+
+            # If the slide is marked as a duplicate, we may need to delete it but regardless
+            # we do not proceed further
+            if cert == 'duplicate':
 
                 # If the slide is a duplicate, we should make it disappear
                 # but the problem is that we might have already done some annotation
                 # for that slide. I guess it still makes sense to delete the slide
-                if cert == 'duplicate':
+                if slide_id is not None:
                     print('DELETING slide %s as DUPLICATE' % (slide_name,))
                     db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
                     db.commit()
-                    continue
+
+                # Stop processing slide
+                continue
+
+            # If non-duplicate slide exists, we need to check its metadata against the database
+            if slide_id is not None:
+                print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
 
                 # Check if the metadata matches
                 t0 = db.execute('SELECT * FROM slide '
@@ -587,7 +687,38 @@ def refresh_slide_db(project, manifest, single_specimen=None):
                                'WHERE id=?', (section, slide_no, stain, slide_id))
                     db.commit()
 
-                update_slide_derived_data(slide_id)
+                # We may also need to update the specimen/block id
+                t1 = db.execute('SELECT * FROM slide S '
+                                '         LEFT JOIN block B on S.block_id = B.id '
+                                'WHERE B.specimen_name=? AND B.block_name=? AND S.id=?',
+                                (specimen, block, slide_id)).fetchone()
+
+                # Update the specimen/block for this slide
+                if t1 is None:
+                    print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
+                    bid = db_get_or_create_block(project, specimen, block)
+                    db.execute('UPDATE slide SET block_id=? WHERE id=?',
+                               (bid, slide_id))
+                    db.commit()
+
+                # Finally, we may need to update the tags
+                current_tags = set()
+                rc = db.execute('SELECT tag FROM slide_tags WHERE slide=? AND external=TRUE', (slide_id,))
+                for row in rc.fetchall():
+                    current_tags.add(row['tag'])
+
+                # If tags have changed, update the tags
+                if tags != current_tags:
+                    print('UPDATING tags for slide %s to %s' % (slide_name, str(tags)))
+                    db.execute('DELETE FROM slide_tags WHERE slide=? AND external=TRUE', (slide_id,))
+                    for t in tags:
+                        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?, ?, TRUE)',
+                                   (slide_id, t))
+                    db.commit()
+
+                # Update the slide thumbnail, etc., optionally checking against source filesystem
+                update_slide_derived_data(slide_id, check_hash)
+
                 continue
 
             # Create a slideref for this object. The way we have set all of this up,
@@ -601,19 +732,22 @@ def refresh_slide_db(project, manifest, single_specimen=None):
                 if sr.resource_exists('raw', False):
                     # The raw slide has been found, so the slide will be entered into the database.
                     sid = db_create_slide(project, specimen, block, section, slide_no, stain, slide_name,
-                                          slide_ext)
+                                          slide_ext, tags)
 
                     print('Slide %s located with url %s and assigned new id %d' %
                           (slide_name, sr.get_resource_url('raw', False), sid))
 
                     # Update thumbnail and such
-                    update_slide_derived_data(sid)
+                    update_slide_derived_data(sid, True)
                     found = True
                     break
 
             # We are here because no URL was found
             if not found:
                 print('Raw image was not found for slide %s' % slide_name)
+
+    # Refresh slice index for all tasks in this project
+    rebuild_project_slice_indices(project)
 
 
 def load_raw_slide_to_cache(slide_id, resource):
@@ -630,12 +764,14 @@ def load_raw_slide_to_cache(slide_id, resource):
 @click.argument('manifest', type=click.Path(exists=True))
 @click.option('-s', '--specimen', default=None,
               help='Only refresh slides for a single specimen')
+@click.option('-f', '--fast', is_flag=True,
+              help='Skip md5 checks for locally cached files')
 @with_appcontext
-def refresh_slides_command(project, manifest, specimen):
+def refresh_slides_command(project, manifest, specimen, fast):
     """Refresh the slide database for project PROJECT using manifest
        file MANIFEST that lists specimens and CSV files or GDrive links"""
 
-    refresh_slide_db(project, manifest, specimen);
+    refresh_slide_db(project, manifest, specimen, not fast)
     click.echo('Scanning complete')
 
 
@@ -645,6 +781,18 @@ def refresh_slides_command(project, manifest, specimen):
 def cache_load_raw_slide_command(slideid):
     """Download a raw slide into the cache"""
     load_raw_slide_to_cache(slideid, 'raw')
+
+
+@click.command('rebuild-task-slide-index')
+@click.argument('project')
+@click.option('-t', '--task', default=None,
+              help='Only rebuild index for a single task for a single task')
+@with_appcontext
+def rebuild_task_slide_index_command(project, task):
+    """Rebuild the index that links slides to tasks. This is done automatically
+       when slides are imported and tasks are updated, so normally you should not
+       have to run this command directly"""
+    rebuild_project_slice_indices(project, task)
 
 
 # --------------------------------
@@ -674,6 +822,14 @@ task_schema = {
             "type": "array",
             "items": {
                 "type": "string"
+            }
+        },
+        "tags": {
+            "type": "object",
+            "properties": {
+                "any": {"type": "array", "items": {"type": "string"}},
+                "all": {"type": "array", "items": {"type": "string"}},
+                "not": {"type": "array", "items": {"type": "string"}}
             }
         }
     },
@@ -707,24 +863,28 @@ def add_task(project, json_file, update_existing_task_id=None):
             rc = db.execute('INSERT INTO project_task (project, task_id, task_name) VALUES (?,?,?)',
                             (project, rc.lastrowid, data['name']))
 
-            print("Successfully inserted task %s with id %d" % (data['name'], rc.lastrowid))
+            task_id = rc.lastrowid
+            print("Successfully inserted task %s with id %d" % (data['name'], task_id))
 
         else:
 
             # Update
+            task_id = int(update_existing_task_id)
             rc = db.execute('UPDATE task SET name=?, json=?, restrict_access=? WHERE id=?',
-                            (data['name'], json.dumps(data), data['restrict-access'], update_existing_task_id))
+                            (data['name'], json.dumps(data), data['restrict-access'], task_id))
 
             if rc.rowcount != 1:
-                raise ValueError("Task %d not found" % int(update_existing_task_id))
+                raise ValueError("Task %d not found" % task_id)
 
             # If the task is currently not associated with the same project, update
-            db.execute('UPDATE project_task SET project=? WHERE task_id=?',
-                       (project, update_existing_task_id))
+            db.execute('UPDATE project_task SET project=? WHERE task_id=?', (project, task_id))
 
-            print("Successfully updated task %d" % int(update_existing_task_id))
+            print("Successfully updated task %d" % task_id)
 
         db.commit()
+
+        # Update the slide index
+        rebuild_task_slide_index(task_id)
 
 
 # Get json for a task
@@ -990,10 +1150,12 @@ def init_app(app):
     app.cli.add_command(init_db_dltrain_command)
     app.cli.add_command(init_db_views_command)
     app.cli.add_command(list_projects_command)
+    app.cli.add_command(project_get_json_command)
     app.cli.add_command(create_project_command)
     app.cli.add_command(update_project_command)
     app.cli.add_command(project_assign_unclaimed_command)
     app.cli.add_command(refresh_slides_command)
+    app.cli.add_command(rebuild_task_slide_index_command)
     app.cli.add_command(cache_load_raw_slide_command)
     app.cli.add_command(add_task_command)
     app.cli.add_command(update_task_command)

@@ -447,7 +447,7 @@ def get_slide_info(task_id, slide_id):
                                 (stain, slideno, block_id, next_sec['section'])).fetchone()
     else:
         next_slide = None
-
+        
     # Load the user preferences for this slide
     rc = db.execute('SELECT json FROM user_task_slide_preferences '
                '            WHERE user=? AND task_id=? AND slide=?',
@@ -495,6 +495,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     rd_affine_mode = affine_mode if have_affine else 'raw'
     rd_resolution = resolution if have_x16 else 'raw'
 
+    # Get the list of available overlays and jsonify
+    overlays = sr.get_available_overlays(local = False)
+
     if (affine_mode == 'affine' and not have_affine) or (resolution == 'x16' and not have_x16):
         return redirect(url_for('slide.slide_view', 
             task_id=task_id, slide_id=slide_id,
@@ -520,26 +523,28 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Build a dictionary to call
     context = {
-            'slide_id': slide_id, 
-            'slide_info': si,
-            'next_slide':next_slide, 
-            'prev_slide':prev_slide,
-            'stain_list':stain_list,
-            'affine_mode':affine_mode,
-            'have_affine':have_affine,
-            'have_x16':have_x16,
-            'resolution':resolution,
-            'seg_mode':task['mode'], 
-            'task_id': task_id, 
-            'project':si['project'],
-            'project_name':pr.disp_name,
-            'block_id': si['block_id'],
-            'url_tmpl_preload': url_tmpl_preload,
-            'url_tmpl_dzi': url_tmpl_dzi,
-            'url_tmpl_download': url_tmpl_download,
-            'task':task,
-            'fixed_box_size' : get_dltrain_fixed_box_size(task),
-            'user_prefs': user_prefs}
+        'slide_id': slide_id,
+        'slide_info': si,
+        'next_slide': next_slide,
+        'prev_slide': prev_slide,
+        'stain_list': stain_list,
+        'affine_mode': affine_mode,
+        'have_affine': have_affine,
+        'have_x16': have_x16,
+        'resolution': resolution,
+        'seg_mode': task['mode'],
+        'task_id': task_id,
+        'project': si['project'],
+        'project_name': pr.disp_name,
+        'block_id': si['block_id'],
+        'url_tmpl_preload': url_tmpl_preload,
+        'url_tmpl_dzi': url_tmpl_dzi,
+        'url_tmpl_download': url_tmpl_download,
+        'task': task,
+        'fixed_box_size': get_dltrain_fixed_box_size(task),
+        'user_prefs': user_prefs,
+        'overlays': overlays
+    }
 
     # Add optional fields to context
     for field in ('sample_id', 'sample_cx', 'sample_cy'):

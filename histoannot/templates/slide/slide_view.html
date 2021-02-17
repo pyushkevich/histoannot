@@ -88,6 +88,100 @@
         filter: brightness(90%);
     }
 
+    /* The dropdown container */
+    .display-opts-dropdown {
+      /* float: left; */
+      /* overflow: hidden; */
+    }
+
+    /* Dropdown button */
+    .display-opts-dropdown .dropbtn {
+      border: none;
+      outline: none;
+      background-color: inherit;
+      font: inherit; /* Important for vertical align on mobile phones */
+    }
+
+    /* Add a red background color to navbar links on hover */
+    .display-opts-dropdown:hover .dropbtn {
+        background-color: #e8e8e8;
+    }
+
+    /* Dropdown content (hidden by default) */
+    .display-opts-dropdown-content {
+      display: none;
+      position: absolute;
+      right: 0;
+      width: min(500px, max(160px, 25%));
+      padding-right: 20px;
+      box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+      z-index: 1;
+      background-color: #e8e8e8;
+    }
+
+    /* Mega Menu header, if needed */
+    .display-opts-dropdown-content .header {
+      padding: 8px;
+      color: white;
+    }
+
+    /* Show the dropdown menu on hover */
+    .display-opts-dropdown:hover .display-opts-dropdown-content {
+      display: block;
+    }
+
+    /* Class to hide a panel */
+    .display-opts-hidden-content {
+        display: none;
+        padding-bottom: 2em;
+    }
+
+    .display-opts-visible-content {
+        display: block;
+        padding-bottom: 2em;
+    }
+
+    /* Class for slider handles */
+    .slider-custom-handle {
+        width: 3em !important;
+        height: 1.6em !important;
+        top: 50% !important;
+        margin-top: -.8em !important;
+        text-align: center !important;
+        line-height: 1.6em !important;
+    }
+
+    /* Class for left-side labels */
+
+    .display-opts-row {
+        width: 100%;
+        padding-top: 1.2em;
+        padding-bottom: 1.2em;
+    }
+
+    .display-opts-left-label {
+        width: 50%;
+        float: left;
+        box-sizing: border-box;
+        vertical-align: middle;
+        text-align: right;
+        font-weight: bold;
+        padding-right: 1em;
+        height: 1.6em;
+    }
+
+    .display-opts-right-container {
+        width: 50%;
+        float: left;
+        box-sizing: border-box;
+        vertical-align: middle;
+        height: 1.6em;
+    }
+
+    .display-opts-right-slider {
+        top: 50%;
+        transform: translateY(-50%);
+    }
 
 
 </style>
@@ -128,32 +222,86 @@
                         {% endfor %}
                     </select>
                 </form>
-                <!-- affine or raw mode -->
-                &nbsp
-                {% if seg_mode != 'dltrain' %}
-                <form id="form_mode" target="#" style="display: inline; white-space: nowrap;">
-                    <label for="form_mode_select">Transform:</label>
-                    <select id="form_mode_select" style="font-size: 80%;  color: black;">
-                        {% if have_affine  %}
-                        <option value="affine">Aligned to MRI</option>
+                <span class="display-opts-dropdown">
+                    <button class="dropbtn">Display <i class="fa fa-caret-down"></i></button>
+                    <div class="display-opts-dropdown-content">
+                        <div class="header">
+                            <h3>Display Options</h3>
+                        </div>
+
+                        <!-- affine or raw mode -->
+                        {% if seg_mode != 'dltrain' %}
+                        <div>
+                            <form id="form_disp_opt" target="#" class="pure-form pure-form-aligned">
+                                <fieldset>
+                                    <div class="pure-control-group">
+                                        <label for="form_mode_select">Slide transform:</label>
+                                        <select id="form_mode_select" class="pure-input-1-2" required>
+                                            {% if have_affine  %}
+                                            <option value="affine">Aligned to MRI</option>
+                                            {% endif %}
+                                            <option value="raw">Native Space</option>
+                                        </select>
+                                    </div>
+                                    <div class="pure-control-group">
+                                        <label for="form_res_select">Slide resolution:</label>
+                                        <select id="form_res_select" class="pure-input-1-2" required>
+                                            {% if have_x16  %}
+                                            <option value="x16">1:16</option>
+                                            {% endif %}
+                                            <option value="raw">1:1</option>
+                                        </select>
+                                    </div>
+                                    <div class="pure-control-group">
+                                        <label for="form_overlay_select">Slide overlay:</label>
+                                        <select id="form_overlay_select" class="pure-input-1-2" required>
+                                            <option value="none">None</option>
+                                        </select>
+                                    </div>
+                                </fieldset>
+                            </form>
+                        </div>
+
+                        <div id="div_overlay_options" class="display-opts-hidden-content">
+                            <div class="header">
+                                <h3>Overlay Properties</h3>
+                            </div>
+                            <div>
+                                <div class="display-opts-row">
+                                    <label class="display-opts-left-label">Overlay Opacity:</label>
+                                    <div class="display-opts-right-container">
+                                        <div id="overlay_opacity_slider" class="display-opts-right-slider"></div>
+                                    </div>
+                                </div>
+                                <div class="display-opts-row">
+                                    <label class="display-opts-left-label">Overlay Level:</label>
+                                    <div class="display-opts-right-container">
+                                        <div id="overlay_level" class="display-opts-right-slider"></div>
+                                    </div>
+                                </div>
+                                <div class="display-opts-row">
+                                    <label class="display-opts-left-label">Overlay Window:</label>
+                                    <div class="display-opts-right-container">
+                                        <div id="overlay_window" class="display-opts-right-slider"></div>
+                                    </div>
+                                </div>
+                                <div class="display-opts-row">
+                                    <label class="display-opts-left-label">Opacity Ramp:</label>
+                                    <div class="display-opts-right-container">
+                                        <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         {% endif %}
-                        <option value="raw">Native Space</option>
-                    </select>
-                </form>
-                &nbsp
-                <form id="form_res" target="#" style="display: inline; white-space: nowrap;">
-                    <label for="form_res_select">Resolution:</label>
-                    <select id="form_res_select" style="font-size: 80%; color: black;">
-                        {% if have_x16  %}
-                        <option value="x16">1:16</option>
-                        {% endif %}
-                        <option value="raw">1:1</option>
-                    </select>
-                </form>
-                &nbsp
-                {% endif %}
+                    </div>
+                </span>
             </td>
         </tr></table></div>
+
+
+
+
 
         <!-- The main slide view -->
         <div id="view">
@@ -161,7 +309,7 @@
             <input id="marker" placeholder="Enter Text" style="display:none; position: absolute; left:0px; top:0px; width:100px; height:40px;"></input>
             {% endif %}
         </div>
-    </div> 
+    </div>
 
     {% if seg_mode == 'dltrain' %}
     <div class="pure-u-1-5">
@@ -209,8 +357,8 @@
 {% endif %}
 
 <script type="text/javascript">
-$(document).ready(function() {
-
+$(document).ready(function()
+{
     // Segmentation/interaction mode
     const seg_mode='{{seg_mode}}';
 
@@ -224,6 +372,7 @@ $(document).ready(function() {
     const user_prefs = {{user_prefs|tojson}};
     const init_rotation = user_prefs.rotation || 0;
     const init_flip = user_prefs.flip || false;
+    const overlays = {{overlays|tojson}};
 
     // Initialize the viewer
     var viewer = new OpenSeadragon({
@@ -430,7 +579,7 @@ $(document).ready(function() {
     });
 
     // Get the progress of loading the current slide
-    var check_preload_progress = function(job_id) {
+    var check_preload_progress = function(job_id, cb_complete) {
         var myurl =
             $.ajax({
                 url: "{{ url_for('dzi.dzi_job_status_endpoint', project=project, slide_name=slide_info['slide_name'], job_id=999999) }}".replace("999999",job_id),
@@ -445,11 +594,11 @@ $(document).ready(function() {
                         else {
                             $("#progress_comment").text("Waiting for other downloads to complete")
                         }
-                        setTimeout(function() { check_preload_progress(job_id) }, 500);
+                        setTimeout(function() { check_preload_progress(job_id, cb_complete) }, 500);
                     }
                     else {
                         progress_dialog.dialog("close");
-                        init_viewer();
+                        cb_complete();
                     }
                 }
             })
@@ -471,7 +620,7 @@ $(document).ready(function() {
                 }
                 else {
                     job_id = data.job_id;
-                    check_preload_progress(job_id)
+                    check_preload_progress(job_id, cb_loaded);
                 }
             },
             error: function() { window.alert("Slide failed to load"); }
@@ -480,6 +629,23 @@ $(document).ready(function() {
 
     // Preload the main image
     preload_dzi("{{resolution}}", init_viewer);
+
+    // A function to update the colormap of the overlay
+    let set_overlay_colormap = function (c_map, level, window, a0, a1) {
+        viewer.setFilterOptions({
+            filters: [
+                {
+                    items: viewer.world.getItemAt(0),
+                    processors: []
+                },
+                {
+                    items: viewer.world.getItemAt(1),
+                    processors: [OpenSeadragon.Filters.COLORMAP4(c_map, level, window, a0, a1)]
+                }],
+            loadMode: 'sync'
+        });
+        console.log("Setting colormap: ", level, window, a0, a1);
+    };
 
     // A function to load an overlay of type 'resource' into the main viewer
     var add_overlay_dzi = function(resource, cb_loaded) {
@@ -495,28 +661,22 @@ $(document).ready(function() {
                 y: 0,
                 index: 1,
                 replace: exists,
+                compositeOperation: 'source-over',
                 opacity: 1,
                 success: function() { cb_loaded(); },
                 error: function() { window.alert("Overlay failed to load")}
-            });
-
-            // Add colormap to the data
-            viewer.setFilterOptions({
-                filters: [
-                    {
-                        items: viewer.world.getItemAt(0),
-                        processors: [ ]
-                    },
-                    {
-                        items: viewer.world.getItemAt(1),
-                        processors: [ OpenSeadragon.Filters.COLORMAP4(cm_hot, 128) ]
-                    }],
-                loadMode: 'sync'
             });
         };
 
         // Preload the resource
         preload_dzi(resource, on_loaded);
+    };
+
+    // A function to remove an overlay
+    let remove_all_overlays = function() {
+        while(viewer.world.getItemCount() > 1) {
+            viewer.world.removeItem(viewer.world.getItemAt(viewer.world.getItemCount()-1));
+        }
     };
 
     // Current interaction mode
@@ -1352,8 +1512,6 @@ $(document).ready(function() {
         var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
         Mousetrap.bind('b', function() { box_pressed_handler(); });
 
-        // TODO: remote
-        Mousetrap.bind('o', function() { add_overlay_dzi('d_tangles',function() { console.log('loaded') }) })
     }
 
     if(seg_mode == 'annot' || seg_mode == 'dltrain') {
@@ -1500,7 +1658,7 @@ $(document).ready(function() {
         s_mode.change(function() {
             const tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='XXXX', resolution=resolution) }}";
             let url = tmpl.replace('XXXX', s_mode.val());
-            $("#form_mode").attr("method","post").attr("action", url).submit();
+            $("#form_disp_opt").attr("method","post").attr("action", url).submit();
         });
 
         // Populate the transform form
@@ -1510,10 +1668,136 @@ $(document).ready(function() {
         s_res.change(function() {
             const tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}";
             let url = tmpl.replace('XXXX', $("#form_res_select").val());
-            $("#form_res").attr("method","post").attr("action", url).submit();
+            $("#form_disp_opt").attr("method","post").attr("action", url).submit();
         });
     }
 
+    // Create variables for the overlay sliders
+    let overlay_level_slider = $("#overlay_level");
+    let overlay_window_slider = $("#overlay_window");
+    let overlay_ramp_slider = $("#overlay_opacity_ramp");
+    let overlay_opacity_slider = $("#overlay_opacity_slider");
+
+    // Callback for the level/window sliders
+    let on_level_window_change = function(event, ui) {
+
+        // Get the window and level
+        let l = parseFloat(overlay_level_slider.slider("value"));
+        let w = parseFloat(overlay_window_slider.slider("value"));
+
+        // Get the alpha range
+        let a0 = overlay_ramp_slider.slider("values")[0] * 255.0 / 100.0;
+        let a1 = overlay_ramp_slider.slider("values")[1] * 255.0 / 100.0;
+
+        // Use the mapping to map level/window to pixel values
+        let o = overlays[$("#form_overlay_select").val()];
+        let scale = 255.0 / (o.mapping[1] - o.mapping[0]);
+        let l_uchar = Math.floor((l - o.mapping[0]) * scale);
+        let w_uchar = Math.floor(w * scale);
+
+        // Add colormap to the data
+        set_overlay_colormap(cm_hot, l_uchar, w_uchar, a0, a1);
+    };
+
+    // Function to create a decorated slider
+    let make_slider_with_handle = function (target, param, callback) {
+
+        // Add a <div> to the parent div
+        let handle_ui = $('<div class="slider-custom-handle ui-slider-handle"></div>');
+        target.append(handle_ui);
+
+        // Set up the slider
+        target.slider({
+            min: param.min,
+            max: param.max,
+            value: param.default,
+            step: param.step,
+            create: function () {
+                handle_ui.text($(this).slider("value"));
+            },
+            slide: function (event, ui) {
+                // Update the handle
+                handle_ui.text(ui.value);
+                callback(event, ui);
+            },
+            stop: function (event, ui) {
+                // Update the handle
+                handle_ui.text(ui.value);
+                callback(event, ui);
+            }
+        });
+    };
+
+    // Callback for overlay selection
+    let on_overlay_select = function() {
+
+        ovl = $("#form_overlay_select").val();
+        if(ovl === "none") {
+            remove_all_overlays();
+            $("#div_overlay_options").hide();
+        }
+        else {
+            add_overlay_dzi(overlays[ovl].pattern, function() {
+                console.log('Loaded overlay ', overlays[ovl].name);
+
+                // Populate the controls for this overlay
+                let opacity = overlay_opacity_slider.slider("value") / 255.0;
+                if(viewer.world.getItemCount() > 1)
+                    viewer.world.getItemAt(1).setOpacity(opacity);
+
+                // Load the level/window values for this overlay
+                let o = overlays[ovl];
+                make_slider_with_handle(overlay_level_slider, o.level, on_level_window_change);
+                make_slider_with_handle(overlay_window_slider, o.window, on_level_window_change);
+
+                // Initialize
+                on_level_window_change(null, null);
+
+                $("#div_overlay_options").show();
+
+
+            });
+        }
+    };
+
+    // Callback for opacity slider
+    let on_overlay_opacity_change = function(val) {
+        let opacity = val / 255.0;
+        if(viewer.world.getItemCount() > 1)
+            viewer.world.getItemAt(1).setOpacity(opacity);
+    };
+
+    // Configure the slider
+    overlay_opacity_slider.slider({
+        min: 0,
+        max: 255,
+        value: 127,
+        slide: function(event, ui) { on_overlay_opacity_change(ui.value); },
+        stop: function(event, ui) { on_overlay_opacity_change(ui.value); }
+    });
+
+    // Configure the alpha slider
+    overlay_ramp_slider.slider({
+        min: 0,
+        max: 100,
+        step: 10,
+        values: [0, 100],
+        slide: function(event, ui) { on_level_window_change(); },
+        stop: function(event, ui) { on_level_window_change(); }
+    });
+
+    // Fill out the list of overlays
+    if(Object.keys(overlays).length > 0) {
+
+        // Fill out the list of overlays
+        let s_ovl = $("#form_overlay_select");
+        for (ovl in overlays) {
+            s_ovl.append(new Option(overlays[ovl].name, ovl));
+        }
+
+        // Set the listener
+        s_ovl.change(on_overlay_select);
+    }
 
 });
 </script>

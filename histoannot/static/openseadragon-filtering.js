@@ -488,15 +488,33 @@
                 callback();
             };
         },
-        COLORMAP4: function(cmap, level, wind) {
+
+        /*
+         window and level are obvious; a0 and a1 are values between 0 and 255 between
+         which the alpha is linearly modulated between 0 and 255
+         */
+        COLORMAP4: function(cmap, level, wind, a0, a1) {
+
+            // First transform the alpha channel of the colormap
+            var alphaCmap = cmap.slice(0);
+            for(var i = 0; i < 256; i++) {
+                alphaCmap[i] = cmap[i];
+                if(a1 == a0 && i < a0)
+                    alphaCmap[i][3] = 0;
+                else if(a1 == a0 && i >= a0)
+                    alphaCmap[i][3] = 255;
+                else
+                    alphaCmap[i][3] = Math.floor(Math.max(0, Math.min(255, (i - a0) * 255.0 / (a1 - a0))));
+            }
 
             // The color map is based on window and level of the input data
             var resampledCmap = cmap.slice(0);
             for(var i = 0; i < 256; i++) {
                 var t = (i - level) * 1.0 / wind;
                 var pos = Math.max(0, Math.min(255, Math.round(t * 256)));
-                resampledCmap[i] = cmap[pos];
+                resampledCmap[i] = alphaCmap[pos];
             }
+
             return function(context, callback) {
                 var imgData = context.getImageData(
                     0, 0, context.canvas.width, context.canvas.height);
@@ -507,8 +525,12 @@
                     pxl[i] = c[0];
                     pxl[i + 1] = c[1];
                     pxl[i + 2] = c[2];
-                    pxl[i + 3] = 127;
-                    // pxl[i + 3] = c[3];
+                    pxl[i + 3] = c[3];
+                    // pxl[i + 3] = 127;
+                    //if(c[3] >= 32)
+                    //    pxl[i + 3] = c[3];
+                    //else
+                    //    pxl[i + 3] = 32;
                 }
                 context.putImageData(imgData, 0, 0);
                 callback();

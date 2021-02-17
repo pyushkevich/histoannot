@@ -24,6 +24,18 @@ _default_histo_url_schema = {
         "d_tangles": "{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
     },
 
+    # The overlays
+    "overlays": {
+        "d_tangles": {
+            "name": "Tau tangle density",
+            "pattern": "d_tangles",
+            "data_type": "scalar",
+            "mapping": [-128, 127],
+            "level": {"min":-10., "max":10., "default": 0.},
+            "window": {"min":0.5, "max":20., "default": 10., "step": 0.5},
+        }
+    },
+
     # The maximum number of bytes that may be cached locally for 'raw' data
     "cache_capacity": 32 * 1024 ** 3
 }
@@ -181,7 +193,31 @@ class ProjectRef:
             return os.path.exists(full_path)
         else:
             return self._url_handler.exists(full_path)
+        
+    # Return a list of overlays for a slide
+    def get_available_overlays(self, d, local=True):
+        """
+        Get a listing of available overlays for a slide
+        :param d: Dictionary used to check the overlays against the schema
+        :param local: Flag indicating to check that the overlays are locally available
+        """
+        
+        # Are there any overlays defined in the schema?
+        ovl_dict = self.get_url_schema().get("overlays")
+        if ovl_dict is None:
+            return None
+        
+        # For each overlay in the schema, check it against the available resources
+        ovl_dict_matched = {}
+        for name, o in ovl_dict.items():
+            o_resource = o.get("pattern")
+            o_path = self.get_resource_url(o_resource, d, local) if o_resource is not None else None
+            if o_path is not None:
+                o["url"] = o_path
+                ovl_dict_matched[name] = o
 
+        return ovl_dict_matched
+        
     # Get a local copy of the resource, copying it if necessary
     def get_local_copy(self, resource, d, check_hash=False, dry_run=False):
 

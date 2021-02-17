@@ -478,7 +478,7 @@ def db_create_slide(project, specimen, block, section, slide, stain, slice_name,
 
     # Create tags for the slide
     for t in tags:
-        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?,?,TRUE)', (sid, t))
+        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?,?,1)', (sid, t))
 
     # Commit to the database
     db.commit()
@@ -703,16 +703,16 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
 
                 # Finally, we may need to update the tags
                 current_tags = set()
-                rc = db.execute('SELECT tag FROM slide_tags WHERE slide=? AND external=TRUE', (slide_id,))
+                rc = db.execute('SELECT tag FROM slide_tags WHERE slide=? AND external=1', (slide_id,))
                 for row in rc.fetchall():
                     current_tags.add(row['tag'])
 
                 # If tags have changed, update the tags
                 if tags != current_tags:
                     print('UPDATING tags for slide %s to %s' % (slide_name, str(tags)))
-                    db.execute('DELETE FROM slide_tags WHERE slide=? AND external=TRUE', (slide_id,))
+                    db.execute('DELETE FROM slide_tags WHERE slide=? AND external=1', (slide_id,))
                     for t in tags:
-                        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?, ?, TRUE)',
+                        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?, ?, 1)',
                                    (slide_id, t))
                     db.commit()
 

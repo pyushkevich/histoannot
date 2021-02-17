@@ -1,0 +1,7 @@
+{
+    "restrict-access": false,
+    "mode": "browse",
+    "name": "Diagnostics",
+    "desc": "Semiquantiatative rating of selected diagnostic histopathology slides",
+    "tags": { "any" :  [ "diag" ] }
+}

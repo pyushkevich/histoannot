@@ -48,24 +48,12 @@ import urllib2
 
 bp = Blueprint('slide', __name__)
 
-# Get the where clause for slide selection corresponding to a task
-def get_task_slide_where_clause(task):
-    if 'stains' in task and len(task['stains']) > 0:
-        where = ('S.stain COLLATE NOCASE IN (%s)' % 
-                 ','.join('?'*len(task['stains'])), 
-                 tuple(task['stains']))
-    else:
-        where = ('S.id IS NOT NULL', ())
-
-    return where
-
 
 @bp.route('/')
 @login_required
 def index():
     # Render the entry page
     return render_template('slide/projects_tasks.html')
-
 
 
 # The index
@@ -75,7 +63,6 @@ def project_detail(project):
 
     # Render the entry page
     return render_template('slide/projects_tasks.html', project_name=project)
-
 
 
 # Project listing for the current user
@@ -128,30 +115,24 @@ def task_listing(project):
     for row in rc.fetchall():
 
         # Parse the json
-        task = json.loads(row['json'])
-
-        # Generate the where clause
-        where = get_task_slide_where_clause(task)
-        print(where)
+        task_id = row['id']
 
         # Get the subset of stains to which the task applies
         stat = db.execute(
-            'SELECT COUNT(S.id) as nslides, '
-            '       COUNT(DISTINCT block_id) as nblocks, '
-            '       COUNT(DISTINCT specimen_name) as nspecimens '
-            'FROM slide_info S  '
-            'WHERE project=? AND %s ' % (where[0],),
-            (project,) + where[1]).fetchone()
+            """SELECT COUNT(S.id) as nslides, COUNT(DISTINCT block_id) as nblocks, COUNT(DISTINCT specimen_name) as nspecimens
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               WHERE task_id=?""", (task_id,)).fetchone()
 
         # Create a dict
-        d = { 'id' : row['id'], 'name': task['name'], 'desc': task['desc'] }
+        task = json.loads(row['json'])
+        d = {'id': row['id'], 'name': task['name'], 'desc': task['desc']}
         for key in ('nspecimens', 'nblocks', 'nslides'):
             d[key] = stat[key]
 
         listing.append(d)
 
     return json.dumps([x for x in listing])
-
 
 
 # Specimen listing for a task
@@ -163,44 +144,44 @@ def task_specimen_listing(task_id):
     # Get the current task data
     project,task = get_task_data(task_id)
 
-    # Generate the where clause
-    where = get_task_slide_where_clause(task)
-
     # List all the blocks that meet requirements for the current task
     if task['mode'] == 'annot':
 
         # Join with the annotations table
         blocks = db.execute(
-            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (S.id) as nslides, '
-            '       COUNT(A.slide_id) as nannot '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            '             LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
-            '                                  AND A.n_paths+A.n_markers > 0 '
-            'WHERE B.project=? AND %s '
-            'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
-            (task_id,project) + where[1]).fetchall()
+            """SELECT specimen_name, COUNT(DISTINCT block_id) as nblocks,
+                   COUNT (S.id) as nslides, COUNT(A.slide_id) as nannot
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = TSI.task_id
+               WHERE TSI.task_id = ?
+               GROUP BY specimen_name
+               ORDER BY specimen_name""", (task_id,)).fetchall()
 
     elif task['mode'] == 'dltrain':
 
         # Join with the annotations table
         blocks = db.execute(
-            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (DISTINCT S.id) as nslides, '
-            '                        COUNT(T.id) as nsamples '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            '             LEFT JOIN training_sample T on T.slide = S.id AND T.task = ?'
-            'WHERE B.project=? AND %s '
-            'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
-            (task_id,project) + where[1]).fetchall()
+            """SELECT specimen_name, COUNT(DISTINCT block_id) as nblocks,
+                   COUNT (DISTINCT S.id) as nslides, COUNT(T.slide) as nsamples
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               LEFT JOIN training_sample T on T.slide = S.id AND T.task = TSI.task_id
+               WHERE TSI.task_id = ?
+               GROUP BY block_id,block_name,specimen_name
+               ORDER BY block_name""", (task_id,)).fetchall()
 
     elif task['mode'] == 'browse':
         blocks = db.execute(
-            'SELECT B.specimen_name, COUNT(DISTINCT B.id) as nblocks, COUNT (S.id) as nslides '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            'WHERE B.project=? AND %s '
-            'GROUP BY specimen_name ORDER BY specimen_name' % where[0], 
-            (project,) + where[1]).fetchall()
+            """SELECT specimen_name, COUNT(DISTINCT block_id) as nblocks, COUNT(S.id) as nslides
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               WHERE TSI.task_id = ?
+               GROUP BY specimen_name
+               ORDER BY specimen_name""", (task_id,)).fetchall()
 
     return json.dumps([dict(row) for row in blocks])
+
 
 # Task detail
 @bp.route('/task/<int:task_id>')
@@ -246,42 +227,44 @@ def specimen_block_listing(task_id, specimen_name):
     db = get_db()
 
     # Get the current task data
-    project,task = get_task_data(task_id)
-
-    # Generate the where clause
-    where = get_task_slide_where_clause(task)
+    project, task = get_task_data(task_id)
 
     # List all the blocks that meet requirements for the current task
     if task['mode'] == 'annot':
 
         # Join with the annotations table
         blocks = db.execute(
-            'SELECT B.*, COUNT (S.id) as nslides, COUNT(A.slide_id) as nannot '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            '             LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
-            '                                  AND A.n_paths+A.n_markers > 0 '
-            'WHERE project=? AND specimen_name=? AND %s '
-            'GROUP BY B.id ORDER BY block_name' % where[0], 
-            (task_id, project, specimen_name) + where[1]).fetchall()
+            """SELECT block_id,block_name,specimen_name,
+                   COUNT (S.id) as nslides, COUNT(A.slide_id) as nannot 
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = TSI.task_id
+               WHERE TSI.task_id = ? AND S.specimen_name = ?
+               GROUP BY block_id,block_name,specimen_name
+               ORDER BY block_name""", (task_id, specimen_name)).fetchall()
 
     elif task['mode'] == 'dltrain':
 
         # Join with the annotations table
         blocks = db.execute(
-            'SELECT B.*, COUNT (DISTINCT S.id) as nslides, COUNT(T.id) as nsamples '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            '             LEFT JOIN training_sample T on T.slide = S.id AND T.task = ?'
-            'WHERE project=? AND specimen_name=? AND %s '
-            'GROUP BY B.id ORDER BY block_name' % where[0], 
-            (task_id, project, specimen_name) + where[1]).fetchall()
+            """SELECT block_id,block_name,specimen_name,
+                   COUNT (DISTINCT S.id) as nslides, COUNT(T.slide) as nsamples
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               LEFT JOIN training_sample T on T.slide = S.id AND T.task = TSI.task_id
+               WHERE TSI.task_id = ? AND S.specimen_name = ?
+               GROUP BY block_id,block_name,specimen_name
+               ORDER BY block_name""", (task_id, specimen_name)).fetchall()
 
-    elif task['mode'] == 'browse':
+    else:
+        # Browse mode
         blocks = db.execute(
-            'SELECT B.*, COUNT (S.id) as nslides '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            'WHERE project=? AND specimen_name=? AND %s '
-            'GROUP BY B.id ORDER BY block_name' % where[0], 
-            (project, specimen_name) + where[1]).fetchall()
+            """SELECT block_id,block_name,specimen_name,COUNT(S.id) as nslides
+               FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               WHERE TSI.task_id = ? AND S.specimen_name = ?
+               GROUP BY block_id,block_name,specimen_name
+               ORDER BY block_name""", (task_id, specimen_name)).fetchall()
 
     return json.dumps([dict(row) for row in blocks])
 
@@ -302,32 +285,40 @@ def make_slide_dbview(task_id, view_name):
 
     if task['mode'] == 'annot':
 
-        db.execute("""CREATE TEMP VIEW %s AS
-                      SELECT S.*, 
-                      IFNULL(SUM(A.n_paths),0) as n_paths, 
-                      IFNULL(SUM(A.n_markers),0) as n_markers
-                      FROM slide_info S LEFT JOIN annot A on A.slide_id = S.id AND A.task_id=%d
-                      WHERE S.project='%s' %s
-                      GROUP BY S.id
-                      ORDER BY specimen_name, block_name, section, slide""" % (view_name,task_id,project,wcl))
+        db.execute(
+            """CREATE TEMP VIEW %s AS
+                SELECT S.*,
+                   IFNULL(SUM(A.n_paths),0) as n_paths,
+                   IFNULL(SUM(A.n_markers),0) as n_markers,
+                   IFNULL(SUM(A.n_paths),0) + IFNULL(SUM(A.n_markers),0) as n_annot
+                FROM task_slide_index TSI
+                    LEFT JOIN slide_info S ON TSI.slide = S.id
+                    LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = TSI.task_id
+                WHERE TSI.task_id = %d
+                GROUP BY S.id, S.section, S.slide, specimen_name, block_name
+                ORDER BY specimen_name, block_name, section, slide""" % (view_name, int(task_id)))
 
     elif task['mode'] == 'dltrain':
 
-        db.execute("""CREATE TEMP VIEW %s AS
-                      SELECT S.*, COUNT(T.id) as n_samples
-                      FROM slide_info S LEFT JOIN training_sample T on T.slide = S.id AND T.task=%d
-                      WHERE S.project='%s' %s
-                      GROUP BY S.id
-                      ORDER BY specimen_name, block_name, section, slide""" % (view_name,task_id,project,wcl))
+        db.execute(
+            """CREATE TEMP VIEW %s AS
+                SELECT S.*,
+                   COUNT(T.id) as n_samples
+                FROM task_slide_index TSI
+                    LEFT JOIN slide_info S ON TSI.slide = S.id
+                    LEFT JOIN training_sample T on T.slide = S.id AND T.task = TSI.task_id
+                WHERE TSI.task_id = %d
+                GROUP BY S.id, S.section, S.slide, specimen_name, block_name
+                ORDER BY specimen_name, block_name, section, slide""" % (view_name, int(task_id)))
 
     elif task['mode'] == 'browse':
 
-        db.execute("""CREATE TEMP VIEW %s AS
-                      SELECT S.*
-                      FROM slide_info S
-                      WHERE S.project='%s' %s
-                      ORDER BY specimen_name, block_name, section, slide""" % (view_name,project,wcl))
-
+        db.execute(
+            """CREATE TEMP VIEW %s AS
+               SELECT S.* FROM task_slide_index TSI
+                   LEFT JOIN slide_info S on S.id == TSI.slide
+               WHERE TSI.task_id = %d
+               ORDER BY specimen_name, block_name, section, slide""" % (view_name, int(task_id)))
 
 
 # The block detail listing
@@ -348,41 +339,41 @@ def block_slide_listing(task_id, specimen_name, block_name):
 
     block_id = block['id']
 
-    # Generate the where clause
-    where = get_task_slide_where_clause(task)
-
     # List all the blocks that meet requirements for the current task
     if task['mode'] == 'annot':
 
         # Join with the annotations table
         slides = db.execute(
-            'SELECT S.*, '
-            '       IFNULL(SUM(A.n_paths),0) as n_paths, '
-            '       IFNULL(SUM(A.n_markers),0) as n_markers, '
-            '       IFNULL(SUM(A.n_paths),0) + IFNULL(SUM(A.n_markers),0) as n_annot '
-            'FROM slide S LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ? '
-            'WHERE %s AND S.block_id = ?'
-            'GROUP BY S.id ORDER BY section, slide ASC' % where[0], 
-            (task_id,) + where[1] + (block_id,)).fetchall()
+            """SELECT S.*,
+                   IFNULL(SUM(A.n_paths),0) as n_paths,
+                   IFNULL(SUM(A.n_markers),0) as n_markers,
+                   IFNULL(SUM(A.n_paths),0) + IFNULL(SUM(A.n_markers),0) as n_annot
+                FROM task_slide_index TSI
+                    LEFT JOIN slide_info S ON TSI.slide = S.id
+                    LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = TSI.task_id
+                WHERE TSI.task_id = ? AND S.block_id = ?
+                GROUP BY S.id, S.section, S.slide
+                ORDER BY section, slide""", (task_id, block_id)).fetchall()
 
     elif task['mode'] == 'dltrain':
 
         # Join with the training samples table
         slides = db.execute(
-            'SELECT S.*, COUNT(T.id) as n_samples '
-            'FROM slide S LEFT JOIN training_sample T on T.slide = S.id AND T.task = ? '
-            'WHERE %s AND S.block_id = ?'
-            'GROUP BY S.id ORDER BY section, slide ASC' % where[0], 
-            (task_id,) + where[1] + (block_id,)).fetchall()
+            """SELECT S.*, COUNT(T.id) as n_samples 
+               FROM task_slide_index TSI
+                   LEFT JOIN slide_info S on S.id == TSI.slide
+                   LEFT JOIN training_sample T on T.slide = S.id AND T.task = TSI.task_id
+               WHERE TSI.task_id = ? AND block_id = ?
+               GROUP BY S.id, S.section, S.slide
+               ORDER BY section, slide""", (task_id, block_id)).fetchall()
 
     elif task['mode'] == 'browse':
 
         slides = db.execute(
-            'SELECT S.* '
-            'FROM slide S LEFT JOIN block_info B on S.block_id = B.id '
-            'WHERE %s AND S.block_id = ? '
-            'GROUP BY S.id ORDER BY section, slide ASC' % where[0],
-            where[1] + (block_id,)).fetchall()
+            """SELECT S.* FROM task_slide_index TSI
+               LEFT JOIN slide_info S on S.id == TSI.slide
+               WHERE TSI.task_id = ? AND S.block_id = ?
+               ORDER BY section, slide""", (task_id, block_id)).fetchall()
 
     return json.dumps([dict(row) for row in slides])
 

@@ -1,0 +1,9 @@
+[
+  { "name" : "candidate_roi", "color" : "#18b497", "description" : "Candidate ROI" },
+  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"},
+  { "name" : "rated_roi_0_none", "color" : "#ffca80", "description" : "Severity 0"},
+  { "name" : "rated_roi_01_rare", "color" : "#ffb54d", "description" : "Severity 0-1"},
+  { "name" : "rated_roi_1_mild", "color" : "#ff9f1a", "description" : "Severity 1"},
+  { "name" : "rated_roi_2_moderate", "color" : "#e68600", "description" : "Severity 2"},
+  { "name" : "rated_roi_3_severe", "color" : "#b36800", "description" : "Severity 3"}
+]

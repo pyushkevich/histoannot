@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Deep Learning Validation", 
+    "stains": [
+        "TDP43MP"
+    ], 
+    "dltrain": {
+        "labelset": "boxeval",
+        "min-size": 16,
+        "max-size": 4096
+    }, 
+    "mode": "dltrain", 
+    "desc": "Counting tangles withing ROIs"
+}

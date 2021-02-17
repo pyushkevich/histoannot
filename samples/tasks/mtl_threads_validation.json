@@ -1,0 +1,15 @@
+{
+    "restrict-access": true, 
+    "name": "Tanglethon Validation: Threads",
+    "stains": [
+        "tau"
+    ], 
+    "dltrain": {
+        "labelset": "threads_val",
+        "min-size": 512,
+        "max-size": 512,
+        "display-patch-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Semi-quantitative evaluation of thread burden on patches"
+}

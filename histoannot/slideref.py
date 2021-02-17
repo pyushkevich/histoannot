@@ -71,6 +71,10 @@ class SlideRef:
     def resource_exists(self, resource, local = True):
         return self._proj.resource_exists(resource, self._d, local)
 
+    # Get a list of available overlays
+    def get_available_overlays(self, local = True):
+        return self._proj.get_available_overlays(self._d, local)
+
     # Get a local copy of the resource, copying it if necessary
     def get_local_copy(self, resource, check_hash=False, dry_run=False):
         return self._proj.get_local_copy(resource, self._d, check_hash, dry_run)

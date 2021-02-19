@@ -1,7 +1,12 @@
 {
     "restrict-access": false,
-    "mode": "browse",
+    "mode": "dltrain",
     "name": "Diagnostics",
     "desc": "Semiquantiatative rating of selected diagnostic histopathology slides",
-    "tags": { "any" :  [ "diag" ] }
+    "tags": { "any" :  [ "diag" ] },
+    "dltrain": {
+        "labelset": "mtl_diag",
+        "min-size": 128,
+        "max-size": 16384
+    } 
 }

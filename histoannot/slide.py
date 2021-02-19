@@ -168,8 +168,8 @@ def task_specimen_listing(task_id):
                LEFT JOIN slide_info S on S.id == TSI.slide
                LEFT JOIN training_sample T on T.slide = S.id AND T.task = TSI.task_id
                WHERE TSI.task_id = ?
-               GROUP BY block_id,block_name,specimen_name
-               ORDER BY block_name""", (task_id,)).fetchall()
+               GROUP BY specimen_name
+               ORDER BY specimen_name""", (task_id,)).fetchall()
 
     elif task['mode'] == 'browse':
         blocks = db.execute(

@@ -512,17 +512,21 @@ def update_slide_derived_data(slide_id, check_hash=True):
 
 # Generic function to load a URL or local file into a string
 def load_url(url, parent_dir=None):
-    if url.startswith('http://') or url.startswith('https://'):
-        resp = urllib2.urlopen(url)
-        return resp.read()
-    elif url.startswith('gs://'):
-        gcsh = GCSHandler()
-        return gcsh.download_text_file(url)
-    else:
-        if not os.path.isabs(url) and parent_dir is not None:
-            url = os.path.join(parent_dir, url)
-        with open(url) as f:
-            return f.read()
+    for attempt in range(5):
+        try:
+            if url.startswith('http://') or url.startswith('https://'):
+                resp = urllib2.urlopen(url)
+                return resp.read()
+            elif url.startswith('gs://'):
+                gcsh = GCSHandler()
+                return gcsh.download_text_file(url)
+            else:
+                if not os.path.isabs(url) and parent_dir is not None:
+                    url = os.path.join(parent_dir, url)
+                with open(url) as f:
+                    return f.read()
+        except urllib2.URLError:
+            print('Attempt %d to open URL %s failed' % (attempt+1,url))
 
     return None
 
@@ -744,7 +748,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
 
             # We are here because no URL was found
             if not found:
-                print('Raw image was not found for slide %s' % slide_name)
+                print('Raw image was not found for slide "%s"' % (slide_name,))
 
     # Refresh slice index for all tasks in this project
     rebuild_project_slice_indices(project)

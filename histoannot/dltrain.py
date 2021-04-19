@@ -845,17 +845,22 @@ def samples_fix_patches_cmd(task):
 @click.option('-r', '--random_shift', type=click.FLOAT, default=0.0, 
         help="StDev of random displacment to apply to samples, in pixel units")
 @click.option('-u','--user', help='User name under which to insert samples', required=True)
+@click.option('-s', '--specimen', help="Restrict to a single specimen")
 @with_appcontext
 def samples_random_from_annot_cmd(
         task_annot, task_dltrain, label, box_size, 
-        clobber, num_samples, random_shift, user):
+        clobber, num_samples, random_shift, user, specimen):
     """Randomly generate samples from path annotations. This is used to 
        generate ROIs at random in certain regions, e.g., gray matter."""
 
     # Find all the slides with path annotations in the source task
     db=get_db()
     make_slide_dbview(int(task_annot), 'v_full')
-    rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0').fetchall()
+
+    if specimen is not None:
+        rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0 AND specimen_name=?', (specimen,)).fetchall()
+    else:
+        rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0').fetchall()
 
     # Look up the user
     g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()

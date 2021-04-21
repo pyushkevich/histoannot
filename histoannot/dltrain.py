@@ -585,7 +585,7 @@ def make_dbview_full(view_name):
     db.execute("""CREATE TEMP VIEW %s AS
                   SELECT T.*, B.specimen_name, B.block_name, L.name as label_name,
                          UC.username as creator, UE.username as editor,
-                         EM.t_create, EM.t_edit, S.slide_name 
+                         EM.t_create, EM.t_edit, S.slide_name, S.stain
                   FROM training_sample T
                       LEFT JOIN edit_meta EM on EM.id = T.meta_id
                       LEFT JOIN user UC on UC.id = EM.creator
@@ -607,7 +607,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
     if list_metadata:
         keys = keys + ('t_create', 'creator', 't_edit', 'editor')
     if list_block:
-        keys = keys + ('specimen_name', 'block_name')
+        keys = keys + ('specimen_name', 'block_name', 'stain')
     if list_ids:
         keys = ('id',) + keys
 

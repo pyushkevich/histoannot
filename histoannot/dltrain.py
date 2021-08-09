@@ -391,10 +391,16 @@ def update_sample():
 
     # Update the metadata
     # Get existing properties
-    rc = db.execute('SELECT meta_id,task FROM training_sample WHERE id=?',
+    rc = db.execute('SELECT meta_id,task,x0,x1,y0,y1 FROM training_sample WHERE id=?',
             (sample_id,)).fetchone()
 
-    check_rect(rc['task'], rect)
+    # If the rectangle size changed, make sure it is within task specification
+    sz_old = float(rc['x1']) - float(rc['x0']), float(rc['y1']) - float(rc['y0'])
+    sz_new = rect[2]-rect[0], rect[3]-rect[1]
+    print('SIZE COMPARISON *********** ', sz_old, sz_new)
+    if (sz_old != sz_new):
+        check_rect(rc['task'], rect)
+
     update_edit_meta(rc['meta_id'])
 
     # Update the main record

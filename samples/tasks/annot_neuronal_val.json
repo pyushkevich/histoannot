@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "NeuronoThon Validation",
+    "desc": "Temporary task to outline areas for neuron-a-thon validation",
+    "stains": [
+        "nissl"
+    ]
+}

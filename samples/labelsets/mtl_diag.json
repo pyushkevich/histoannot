@@ -1,0 +1,18 @@
+[
+  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"},
+  { "name" : "ERC_0_none", "color" : "#ffca80", "description" : "Severity 0"},
+  { "name" : "ERC_01_rare", "color" : "#ffb54d", "description" : "Severity 0-1"},
+  { "name" : "ERC_1_mild", "color" : "#ff9f1a", "description" : "Severity 1"},
+  { "name" : "ERC_2_moderate", "color" : "#e68600", "description" : "Severity 2"},
+  { "name" : "ERC_3_severe", "color" : "#b36800", "description" : "Severity 3"},
+  { "name" : "CA1_0_none", "color" : "#ffca80", "description" : "Severity 0"},
+  { "name" : "CA1_01_rare", "color" : "#ffb54d", "description" : "Severity 0-1"},
+  { "name" : "CA1_1_mild", "color" : "#ff9f1a", "description" : "Severity 1"},
+  { "name" : "CA1_2_moderate", "color" : "#e68600", "description" : "Severity 2"},
+  { "name" : "CA1_3_severe", "color" : "#b36800", "description" : "Severity 3"},
+  { "name" : "DG_0_none", "color" : "#ffca80", "description" : "Severity 0"},
+  { "name" : "DG_01_rare", "color" : "#ffb54d", "description" : "Severity 0-1"},
+  { "name" : "DG_1_mild", "color" : "#ff9f1a", "description" : "Severity 1"},
+  { "name" : "DG_2_moderate", "color" : "#e68600", "description" : "Severity 2"},
+  { "name" : "DG_3_severe", "color" : "#b36800", "description" : "Severity 3"}
+]

@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "NeuronoThon Validation: Counting", 
+    "stains": [
+        "nissl"
+    ], 
+    "dltrain": {
+        "labelset": "neuronal_val",
+        "min-size": 16,
+        "max-size": 16
+    }, 
+    "mode": "dltrain", 
+    "desc": "Counting neurons and other objects withing ROIs"
+}

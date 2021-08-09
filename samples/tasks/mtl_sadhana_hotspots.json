@@ -1,0 +1,11 @@
+{
+    "restrict-access": false,
+    "mode": "dltrain",
+    "name": "Sadhana - HotSpots",
+    "desc": "Mathcing of tau histology regions to MTL hot spots",
+    "dltrain": {
+        "labelset": "mtl_sadhana_hotspots",
+        "min-size": 128,
+        "max-size": 16384
+    } 
+}

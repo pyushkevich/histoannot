@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "name": "Tau Prevalidation",
+    "stains": [
+        "AT8"
+    ], 
+    "mode": "annot",
+    "desc": "Temporary task to outline areas for validation"
+}

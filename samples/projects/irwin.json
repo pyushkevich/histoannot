@@ -1,0 +1,11 @@
+{
+    "base_url": "gs://irwinlab_histology/Histology",
+    "disp_name": "Irwin Lab Histology",
+    "desc" : "Irwin Lab Histology Projects",
+    "url_schema": {
+        "pattern": {
+            "raw": "histo_raw/{specimen}/{slide_name}.{slide_ext}",
+            "thumb": "histo_proc/{specimen}/{slide_name}/{slide_name}_thumb.png"
+        }
+    }
+}

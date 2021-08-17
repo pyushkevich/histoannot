@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "name": "A-Syn Prevalidation",
+    "stains": [
+        "SYN303"
+    ], 
+    "mode": "annot",
+    "desc": "Temporary task to outline areas for validation"
+}

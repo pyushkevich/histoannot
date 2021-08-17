@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "name": "TDP43 Prevalidation",
+    "stains": [
+        "TDP43MP"
+    ], 
+    "mode": "annot",
+    "desc": "Temporary task to outline areas for validation"
+}

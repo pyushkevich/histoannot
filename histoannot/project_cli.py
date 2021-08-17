@@ -648,7 +648,10 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
         for spec_line in r:
 
             # Read the elements from the string
-            (slide_name, stain, block, section, slide_no, cert, tagline) = spec_line[0:7]
+            (slide_name, stain, block, section, slide_no, cert) = spec_line[0:6]
+
+            # If the line supports tags, read them
+            tagline = spec_line[6] if len(spec_line) > 6 else ""
 
             # Remap slide_name to string
             slide_name = str(slide_name)

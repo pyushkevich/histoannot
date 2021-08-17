@@ -1,11 +1,11 @@
 {
     "restrict-access": true, 
-    "name": "Deep Learning Validation", 
+    "name": "TDP43 DL Validation", 
     "stains": [
         "TDP43MP"
     ], 
     "dltrain": {
-        "labelset": "boxeval",
+        "labelset": "boxeval-tdp",
         "min-size": 16,
         "max-size": 4096
     }, 

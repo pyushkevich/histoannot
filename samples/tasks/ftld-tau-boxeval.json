@@ -1,11 +1,11 @@
 {
     "restrict-access": true, 
-    "name": "Deep Learning Validation", 
+    "name": "Tau DL Validation", 
     "stains": [
         "AT8"
     ], 
     "dltrain": {
-        "labelset": "boxeval",
+        "labelset": "boxeval-tau",
         "min-size": 16,
         "max-size": 4096
     }, 

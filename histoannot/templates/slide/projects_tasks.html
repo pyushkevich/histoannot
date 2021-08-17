@@ -21,6 +21,31 @@ PICSL Histology Annotation Server
 .spanner {
   height: 75px;
 }
+
+.ellipsis {
+  opacity: 0.5;
+}
+
+.ellipsis:hover {
+  opacity: 1.0;
+}
+
+.ui-menu {
+  display: none;
+  width: 200px;
+}
+
+.menuDialog {
+  border-width: 0px;
+  padding: 0;
+}
+.menuDialog > .ui-dialog-titlebar {
+  display: none;
+}
+.menuDialog > .ui-dialog-content {
+  padding: 0;
+}
+
 </style>
 
 
@@ -28,7 +53,8 @@ PICSL Histology Annotation Server
 <span id="span_project_name"></span>
 
 
-<!-- DataTable support --><div class="pure-g" style="max-width: 1024px;">
+<!-- DataTable support -->
+<div class="pure-g" style="max-width: 1024px;">
   <div class="pure-u-1 pure-u-md-12-24">
     <h3 align="center">PROJECTS</h3>
     <div id="d_project_table">
@@ -36,10 +62,12 @@ PICSL Histology Annotation Server
         <thead>
           <tr>
             <th>Id</th>
+            <th>Admin</th>
             <th>Project</th>
             <th>#Spc</th>
             <th>#Blk</th>
             <th>#Sld</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -70,11 +98,28 @@ PICSL Histology Annotation Server
   </div>
 </div>
 
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.1/css/select.dataTables.min.css">
+<!-- Popup menu -->
+<div id="dialog-proj-context-menu" class="menuDialog">
+  <ul id="proj-context-menu">
+    <li id="mi-about" data-isadmin=0>
+      <div><span class="ui-icon ui-icon-help"></span>About</div>
+    </li>
+    <li id="mi-labelset-edt" data-isadmin=1>
+      <div><span class="ui-icon ui-icon-lightbulb"></span>Edit Label Sets</div>
+    </li>
+  </ul>
+</div>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/dt-1.10.25/datatables.min.css"/>
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.3/css/select.dataTables.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css">
 <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.1/js/dataTables.select.min.js"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/v/dt/dt-1.10.25/datatables.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.3/js/dataTables.select.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/buttons/1.7.1/js/dataTables.buttons.min.js"></script>
+
 
 <script type="text/javascript" charset="utf8">
 $(document).ready(function() {
@@ -83,6 +128,7 @@ $(document).ready(function() {
   var url_prj="{{url_for('slide.project_listing')}}";
   var url_task="{{url_for('slide.task_listing', project='XXXX')}}";
   var url_action="{{url_for('slide.task_detail', task_id='999999')}}";
+  var url_labelset_edt="{{url_for('dltrain.labelset_editor', project='XXXX')}}";
 
   // Rendering of links
   var fn_task_link_render = function(data, type, row) {
@@ -90,15 +136,24 @@ $(document).ready(function() {
     return '<a class="action" href="'+url+'">'+row['name']+'</a>';
   };
 
-  // Column descriptions for different tables
+  // Column descriptions for the project table. Note the last table
+  // sets up the context menu
   var prj_col_desc = [
     { data: "id", visible: false },
+    { data: "admin", visible: false },
     { data: "disp_name" },
     { data: "nspecimens" },
     { data: "nblocks" },
-    { data: "nslides" } 
+    { data: "nslides" },
+    {
+      data: null,
+      className: "dt-center context-menu",
+      defaultContent: '<button class="fa fa-ellipsis-v ellipsis"/>',
+      orderable: false
+    }
   ];
 
+  // Column descriptions for the task table
   var task_col_desc = [
     { data: "id", visible: false },
     { data: "name", render: fn_task_link_render },
@@ -107,9 +162,45 @@ $(document).ready(function() {
     { data: "nslides" }
   ];
 
-  var py2js = function(str) { return str=="None" ? null : str; }
+  var py2js = function(str) { return str === "None" ? null : str; }
   var request_prj=py2js("{{project_name}}");
 
+  // Set up the dialog holding the context menu. The dialog is used to
+  // pop up the menu when the ellipsis button is clicked
+  $("#dialog-proj-context-menu").dialog({
+    modal: true,
+    autoOpen: false,
+    closeOnEscape: true,
+    title: false,
+    width: "auto",
+    height: "auto",
+    dialogClass: "menuDialog",
+    resizable: false,
+    draggable: false,
+    open: function (event, ui) {
+        $(this).css('padding', '0px');
+        $(".ui-widget-overlay").on("click", function () {
+            $("#dialog-proj-context-menu").dialog("close");
+        });
+    }
+  });
+
+  // Set up the actual menu, including actions when the menu items are clicked
+  $("#proj-context-menu").menu({
+    select: function (event, ui) {
+      var dialog = $("#dialog-proj-context-menu");
+      var project = dialog.data("project");
+      dialog.dialog("close");
+      if(ui.item.context.id === "mi-labelset-edt") {
+        url = url_labelset_edt.replace('XXXX', project);
+        window.location.href = url;
+        return false;
+      }
+      return true;
+    }
+  });
+
+  // Set up the project table
   var t_project = $('#project').DataTable( {
     "ajax": function(data, callback, settings) {
       $.ajax({
@@ -140,6 +231,28 @@ $(document).ready(function() {
     select: 'single',
     searching: false
   } );
+
+  // Handle the context menu button click
+  t_project.on('click', 'td.context-menu', function(e) {
+    var pos = { my: "left top", at: "left bottom", of: e };
+    var dialog = $("#dialog-proj-context-menu");
+
+    // Set the project field so we know the context
+    var row_data = t_project.row($(this).closest('tr')).data();
+    dialog.data("project", row_data.id);
+
+    // Enable and disable menu items based on admin status
+    $("#proj-context-menu").children("li").each(function(idx) {
+      if($(this).data("isadmin") === 1 && row_data.admin !== 1) {
+        $(this).addClass('ui-state-disabled');
+      }
+      else {
+        $(this).removeClass('ui-state-disabled');
+      }
+    });
+    dialog.dialog("option", "position", pos).dialog("open");
+    return false;
+  });
 
   var t_task = $('#task').DataTable( {
     "ajax": function(data, callback, settings) {

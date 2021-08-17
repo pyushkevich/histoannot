@@ -24,6 +24,7 @@ from histoannot.db import get_db
 
 # TODO: these should be moved to another module
 from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta
+from histoannot.project_ref import ProjectRef
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_patch
 from histoannot.slide import make_slide_dbview, annot_sample_path_curves
@@ -575,10 +576,13 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
 @project_admin_access_required
 def labelset_editor(project):
 
+    # Read the project ref
+    pr = ProjectRef(project)
+
     # Render the entry page
-    return render_template('dbtrain/labelset_editor.html', project=project, labelset=None)
-
-
+    return render_template('dbtrain/labelset_editor.html',
+                           project=project,
+                           disp_name=pr.disp_name, labelset=None)
 
 
 # --------------------------------

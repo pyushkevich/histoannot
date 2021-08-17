@@ -79,12 +79,12 @@ def project_listing():
 
     # List all projects for the current user
     if session.get('user_is_site_admin', False) is not True:
-        rc = db.execute('SELECT P.* FROM project P '
+        rc = db.execute('SELECT P.*, PA.admin FROM project P '
                         'LEFT JOIN project_access PA ON PA.project=P.id '
                         'WHERE PA.user = ?'
                         'ORDER BY P.disp_name', (user,))
     else:
-        rc = db.execute('SELECT P.* FROM project P ORDER BY P.disp_name ')
+        rc = db.execute('SELECT P.*, 1 as admin FROM project P ORDER BY P.disp_name ')
 
     for row in rc.fetchall():
 
@@ -96,7 +96,7 @@ def project_listing():
             'FROM slide_info WHERE project=?', (row['id'],)).fetchone()
 
         # Create a dictionary
-        listing.append({'id':row['id'],'disp_name':row['disp_name'],'desc':row['desc'],
+        listing.append({'id':row['id'],'admin':row['admin'],'disp_name':row['disp_name'],'desc':row['desc'],
                         'nslides':stat['nslides'], 'nblocks':stat['nblocks'], 'nspecimens':stat['nspecimens']})
 
     # Generate a bunch of json

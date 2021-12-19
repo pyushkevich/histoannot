@@ -636,7 +636,7 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
 
     # If the slide is marked as a duplicate, we may need to delete it but regardless
     # we do not proceed further
-    if cert == 'duplicate':
+    if cert == 'duplicate' or cert == 'exclude':
 
         # If the slide is a duplicate, we should make it disappear
         # but the problem is that we might have already done some annotation

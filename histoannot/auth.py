@@ -34,6 +34,7 @@ import getpass
 import sys
 import uuid
 import json
+import csv
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -470,6 +471,61 @@ def create_password_reset_link(user_id, expiry = 86400):
             reset_key)
 
 
+class UserException(Exception):
+    """Base class for user exceptions"""
+    pass
+
+
+class UserExistsException(UserException):
+    """Exception indicating user exists"""
+    pass
+
+
+class DuplicateEmailException(UserException):
+    """Exception indicating email exists"""
+    pass
+
+
+def add_user(username, projects, projects_admin, site_admin, expiry, email, notify):
+
+    # Check if the user is already in the system
+    if get_user_id(username) is not None:
+        raise UserExistsException('User %s is already in the system' % (username,))
+
+    if email is not None and email_exists(email):
+        raise DuplicateEmailException('Email address %s is already in use by another user.' % (email,))
+
+    db = get_db()
+    rc = db.execute('SELECT * FROM user WHERE username=?', (username,))
+    if rc.rowcount > 0:
+        raise UserExistsException('User %s is already in the system' % (username,))
+
+    # Create the username with an unguessable password
+    dummy_password = str(uuid.uuid4())
+    rc = db.execute('INSERT INTO user(username, email, site_admin, password) VALUES (?,?,?,?)',
+                    (username,email,site_admin,dummy_password))
+    user_id = rc.lastrowid
+
+    # Combine the sets of projects
+    prj_set = set.union(set(projects), set(projects_admin))
+
+    # Provide the user access to the requested projects
+    for prj in prj_set:
+        rc = db.execute('SELECT * FROM project WHERE id=?', (prj,)).fetchone()
+        if rc is None:
+            db.execute('INSERT INTO project_access(project, user, admin) '
+                       'VALUES (?,?,?)', (prj, user_id, prj in projects_admin))
+
+    db.commit()
+
+    # Generate a password reset link for the user.
+    if notify is True and email is not None:
+        send_user_invitation(user_id, expiry)
+    else:
+        url = create_password_reset_link(user_id, expiry)
+        print("User: %d  Email: %s  ResetLink: %s" % (user_id, email, url))
+
+
 @click.command('users-add')
 @click.argument('username')
 @click.option('-p', '--projects', multiple=True, help='Add user to specified project')
@@ -482,45 +538,7 @@ def create_password_reset_link(user_id, expiry = 86400):
 @with_appcontext
 def user_add_command(username, projects, projects_admin, site_admin, expiry, email, notify):
     """Create a new user and generate a password reset link"""
-
-    # Check if the user is already in the system
-    if get_user_id(username) is not None:
-        print('User %s is already in the system' % (username,))
-        sys.exit(1)
-
-    if email is not None and email_exists(email):
-        print('Email address %s is already in use by another user.' % (email,))
-        sys.exit(1)
-
-    db = get_db()
-    rc = db.execute('SELECT * FROM user WHERE username=?', (username,))
-    if rc.rowcount > 0:
-        print("User %s already exists" % (username,))
-        sys.exit(1)
-
-    # Create the username with an unguessable password
-    dummy_password = str(uuid.uuid4())
-    rc = db.execute('INSERT INTO user(username, email, site_admin, password) VALUES (?,?,?,?)',
-                    (username,email,site_admin,dummy_password))
-    user_id = rc.lastrowid
-
-    # Provide the user access to the requested projects
-    for prj in projects:
-        db.execute('INSERT INTO project_access(project, user) '
-                   'VALUES (?,?)', (prj, user_id))
-
-    for prj in projects_admin:
-        db.execute('INSERT INTO project_access(project, user, admin) '
-                   'VALUES (?,?, 1)', (prj, user_id))
-
-    db.commit()
-
-    # Generate a password reset link for the user.
-    if notify is True and email is not None:
-        send_user_invitation(user_id, expiry)
-    else:
-        url = create_password_reset_link(user_id, expiry)
-        print("Created user %d. Password reset link is: %s" % (user_id, url))
+    add_user(username, projects, projects_admin, site_admin, expiry, email, notify)
 
 
 @click.command('users-get-reset-link')
@@ -537,6 +555,27 @@ def user_get_reset_link_command(username, expiry):
         sys.exit(1)
 
 
+@click.command('users-bulk-add')
+@click.argument('csv_file')
+@click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
+@click.option('-n', '--notify', is_flag=True, help='Send the user a notification email')
+@with_appcontext
+def users_bulk_add(csv_file, expiry, notify):
+    """Create multiple users from CSV file"""
+    with open(csv_file, newline='') as fdesc:
+        rd = csv.DictReader(fdesc)
+        for row in rd:
+            prj = row["projects"].strip(' ;').split(";")
+            prj_admin = row["projects_admin"].strip(' ;').split(";")
+            try:
+                # Try adding the user
+                add_user(row["username"], prj, prj_admin,
+                         bool(row["site_admin"]),
+                         expiry, row["email"], notify)
+            except UserException: pass
+
+
 def init_app(app):
     app.cli.add_command(user_add_command)
     app.cli.add_command(user_get_reset_link_command)
+    app.cli.add_command(users_bulk_add)

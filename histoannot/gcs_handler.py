@@ -15,11 +15,11 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-import urlparse
+import urllib.parse as urlparse
 import os
 import threading
 from google.cloud import storage
-import StringIO
+from io import StringIO
 
 # This class handles remote URLs for Google cloud. The remote URLs must have format
 # "gs://bucket/path/to/blob.ext"

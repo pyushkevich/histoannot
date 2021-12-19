@@ -43,7 +43,6 @@ import math
 import svgwrite
 import sys
 import urllib
-import urllib2
 
 
 bp = Blueprint('slide', __name__)
@@ -929,7 +928,7 @@ def api_get_slide_random_patch(task_id, slide_id, width):
                 del_url, project, specimen, block, slide_name, slide_ext, 0, width)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        rawbytes = urllib2.urlopen(url, post_data).read()
+        rawbytes = urllib.request.urlopen(url, post_data).read()
 
     # Send the patch
     resp = make_response(rawbytes)
@@ -956,7 +955,7 @@ def api_slide_preload(task_id, slide_id, resource):
                 del_url, project, specimen, block, resource, slide_name, slide_ext)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        return urllib2.urlopen(url, post_data).read()
+        return urllib.request.urlopen(url, post_data).read()
 
 
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/job/<jobid>/status', methods=('GET','POST'))
@@ -977,7 +976,7 @@ def api_slide_job_status(task_id, slide_id, jobid):
                 del_url, project, slide_name, jobid)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        return urllib2.urlopen(url, post_data).read()
+        return urllib.request.urlopen(url, post_data).read()
 
 
 # CLI commands
@@ -1286,7 +1285,7 @@ def slides_list_cmd(task, specimen, block, section, slide, stain,
     make_slide_dbview(task, 'v_full')
 
     # Build up a where clause
-    w = filter(lambda (a,b): b is not None and b is not False, 
+    w = filter(lambda a,b: b is not None and b is not False, 
             [('specimen_name LIKE ?', specimen),
              ('block_name LIKE ?', block),
              ('section = ?', section),

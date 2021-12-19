@@ -26,7 +26,6 @@ import json
 import time
 import numpy as np
 import urllib
-import urllib2
 import psutil
 import re
 import functools
@@ -79,7 +78,7 @@ def forward_to_worker(view):
         # Take the project information and embed it in the call as a POST parameter
         pr = ProjectRef(kwargs['project'])
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        return urllib2.urlopen(full_url, post_data).read()
+        return urllib.request.urlopen(full_url, post_data).read()
 
     return wrapped_view
 
@@ -407,7 +406,7 @@ def delegate_dzi_ping_command():
     while True:
         try:
             cpu_percent=psutil.cpu_percent()
-            urllib2.urlopen(master_url, 
+            urllib.request.urlopen(master_url, 
                     urllib.urlencode([('url', node_url), ('cpu_percent',str(cpu_percent))]), timeout=10)
         except:
             pass

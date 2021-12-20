@@ -617,12 +617,12 @@ def make_dbview_full(view_name):
                          UC.username as creator, UE.username as editor,
                          EM.t_create, EM.t_edit, S.slide_name, S.stain
                   FROM training_sample T
-                      LEFT JOIN edit_meta EM on EM.id = T.meta_id
-                      LEFT JOIN user UC on UC.id = EM.creator
-                      LEFT JOIN user UE on UE.id = EM.editor
-                      LEFT JOIN slide S on T.slide = S.id
-                      LEFT JOIN block B on S.block_id = B.id
-                      LEFT JOIN label L on T.label = L.id""" % (view_name,))
+                      INNER JOIN edit_meta EM on EM.id = T.meta_id
+                      INNER JOIN user UC on UC.id = EM.creator
+                      INNER JOIN user UE on UE.id = EM.editor
+                      INNER JOIN slide S on T.slide = S.id
+                      INNER JOIN block B on S.block_id = B.id
+                      INNER JOIN label L on T.label = L.id""" % (view_name,))
 
 
 def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, header = True):

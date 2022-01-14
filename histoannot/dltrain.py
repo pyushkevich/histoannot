@@ -175,6 +175,26 @@ def get_label_id_in_task(task_id, label_name):
     return label_id
 
 
+@bp.route('/dltrain/<project>/add_labelset', methods=('POST',))
+@project_access_required
+def add_labelset(project):
+
+    # Read form
+    print(request.form)
+    ls_name = request.form['name']
+    ls_desc = request.form.get('desc', None)
+    print('Hello world')
+
+    # Create a new labelset
+    lsid = db.execute('INSERT INTO labelset(name,description) VALUES (?,?)',
+                      (ls_name, ls_desc)).lastrowid
+
+    # Associate with the project
+    db.execute('INSERT INTO project_labelset(project,labelset_name,labelset_id) VALUES(?,?,?)',
+               (project,ls_name,lsid))
+
+    return json.dumps({"id": lsid})
+
 
 @bp.route('/dltrain/task/<int:task_id>/labelset/addlabel', methods=('POST',))
 @task_access_required

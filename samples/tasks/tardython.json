@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Tardython 2022 (TDP-43)", 
+    "stains": [
+        "TDP43"
+    ], 
+    "dltrain": {
+        "labelset": "tdp43",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize TDP-43 inclusions"
+}

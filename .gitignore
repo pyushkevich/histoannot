@@ -9,3 +9,5 @@ venv
 .idea
 conf
 manifest
+deploy_dzi.sh
+env.sh

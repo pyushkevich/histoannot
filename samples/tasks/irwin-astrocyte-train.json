@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Astrocyte Training", 
+    "stains": [
+        "GFAP"
+    ], 
+    "dltrain": {
+        "labelset": "gfap",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize astrocytes"
+}

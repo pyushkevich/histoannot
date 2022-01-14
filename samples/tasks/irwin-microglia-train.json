@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Microglia Training", 
+    "stains": [
+        "IBA1"
+    ], 
+    "dltrain": {
+        "labelset": "iba1",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize microglia"
+}

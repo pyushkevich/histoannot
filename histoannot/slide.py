@@ -537,6 +537,18 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'overlays': overlays
     }
 
+    # Load the metadata for the slide to get spacing information
+    metadata_fn = sr.get_local_copy('metadata')
+    context['spacing'] = [0,0]
+    if metadata_fn is not None:
+        with open(metadata_fn, 'r') as metadata_fd:
+            metadata = json.load(metadata_fd)
+            if 'spacing' in metadata:
+                context['spacing'] = metadata['spacing']
+                if resolution == 'x16':
+                    context['spacing'] = [ 16.0 * x for x in context['spacing'] ]
+
+
     # Add optional fields to context
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
         if field in request.form:

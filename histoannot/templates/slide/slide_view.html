@@ -508,15 +508,17 @@ $(document).ready(function()
         item.strokeWidth = zoom_paperjs_scaling_fn(strokeWidth, 0, get_image_zoomlevel());
     };
 
-    var mpp = parseFloat("{{ slide_mpp }}");
+    var mpp = parseFloat("{{ spacing[0] }}");
+    console.log("MPP", mpp);
     viewer.scalebar({
-        pixelsPerMeter: mpp ? (1e6 / mpp) : 0,
+        pixelsPerMeter: mpp ? (1e3 / mpp) : 0,
+	location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
         xOffset: 10,
-        yOffset: 10,
+        yOffset: 50,
+	minWidth: "75px",
         barThickness: 3,
-        color: '#555555',
-        fontColor: '#333333',
-        backgroundColor: 'rgba(255, 255, 255, 0.5)',
+	backgroundColor: "rgba(255, 255, 255, 0.2)",
+	stayInsideImage: false
     });
 
     // Initialization for paper_js
@@ -542,7 +544,6 @@ $(document).ready(function()
     paper.settings.handleSize = 10;
 
     // Get a URL for
-
     // Add the tiled image to the viewer and when successful, initialize the overlay
     var init_viewer = function() {
         viewer.addTiledImage({

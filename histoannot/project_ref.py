@@ -21,6 +21,7 @@ _default_histo_url_schema = {
         "affine": "{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
         "thumb": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
         "dims": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
+        "metadata": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_metadata.json",
         "d_tangles": "{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
     },
 
@@ -223,6 +224,8 @@ class ProjectRef:
 
         # Get the local URL
         f_local = self.get_resource_url(resource, d, True)
+        if f_local is None:
+            return None
 
         # If it already exists, make sure it matches the remote file
         have_local = os.path.exists(f_local) and os.path.isfile(f_local)

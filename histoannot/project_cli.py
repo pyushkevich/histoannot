@@ -671,7 +671,7 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
         # Update the specimen/block for this slide
         if t1 is None:
             print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
-            bid = db_get_or_create_block(project, specimen, block)
+            bid = db_get_or_create_block(pr.name, specimen, block)
             db.execute('UPDATE slide SET block_id=? WHERE id=?',
                        (bid, slide_id))
             db.commit()

@@ -24,6 +24,9 @@ from PIL import Image
 from flask import g
 import numpy as np
 
+# TODO: temporarily disabling this feature - need to implement using Python
+# for better compatibility
+"""
 import os_affine as m
 
 class AffineTransformedOpenSlide(object):
@@ -64,6 +67,19 @@ class AffineTransformedOpenSlide(object):
         m.read_region(self._osr, location, level, size, self._affine, b)
         img=Image.frombuffer('RGBA',size,str(b),'raw','BGRA',0,1)
         return img
+"""
+
+
+class AffineTransformedOpenSlide(object):
+    def __init__(self, slide_path, affine_matrix = np.eye(3)):
+        self.os = OpenSlide(slide_path)
+
+    def get_best_level_for_downsample(self, d):
+        return self.os.get_best_level_for_downsample(d)
+
+    def read_region(self, location, level, size):
+        return self.os.read_region(location, level, size)
+
 
 """
 

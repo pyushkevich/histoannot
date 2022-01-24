@@ -1,6 +1,6 @@
-FROM ubuntu:latest
+FROM python:3.9
 RUN apt-get update -y
-RUN apt-get install -y python-pip python-dev build-essential
+RUN apt-get install -y build-essential
 RUN apt-get install -y wget cmake ninja-build
 
 # Install NGINX
@@ -10,15 +10,15 @@ RUN apt-get install -y software-properties-common \
  && rm /etc/nginx/sites-enabled/default
 
 # Install openslide
-RUN apt-get install -y libopenslide-dev python-openslide
+RUN apt-get install -y libopenslide-dev 
 
 # Base directory 
 RUN mkdir /tk
 WORKDIR /tk
 
 # Install ITK
-RUN wget https://sourceforge.net/projects/itk/files/itk/4.12/InsightToolkit-4.12.2.tar.gz 
-RUN tar -zxf InsightToolkit-4.12.2.tar.gz
+RUN wget https://github.com/InsightSoftwareConsortium/ITK/releases/download/v5.2.1/InsightToolkit-5.2.1.tar.gz
+RUN tar -zxf InsightToolkit-5.2.1.tar.gz
 
 # Compile ITK
 RUN mkdir itk_build && cd itk_build \
@@ -27,7 +27,7 @@ RUN mkdir itk_build && cd itk_build \
     -DCMAKE_BUILD_TYPE:STRING=Release \
     -DBUILD_TESTING:BOOL=OFF \
     -DBUILD_SHARED_LIBS:BOOL=OFF \
-    /tk/InsightToolkit-4.12.2 \
+    /tk/InsightToolkit-5.2.1 \
  && ninja
 
 # Downloading gcloud package
@@ -49,6 +49,7 @@ WORKDIR /tk/node_dzi
 
 # Install requirements
 COPY histoannot/requirements.txt histoannot/requirements.txt
+RUN /usr/local/bin/python -m pip install --upgrade pip
 RUN pip install -r histoannot/requirements.txt
 
 # Copy our module

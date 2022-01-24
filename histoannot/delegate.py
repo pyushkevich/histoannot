@@ -21,7 +21,6 @@ import click
 import time
 from flask.cli import with_appcontext
 import urllib
-import urllib2
 from histoannot.db import get_db
 
 # Create blueprint
@@ -45,7 +44,7 @@ def check_dzi_node_alive(url, timeout=5):
 
     try:
         # Try to open the URL
-        resp = urllib2.urlopen(url, timeout=timeout).read()
+        resp = urllib.request.urlopen(url, timeout=timeout).read()
 
         # Check against expected string
         if resp == 'HISTOANNOT DZI NODE':

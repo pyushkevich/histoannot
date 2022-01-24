@@ -15,7 +15,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-from urlparse import urlparse
+from urllib.parse import urlparse
 
 from histoannot.project_ref import ProjectRef
 from histoannot.db import get_db

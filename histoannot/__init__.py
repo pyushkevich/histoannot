@@ -28,7 +28,7 @@ from . import delegate
 from . import project_ref
 from . import project_cli
 from glob import glob
-from project_ref import RemoteResourceCache, ProjectRef
+from histoannot.project_ref import RemoteResourceCache, ProjectRef
 from socket import gethostname
 
 # Needed for AJAX redirects to DZI nodes

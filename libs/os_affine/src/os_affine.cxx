@@ -35,9 +35,13 @@ os_affine_init_osr(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "s(ii)", &path, &canvas_x, &canvas_y))
         return NULL;
 
+    FILE *dbg = fopen("/tmp/dbg.txt", "at");
+    fprintf(dbg, "os_affine_init_osr path=%s\n", path);
     void *osw = load_openslide(path, canvas_x, canvas_y);
+    fprintf(dbg, "os_affine_init_osr osw=%lx\n", (long) osw);
 
     PyObject *capsule = PyCapsule_New(osw, "os_affine.osw", NULL);
+    fprintf(dbg, "os_affine_init_osr capsule=%lx\n", (long) capsule);
     return Py_BuildValue("O", capsule);
 }
 
@@ -48,8 +52,12 @@ os_affine_release_osr(PyObject *self, PyObject *args)
   if (!PyArg_ParseTuple(args, "O", &capsule))
       return NULL;
 
+  FILE *dbg = fopen("/tmp/dbg.txt", "at");
+  fprintf(dbg, "os_affine_release_osr capsule=%lx\n", (long) capsule);
   void *osw = PyCapsule_GetPointer(capsule, "os_affine.osw");
-  release_openslide(osw);
+  fprintf(dbg, "os_affine_release_osr osw=%lx\n", (long) osw);
+  if(osw)
+      release_openslide(osw);
 
   return Py_None;
 }
@@ -149,22 +157,46 @@ static PyMethodDef MyMethods[] = {
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
+#if PY_MAJOR_VERSION >= 3
+    static struct PyModuleDef moduledef = {
+        PyModuleDef_HEAD_INIT,
+        "os_affine",         /* m_name */
+        "Affine transforms for OpenSlide",  /* m_doc */
+        -1,                  /* m_size */
+        MyMethods,    /* m_methods */
+        NULL,                /* m_reload */
+        NULL,                /* m_traverse */
+        NULL,                /* m_clear */
+        NULL,                /* m_free */
+    };
+#endif
 
 PyMODINIT_FUNC
-initos_affine(void)
+PyInit_os_affine(void)
 {
+#if PY_MAJOR_VERSION >= 3
+    (void) PyModule_Create(&moduledef);
+#else
     (void) Py_InitModule("os_affine", MyMethods);
+#endif
 }
 
 int
 main(int argc, char *argv[])
 {
     /* Pass argv[0] to the Python interpreter */
+#if PY_MAJOR_VERSION >= 3
+    wchar_t *program = Py_DecodeLocale(argv[0], NULL);
+    Py_SetProgramName(program);
+#else
     Py_SetProgramName(argv[0]);
+#endif
 
     /* Initialize the Python interpreter.  Required. */
     Py_Initialize();
 
     /* Add a static module */
-    initos_affine();
+    PyInit_os_affine();
+
+    return 0;
 }

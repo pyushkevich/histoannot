@@ -21,6 +21,8 @@ import csv
 import sys
 import traceback
 import pandas
+import glob
+import pathlib
 
 import click
 from flask import current_app, g
@@ -28,7 +30,7 @@ from flask.cli import with_appcontext
 
 import openslide
 import time
-import urllib2
+import urllib.request
 import logging
 import json
 from jsonschema import validate
@@ -36,7 +38,7 @@ from jsonschema import validate
 
 from PIL import Image
 
-from project_ref import ProjectRef
+from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.db import get_db
 from histoannot.gcs_handler import GCSHandler
@@ -515,7 +517,7 @@ def load_url(url, parent_dir=None):
     for attempt in range(5):
         try:
             if url.startswith('http://') or url.startswith('https://'):
-                resp = urllib2.urlopen(url)
+                resp = urllib.request.urlopen(url)
                 return resp.read()
             elif url.startswith('gs://'):
                 gcsh = GCSHandler()
@@ -525,7 +527,7 @@ def load_url(url, parent_dir=None):
                     url = os.path.join(parent_dir, url)
                 with open(url) as f:
                     return f.read()
-        except urllib2.URLError:
+        except urllib.request.URLError:
             print('Attempt %d to open URL %s failed' % (attempt+1,url))
 
     return None
@@ -604,6 +606,115 @@ def rebuild_project_slice_indices(project, specific_task_id=None):
             print('Index for task %d rebuilt with %d slides' % (row['id'], n))
 
 
+# A schema against which to validate per-slide JSON files
+# A schema against which the JSON is validated
+slide_json_schema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "specimen": {"type": "string" },
+        "block": {"type": "string"},
+        "stain": {"type": "string"},
+        "section": {"type": "integer"},
+        "slide": {"type": "integer"},
+        "certainty": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [ "specimen", "block", "stain" ]
+}
+
+
+# Imports a single slide into the database
+def refresh_slide(pr, sr, slide_name, specimen, stain, block,
+                  section=0, slide_no=0, cert="", tags=[], check_hash = True):
+
+    # Database cursor
+    db = get_db()
+
+    # Check if the slide has already been imported into the database
+    slide_id = pr.get_slide_by_name(slide_name)
+
+    # If the slide is marked as a duplicate, we may need to delete it but regardless
+    # we do not proceed further
+    if cert == 'duplicate' or cert == 'exclude':
+
+        # If the slide is a duplicate, we should make it disappear
+        # but the problem is that we might have already done some annotation
+        # for that slide. I guess it still makes sense to delete the slide
+        if slide_id is not None:
+            print('DELETING slide %s as DUPLICATE' % (slide_name,))
+            db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
+            db.commit()
+
+    # If non-duplicate slide exists, we need to check its metadata against the database
+    elif slide_id is not None:
+        print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
+
+        # Check if the metadata matches
+        t0 = db.execute('SELECT * FROM slide '
+                        'WHERE section=? AND slide=? AND stain=? AND id=?',
+                        (section, slide_no, stain, slide_id)).fetchone()
+
+        # We may need to update the properties
+        if t0 is None:
+            print('UPDATING metadata for slide %s' % (slide_name,))
+            db.execute('UPDATE slide SET section=?, slide=?, stain=? '
+                       'WHERE id=?', (section, slide_no, stain, slide_id))
+            db.commit()
+
+        # We may also need to update the specimen/block id
+        t1 = db.execute('SELECT * FROM slide S '
+                        '         LEFT JOIN block B on S.block_id = B.id '
+                        'WHERE B.specimen_name=? AND B.block_name=? AND S.id=?',
+                        (specimen, block, slide_id)).fetchone()
+
+        # Update the specimen/block for this slide
+        if t1 is None:
+            print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
+            bid = db_get_or_create_block(pr.name, specimen, block)
+            db.execute('UPDATE slide SET block_id=? WHERE id=?',
+                       (bid, slide_id))
+            db.commit()
+
+        # Finally, we may need to update the tags
+        current_tags = set()
+        rc = db.execute('SELECT tag FROM slide_tags WHERE slide=? AND external=1', (slide_id,))
+        for row in rc.fetchall():
+            current_tags.add(row['tag'])
+
+        # If tags have changed, update the tags
+        if tags != current_tags:
+            print('UPDATING tags for slide %s to %s' % (slide_name, str(tags)))
+            db.execute('DELETE FROM slide_tags WHERE slide=? AND external=1', (slide_id,))
+            for t in tags:
+                db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?, ?, 1)',
+                           (slide_id, t))
+            db.commit()
+
+        # Update the slide thumbnail, etc., optionally checking against source filesystem
+        update_slide_derived_data(slide_id, check_hash)
+
+    else:
+        # Create a slideref for this object. The way we have set all of this up,
+        # the extension is not coded anywhere in the manifests, so we dynamically
+        # check for multiple extensions
+        if sr is not None:
+
+            # Get the filename/URL of the slide
+            url = sr.get_resource_url('raw', False)
+            slide_ext = pathlib.Path(url).suffix[1:]
+
+            # The raw slide has been found, so the slide will be entered into the database.
+            sid = db_create_slide(pr.name, specimen, block, section, slide_no, stain,
+                                  slide_name, slide_ext, tags)
+
+            print('Slide %s located with url %s and assigned new id %d' %
+                  (slide_name, sr.get_resource_url('raw', False), sid))
+
+            # Update thumbnail and such
+            update_slide_derived_data(sid, True)
+
+
 # Builds up a slide database. Scans a manifest file that contains names of specimens
 # and URLs to Google Sheet spreadsheets in which individual slides are matched to the
 # block/section/slice/stain information. Checks if the corresponding files exist in
@@ -615,143 +726,117 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
     # Get the project object
     pr = ProjectRef(project)
 
-    # Load the manifest file
-    manifest_contents = load_url(manifest)
-    if manifest_contents is None:
-        logging.error("Cannot read URL or file: %s" % (manifest,))
-        sys.exit(-1)
+    # Get the manifest mode for this project
+    mm = pr.get_dict().get('manifest_mode', 'specimen_csv')
 
-    # Read from the manifest file
-    for line in manifest_contents.splitlines():
+    # Get the list of extensions for this project
+    ext_list = pr.get_dict().get("raw_slide_ext", ["tif", "tiff", "mrxs", "svs"])
 
-        # Split into words
-        words = line.split()
-        if len(words) != 2:
-            continue
+    # If the manifest mode is individual JSON, we scan the filesystem
+    if mm == 'individual_json':
+        if pr.get_url_handler() is not None:
+            raise Exception('individual_json mode not supported for remote databases')
 
-        # Check for single specimen selector
-        specimen = line.split()[0]
-        if single_specimen is not None and single_specimen != specimen:
-            continue
+        # Build a search pattern
+        raw_fmt = pr.get_url_schema()["pattern"]["raw"]
 
-        url = line.split()[1]
-        print('Parsing specimen "%s" with URL "%s"' % (specimen, url))
+        # Create dictionary
+        fmt_dict = { 
+                'specimen' : single_specimen if single_specimen is not None else '*',
+                'slide_name': '*', 'slide_ext': '*' }
 
-        # Get the lines from the URL
-        specimen_manifest_contents = load_url(url, os.path.dirname(manifest))
-        if specimen_manifest_contents is None:
-            logging.warning("Cannot read URL or file: %s" % (url,))
-            continue
+        # Create a glob
+        globstr = os.path.join(pr.url_base, raw_fmt.format(**fmt_dict))
+        print('Using glob string %s' % (globstr,))
 
-        # For each line in the URL consider it as a new slide
-        r = csv.reader(specimen_manifest_contents.splitlines()[1:])
-        for spec_line in r:
+        # Iterate over globbed files
+        for fn in glob.iglob(globstr):
 
-            # Read the elements from the string
-            (slide_name, stain, block, section, slide_no, cert) = spec_line[0:6]
-
-            # If the line supports tags, read them
-            tagline = spec_line[6] if len(spec_line) > 6 else ""
-
-            # Remap slide_name to string
-            slide_name = str(slide_name)
-
-            # Check if the slide has already been imported into the database
-            slide_id = pr.get_slide_by_name(slide_name)
-
-            # Get the current set of tags
-            tagline = tagline.lower().strip()
-            tags = set(tagline.split(';')) if len(tagline) > 0 else set()
-
-            # If the slide is marked as a duplicate, we may need to delete it but regardless
-            # we do not proceed further
-            if cert == 'duplicate' or cert == 'exclude':
-
-                # If the slide is a duplicate, we should make it disappear
-                # but the problem is that we might have already done some annotation
-                # for that slide. I guess it still makes sense to delete the slide
-                if slide_id is not None:
-                    print('DELETING slide %s as DUPLICATE' % (slide_name,))
-                    db.execute('DELETE FROM slide WHERE id=?', (slide_id,))
-                    db.commit()
-
-                # Stop processing slide
+            # Skip files that don't match extension
+            p = pathlib.Path(fn)
+            if p.suffix[1:] not in ext_list:
                 continue
 
-            # If non-duplicate slide exists, we need to check its metadata against the database
-            if slide_id is not None:
-                print('Slide %s already in the database with id=%s' % (slide_name, slide_id))
+            # Check if a json exists for the file
+            pj = p.with_suffix('.json')
+            if pj.is_file():
 
-                # Check if the metadata matches
-                t0 = db.execute('SELECT * FROM slide '
-                                'WHERE section=? AND slide=? AND stain=? AND id=?',
-                                (section, slide_no, stain, slide_id)).fetchone()
+                # Read the relevant keys from the JSON file
+                with open(pj) as fj:
 
-                # We may need to update the properties
-                if t0 is None:
-                    print('UPDATING metadata for slide %s' % (slide_name,))
-                    db.execute('UPDATE slide SET section=?, slide=?, stain=? '
-                               'WHERE id=?', (section, slide_no, stain, slide_id))
-                    db.commit()
+                    # Validate the JSON against the schema
+                    data = json.load(fj)
+                    validate(instance=data, schema=slide_json_schema)
 
-                # We may also need to update the specimen/block id
-                t1 = db.execute('SELECT * FROM slide S '
-                                '         LEFT JOIN block B on S.block_id = B.id '
-                                'WHERE B.specimen_name=? AND B.block_name=? AND S.id=?',
-                                (specimen, block, slide_id)).fetchone()
+                    # Create a slideref for this filename
+                    sr = SlideRef(pr, data['specimen'], data['block'], p.stem, p.suffix[1:])
+                    if not sr.resource_exists('raw', False):
+                        print("Raw file does not exist for JSON: %s" % pj)
+                        continue
 
-                # Update the specimen/block for this slide
-                if t1 is None:
-                    print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
-                    bid = db_get_or_create_block(project, specimen, block)
-                    db.execute('UPDATE slide SET block_id=? WHERE id=?',
-                               (bid, slide_id))
-                    db.commit()
+                    # Tags should be a set
+                    data['tags'] = set(data.get('tags', []))
 
-                # Finally, we may need to update the tags
-                current_tags = set()
-                rc = db.execute('SELECT tag FROM slide_tags WHERE slide=? AND external=1', (slide_id,))
-                for row in rc.fetchall():
-                    current_tags.add(row['tag'])
+                    # Load the slide
+                    refresh_slide(pr, sr, slide_name=p.stem, check_hash=check_hash, **data)
 
-                # If tags have changed, update the tags
-                if tags != current_tags:
-                    print('UPDATING tags for slide %s to %s' % (slide_name, str(tags)))
-                    db.execute('DELETE FROM slide_tags WHERE slide=? AND external=1', (slide_id,))
-                    for t in tags:
-                        db.execute('INSERT INTO slide_tags(slide, tag, external) VALUES (?, ?, 1)',
-                                   (slide_id, t))
-                    db.commit()
+    else:
 
-                # Update the slide thumbnail, etc., optionally checking against source filesystem
-                update_slide_derived_data(slide_id, check_hash)
+        # Load the manifest file
+        manifest_contents = load_url(manifest)
+        if manifest_contents is None:
+            logging.error("Cannot read URL or file: %s" % (manifest,))
+            sys.exit(-1)
 
+        # Read from the manifest file
+        for line in manifest_contents.splitlines():
+
+            # Split into words
+            words = line.split()
+            if len(words) != 2:
                 continue
 
-            # Create a slideref for this object. The way we have set all of this up,
-            # the extension is not coded anywhere in the manifests, so we dynamically
-            # check for multiple extensions
-            found = False
-            for slide_ext in ('svs', 'tif', 'tiff'):
+            # Check for single specimen selector
+            specimen = line.split()[0]
+            if single_specimen is not None and single_specimen != specimen:
+                continue
 
-                sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+            url = line.split()[1]
+            print('Parsing specimen "%s" with URL "%s"' % (specimen, url))
 
-                if sr.resource_exists('raw', False):
-                    # The raw slide has been found, so the slide will be entered into the database.
-                    sid = db_create_slide(project, specimen, block, section, slide_no, stain, slide_name,
-                                          slide_ext, tags)
+            # Get the lines from the URL
+            specimen_manifest_contents = load_url(url, os.path.dirname(manifest))
+            if specimen_manifest_contents is None:
+                logging.warning("Cannot read URL or file: %s" % (url,))
+                continue
 
-                    print('Slide %s located with url %s and assigned new id %d' %
-                          (slide_name, sr.get_resource_url('raw', False), sid))
+            # For each line in the URL consider it as a new slide
+            r = csv.reader(specimen_manifest_contents.splitlines()[1:])
+            for sl in r:
 
-                    # Update thumbnail and such
-                    update_slide_derived_data(sid, True)
-                    found = True
-                    break
+                # Read the elements from the string into a dict
+                data = dict(zip(
+                    ['slide_name', 'stain', 'block', 'section', 'slide_no', 'cert'],
+                    [str(sl[0]), str(sl[1]), str(sl[2]), int(sl[3]), int(sl[4]), str(sl[5])]))
 
-            # We are here because no URL was found
-            if not found:
-                print('Raw image was not found for slide "%s"' % (slide_name,))
+                # If the line supports tags, read them
+                tagline = sl[6].lower().strip() if len(sl) > 6 else ""
+                data['tags'] = set(tagline.split(';')) if len(tagline) > 0 else set()
+
+                # Try to find a raw slide
+                sr = None
+                for slide_ext in ext_list:
+                    sr_test = SlideRef(pr, specimen, block, slide_name, slide_ext)
+                    if sr_test.resource_exists('raw', False):
+                        sr = sr_test
+                        break
+
+                # Show warining if a slide has not been found
+                if sr is None:
+                    print('Raw image was not found for slide {slide_name}'.format(**data))
+
+                # Update this slide
+                refresh_slide(pr, sr, specimen, check_hash=check_hash, **data)
 
     # Refresh slice index for all tasks in this project
     rebuild_project_slice_indices(project)
@@ -768,7 +853,8 @@ def load_raw_slide_to_cache(slide_id, resource):
 
 @click.command('refresh-slides')
 @click.argument('project')
-@click.argument('manifest', type=click.Path(exists=True))
+@click.option('-m', '--manifest', default=None, type=click.Path(exists=True),
+              help='CSV manifest file for projects that require them')
 @click.option('-s', '--specimen', default=None,
               help='Only refresh slides for a single specimen')
 @click.option('-f', '--fast', is_flag=True,

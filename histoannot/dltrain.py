@@ -32,10 +32,9 @@ from histoannot.slideref import get_slide_ref
 
 import json
 import time
-import StringIO
+import io
 import os
 import urllib
-import urllib2
 import random
 import colorsys
 from PIL import Image
@@ -485,7 +484,7 @@ def get_sample_custom_png(id, level, w, h):
                 level, ctr_x, ctr_y, w, h)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        rawbytes = urllib2.urlopen(url, post_data).read()
+        rawbytes = urllib.request.urlopen(url, post_data).read()
 
     resp = make_response(rawbytes)
     resp.mimetype = 'image/%s' % format
@@ -541,7 +540,7 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
                 level, ctr_x, ctr_y, w, h)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        rawbytes = urllib2.urlopen(url, post_data).read()
+        rawbytes = urllib.request.urlopen(url, post_data).read()
 
     # Save as PNG
     with open(get_sample_patch_filename(sample_id), 'wb') as f:
@@ -657,7 +656,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
 @bp.route('/dltrain/api/task/<int:task_id>/samples/manifest.csv', methods=('GET',))
 @task_access_required
 def get_sample_manifest_for_task(task_id):
-    fout = StringIO.StringIO()
+    fout = io.StringIO.StringIO()
     samples_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True)
     return Response(fout.getvalue(), mimetype='text/csv')
 
@@ -769,7 +768,7 @@ def delete_samples(
          ('t_create < ?', time.mktime(older.timetuple()) if older is not None else None)]
 
     # Filter out the missing entries
-    w = filter(lambda (a,b): b is not None, w)
+    w = filter(lambda a,b: b is not None, w)
 
     # Get the pieces 
     (w_sql,w_prm) = zip(*w)

@@ -88,7 +88,7 @@ class GCSHandler:
         with open(local_file, "wb") as file_obj:
             worker = threading.Thread(target=self.get_client().download_blob_to_file, args=(blob, file_obj))
             worker.start()
-            while worker.isAlive():
+            while worker.is_alive():
                 worker.join(1.0)
                 print('GCS: downloaded: %d of %s' % (os.stat(local_file).st_size, uri))
 

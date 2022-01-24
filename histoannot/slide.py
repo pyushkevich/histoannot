@@ -541,11 +541,14 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     context['spacing'] = [0,0]
     if metadata_fn is not None:
         with open(metadata_fn, 'r') as metadata_fd:
-            metadata = json.load(metadata_fd)
-            if 'spacing' in metadata:
-                context['spacing'] = metadata['spacing']
-                if resolution == 'x16':
-                    context['spacing'] = [ 16.0 * x for x in context['spacing'] ]
+            try:
+                metadata = json.load(metadata_fd)
+                if 'spacing' in metadata:
+                    context['spacing'] = metadata['spacing']
+                    if resolution == 'x16':
+                        context['spacing'] = [ 16.0 * x for x in context['spacing'] ]
+            except json.JSONDecodeError:
+                print('Failed to read JSON from ' + metadata_fn)
 
 
     # Add optional fields to context

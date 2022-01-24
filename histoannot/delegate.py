@@ -31,6 +31,7 @@ bp = Blueprint('delegate', __name__)
 @bp.route('/delegate/ping', methods=('POST','GET'))
 def ping():
     print("GETTING PINGED")
+    print(request.form)
     db=get_db()
     if 'url' in request.form and 'cpu_percent' in request.form:
         db.execute('INSERT OR REPLACE INTO dzi_node(url,t_ping,cpu_percent) VALUES(?,?,?)',
@@ -47,13 +48,15 @@ def check_dzi_node_alive(url, timeout=5):
         resp = urllib.request.urlopen(url, timeout=timeout).read()
 
         # Check against expected string
-        if resp == 'HISTOANNOT DZI NODE':
+        if resp == b'HISTOANNOT DZI NODE':
+            print('check_dzi_node_alive (%s): Success' % url)
             return True
 
-    except Exception as e:
+    except urllib.error.URLError as e:
         print(e)
 
     # If we are here, the check failed.
+    print('check_dzi_node_alive (%s): Failure' % url)
     return False
 
 

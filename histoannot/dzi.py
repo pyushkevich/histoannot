@@ -77,8 +77,8 @@ def forward_to_worker(view):
 
         # Take the project information and embed it in the call as a POST parameter
         pr = ProjectRef(kwargs['project'])
-        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        return urllib.request.urlopen(full_url, post_data).read()
+        post_data = urllib.parse.urlencode({'project_data': json.dumps(pr.get_dict())})
+        return urllib.request.urlopen(full_url, post_data.encode('ascii')).read()
 
     return wrapped_view
 
@@ -406,12 +406,11 @@ def delegate_dzi_ping_command():
     while True:
         try:
             cpu_percent=psutil.cpu_percent()
-            urllib.request.urlopen(master_url, 
-                    urllib.urlencode([('url', node_url), ('cpu_percent',str(cpu_percent))]), timeout=10)
-        except:
-            pass
+            coded = urllib.parse.urlencode([('url', node_url), ('cpu_percent',str(cpu_percent))])
+            urllib.request.urlopen(master_url, coded.encode('ascii'), timeout=10)
+        except urllib.error.URLError as e:
+            print(e)
         time.sleep(30)
-
 
 # CLI stuff
 def init_app(app):

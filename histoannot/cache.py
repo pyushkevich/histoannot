@@ -73,6 +73,9 @@ class AffineTransformedOpenSlide(object):
 class AffineTransformedOpenSlide(object):
     def __init__(self, slide_path, affine_matrix = np.eye(3)):
         self.os = OpenSlide(slide_path)
+        self.level_dimensions = self.os.level_dimensions
+        self.level_downsamples = self.os.level_downsamples
+        self.properties = self.os.properties
 
     def get_best_level_for_downsample(self, d):
         return self.os.get_best_level_for_downsample(d)

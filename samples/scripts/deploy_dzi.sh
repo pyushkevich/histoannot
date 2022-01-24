@@ -1,10 +1,13 @@
 #!/bin/bash
-MASTER_URL="http://picsl-histoannot-server:5001"
-DOCKER_TAG="dev"
+MASTER_URL="http://picsl-histoannot-server"
+DOCKER_TAG="latest"
 
 # Name of the template
 TEMPLATE_NAME="picsl-histoannot-worker-template-${DOCKER_TAG}"
 GROUP_NAME="picsl-histoannot-worker-group-${DOCKER_TAG}"
+
+# Service account info
+SVCACCT=$(gcloud config get-value account)
 
 function delete_template()
 {
@@ -38,6 +41,7 @@ function create_template()
     --preemptible \
     --tags=histoannot-worker \
     --subnet=histoannot-workers	\
+    --service-account $SVCACCT \
     --container-image=docker.io/pyushkevich/histoannot-dzi-node:$DOCKER_TAG \
     --container-env=HISTOANNOT_URL_BASE=gs://mtl_histology,HISTOANNOT_SERVER_KEY=fsdfsdf,HISTOANNOT_MASTER_URL="$MASTER_URL"
 

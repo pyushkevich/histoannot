@@ -1299,14 +1299,14 @@ def slides_list_cmd(task, specimen, block, section, slide, stain,
     make_slide_dbview(task, 'v_full')
 
     # Build up a where clause
-    w = filter(lambda a,b: b is not None and b is not False, 
+    w = list(filter(lambda x: x[1] is not None and x[1] is not False, 
             [('specimen_name LIKE ?', specimen),
              ('block_name LIKE ?', block),
              ('section = ?', section),
              ('slide = ?', slide),
              ('stain = ?', stain),
              ('n_paths >= ?', min_paths), 
-             ('n_markers >= ?', min_markers)])
+             ('n_markers >= ?', min_markers)]))
 
     if len(w) > 0:
         w_sql,w_prm = zip(*w)

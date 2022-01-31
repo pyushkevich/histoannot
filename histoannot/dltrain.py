@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response
+    Blueprint, flash, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response, url_for, session
 )
 from werkzeug.exceptions import abort
 from histoannot.auth import login_required, task_access_required, project_access_required, project_admin_access_required
@@ -146,6 +146,21 @@ def get_samples_for_label_table(task_id, slide_id):
 
     return render_template('dbtrain/sample_table.html', task_id=task_id, slide_id=slide_id, label_id=1)
 
+
+@bp.route('/dltrain/task/<int:task_id>/sample/<int:sample_id>/nav', methods=('GET',))
+@task_access_required
+def navigate_to_sample(task_id, sample_id):
+    db = get_db()
+
+    # Look up the sample in the database
+    rc = db.execute('''select slide, (x0+x1)/2 as cx, (y0+y1)/2 as cy 
+                       from training_sample
+                       where id==? and task==?''', (sample_id, task_id)).fetchone()
+
+    if rc:
+        session['slide_view_sample_data'] = { 'sample_id' : sample_id, 'sample_cx' : rc['cx'], 'sample_cy' : rc['cy'] }
+        return redirect(url_for('slide.slide_view', 
+            task_id=task_id, slide_id=rc['slide'], resolution='raw', affine_mode=False))
 
 
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/picker', methods=('GET',))

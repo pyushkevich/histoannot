@@ -875,6 +875,12 @@ $(document).ready(function()
                     data = JSON.parse(response_text);
                     box.data.id = data.id;
                     self.boxmap.set(data.id, box);
+
+		    // Add a link to navigate to the sample to clipboard
+		    let navurl = "{{ url_for('dltrain.navigate_to_sample', task_id = task_id, sample_id = 999999, _external=True) }}";
+		    navurl = navurl.replace('999999', data.id);
+                    navigator.clipboard.writeText(navurl);
+
                     if(cb_success)
                         cb_success();
                 },

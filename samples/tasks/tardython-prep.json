@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "Tardython 2022 Prep", 
+    "stains": [
+        "TDP43"
+    ], 
+    "dltrain": {
+        "labelset": "tdp43",
+	"min-size": 16,
+	"max-size": 4096
+    }, 
+    "mode": "dltrain", 
+    "desc": "Identifying representative examples of TDP-43 inclusions"
+}

@@ -518,7 +518,7 @@ def load_url(url, parent_dir=None):
         try:
             if url.startswith('http://') or url.startswith('https://'):
                 resp = urllib.request.urlopen(url)
-                return resp.read()
+                return resp.read().decode('utf-8')
             elif url.startswith('gs://'):
                 gcsh = GCSHandler()
                 return gcsh.download_text_file(url)
@@ -814,10 +814,14 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
             r = csv.reader(specimen_manifest_contents.splitlines()[1:])
             for sl in r:
 
-                # Read the elements from the string into a dict
-                data = dict(zip(
-                    ['slide_name', 'stain', 'block', 'section', 'slide_no', 'cert'],
-                    [str(sl[0]), str(sl[1]), str(sl[2]), int(sl[3]), int(sl[4]), str(sl[5])]))
+                # Read the elements from the string into a dict, ignoring blank lines or other
+                # lines that cannot be parsed
+                try:
+                    data = dict(zip(
+                        ['slide_name', 'stain', 'block', 'section', 'slide_no', 'cert'],
+                        [str(sl[0]), str(sl[1]), str(sl[2]), int(sl[3]), int(sl[4]), str(sl[5])]))
+                except ValueError:
+                    continue
 
                 # If the line supports tags, read them
                 tagline = sl[6].lower().strip() if len(sl) > 6 else ""
@@ -826,7 +830,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                 # Try to find a raw slide
                 sr = None
                 for slide_ext in ext_list:
-                    sr_test = SlideRef(pr, specimen, block, slide_name, slide_ext)
+                    sr_test = SlideRef(pr, specimen, data['block'], data['slide_name'], slide_ext)
                     if sr_test.resource_exists('raw', False):
                         sr = sr_test
                         break
@@ -836,7 +840,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                     print('Raw image was not found for slide {slide_name}'.format(**data))
 
                 # Update this slide
-                refresh_slide(pr, sr, specimen, check_hash=check_hash, **data)
+                refresh_slide(pr, sr, specimen=specimen, check_hash=check_hash, **data)
 
     # Refresh slice index for all tasks in this project
     rebuild_project_slice_indices(project)

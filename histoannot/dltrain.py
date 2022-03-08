@@ -671,7 +671,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
 @bp.route('/dltrain/api/task/<int:task_id>/samples/manifest.csv', methods=('GET',))
 @task_access_required
 def get_sample_manifest_for_task(task_id):
-    fout = io.StringIO.StringIO()
+    fout = io.StringIO()
     samples_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True)
     return Response(fout.getvalue(), mimetype='text/csv')
 

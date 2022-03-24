@@ -332,15 +332,32 @@
 <div id="help_dialog_container" title="Keyboard shortcuts" class="pure-table">
     <table>
         <tbody>
-        <tr><td>A</td><td>Pan view left</td></tr>
-        <tr><td>D</td><td>Pan view right</td></tr>
-        <tr><td>W</td><td>Pan view up</td></tr>
-        <tr><td>S</td><td>Pan view down</td></tr>
+        <tr><td>a</td><td>Pan view left</td></tr>
+        <tr><td>d</td><td>Pan view right</td></tr>
+        <tr><td>w</td><td>Pan view up</td></tr>
+        <tr><td>s</td><td>Pan view down</td></tr>
         <tr><td>&lt;</td><td>Go to previous section</td></tr>
         <tr><td>&gt;</td><td>Go to next section</td></tr>
         <tr><td>D</td><td>Download current slide</td></tr>
         </tbody>
     </table>
+</div>
+
+<!-- A slide download dialog -->
+<div id="dl_dialog_container" title="Download Slide">
+    <form id="dl_dialog_form" style="display: inline; white-space: nowrap;">
+        <div>
+        <input type="radio" id="dl_dialog_cb_raw" name="dl_dialog_radio" value=0>
+        <label for="dl_dialog_cb_raw"> Download raw image</label><br>
+        <input type="radio" id="dl_dialog_cb_downsample" name="dl_dialog_radio" value=1 checked> 
+        <label for="dl_dialog_cb_downsample"> Download downsampled image</label>
+        </div>
+        <div>
+        <label for="dl_dialog_width"> Downsample size (in pixels):</label><br>
+        <input type="number" id="dl_dialog_width" name="dl_dialog_width" value=1000>
+        </div>
+        <input type="button" id="dl_dialog_submit" value="Download">
+    </form>
 </div>
 
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
@@ -579,6 +596,15 @@ $(document).ready(function()
         modal: true
     });
 
+    // A download dialog
+    let dl_dialog = $("#dl_dialog_container").dialog({
+        autoOpen: false,
+        resizable: false,
+        height: "auto",
+        width: "auto",
+        modal: true
+    });
+                                            
     // Get the progress of loading the current slide
     var check_preload_progress = function(job_id, cb_complete) {
         var myurl =
@@ -1475,17 +1501,24 @@ $(document).ready(function()
         return button;
     };
 
-    let fn_download_image = function() {
-        d_link = "{{url_tmpl_download}}".replace("XXXXX", "{{resolution}}");
+    let fn_download_slide = function() {
+        // Read the downsample factor
+        var ds = $("#dl_dialog_cb_raw").is(':checked') ? 0 : parseInt($("#dl_dialog_width").val(),10)
+        d_link = "{{url_tmpl_download}}".replace("XXXXX", "{{resolution}}").replace("999999", ds.toString());
+        dl_dialog.dialog("close");
         window.open(d_link, "_blank");
+    };
+
+    let fn_raise_dl_dialog = function() {
+        dl_dialog.dialog("open");
+        $("#dl_dialog_submit").click(fn_download_slide);
     };
 
     // Create a drawing button
     var navButton = add_seadragon_button('nav_button', 'Navigate around the slide using zoom and pan', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, nav_pressed_handler);
     Mousetrap.bind(['z', 'esc'], function() { nav_pressed_handler() });
     Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
-    Mousetrap.bind('D', fn_download_image);
-
+    Mousetrap.bind('D', function() { fn_raise_dl_dialog() });
     Mousetrap.bind('?', function() { help_dialog.dialog("open"); });
 
     // Bind moving to next/previous slide
@@ -1788,7 +1821,7 @@ $(document).ready(function()
     });
 
     // Fill out the list of overlays
-    if(Object.keys(overlays).length > 0) {
+    if(overlays && Object.keys(overlays).length > 0) {
 
         // Fill out the list of overlays
         let s_ovl = $("#form_overlay_select");

@@ -20,7 +20,7 @@ from flask import (
 )
 from werkzeug.exceptions import abort
 
-from io import BytesIO
+from io import BytesIO, StringIO
 import os
 import json
 import time
@@ -234,11 +234,11 @@ def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
 
 
 # Download the raw data for the slide
-@bp.route('/dzi/download/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>',
+@bp.route('/dzi/download/<mode>/<project>/<specimen>/<block>/<resource>/<int:downsample>/<slide_name>.<slide_ext>',
           methods=('GET', 'POST'))
 @project_access_required
 @forward_to_worker
-def dzi_download(mode, project, specimen, block, resource, slide_name, slide_ext):
+def dzi_download(mode, project, specimen, block, resource, downsample, slide_name, slide_ext):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr = dzi_get_project_ref(project)
@@ -249,7 +249,18 @@ def dzi_download(mode, project, specimen, block, resource, slide_name, slide_ext
 
     # Get the resource
     tiff_file = sr.get_local_copy(resource, check_hash=True)
-    return send_file(tiff_file)
+
+    # If no downsample, send raw file
+    if downsample == 0:
+        return send_file(tiff_file)
+    else:
+        os = OpenSlide(tiff_file)
+        thumb = os.get_thumbnail((downsample, downsample))
+        buf = PILBytesIO()
+        thumb.save(buf, 'TIFF')
+        resp = make_response(buf.getvalue())
+        resp.mimetype = 'application/octet-stream'
+        return resp
 
 
 class PILBytesIO(BytesIO):

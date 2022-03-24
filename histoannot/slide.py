@@ -505,7 +505,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'slide_name':si['slide_name'],
             'slide_ext':si['slide_ext'],
             'mode':affine_mode,
-            'resource':'XXXXX'}
+            'resource':'XXXXX',
+            'downsample': 999999
+            }
 
     url_tmpl_preload = url_for('dzi.dzi_preload_endpoint', **url_ctx)
     url_tmpl_dzi = url_for('dzi.dzi', **url_ctx)

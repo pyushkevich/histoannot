@@ -553,9 +553,15 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
                 print('Failed to read JSON from ' + metadata_fn)
 
     # Add optional fields to context
+    if 'slide_view_sample_data' in session:
+        sample_data = session.get('slide_view_sample_data')
+        session.pop('slide_view_sample_data')
+    else:
+        sample_data = request.form
+
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
-        if field in request.form:
-            context[field] = request.form[field]
+        if field in sample_data:
+            context[field] = sample_data[field]
 
     # Render the template
     return render_template('slide/slide_view.html', **context)

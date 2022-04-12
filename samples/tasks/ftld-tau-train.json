@@ -1,5 +1,5 @@
 {
-    "restrict-access": true, 
+    "restrict-access": false, 
     "name": "Tau Training", 
     "stains": [
         "AT8"

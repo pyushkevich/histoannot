@@ -1,5 +1,5 @@
 {
-    "restrict-access": true, 
+    "restrict-access": false, 
     "name": "Tardython 2022 (TDP-43)", 
     "stains": [
         "TDP43"

@@ -1018,10 +1018,14 @@ def list_tasks_command(project):
     print('%08s %s' % ('Task ID', 'Task Name'))
 
     db = get_db()
-    rc = db.execute('SELECT id, name FROM task_info WHERE project=? ORDER BY id',
-                    (project,))
-    for row in rc.fetchall():
-        print('%08s %s' % (row['id'], row['name']))
+    
+    # Create a Pandas data frame
+    df = pandas.read_sql_query('SELECT id, name, restrict_access FROM task_info WHERE project=? ORDER BY id', 
+                               get_db(), params=(project,))
+
+    # Dump the database entries
+    with pandas.option_context('display.max_rows', None):
+        print(df)
 
 
 @click.command('tasks-print')
@@ -1185,16 +1189,18 @@ def create_edit_meta():
                       (g.user['id'], g.user['id'], t_stamp, t_stamp)).lastrowid
 
 
+
 # --------------------------------
 # User permissions
 # --------------------------------
 @click.command('users-grant-permission')
 @click.argument('username', type=click.STRING)
-@click.option('--project','-p', help="Grant permission to specified project")
-@click.option('--project-admin',help="Grant permission to specified project as admin")
+@click.option('--project','-p', help="Grant permission to specified project", multiple=True)
+@click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
+@click.option('--admin', type=click.BOOL, help="Make user the administrator for all specified projects")
 @click.option('--site-admin', type=click.BOOL, help="Grant side-wide administrative permission")
 @with_appcontext
-def users_grant_permission_command(username, project, project_admin, site_admin):
+def users_grant_permission_command(username, project, task, admin, site_admin):
     """Grant permissions to users on projects and globally"""
     db=get_db()
 
@@ -1210,20 +1216,22 @@ def users_grant_permission_command(username, project, project_admin, site_admin)
         db.execute('UPDATE user SET site_admin=1 WHERE id=?', (user_id,))
         current_app.logger.info('User %s added as site administrator' % (username,))
 
-    if project_admin is not None:
-        pr = ProjectRef(project_admin)
-        db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,1)',
-                   (project_admin, user_id))
-        current_app.logger.info('User %s added as administrator for project %s' % (username,project))
+    # Provide access to all requested projects
+    for p_k in project:
+        pr = ProjectRef(p_k)
+        pr.user_grant_access(user_id)
+        if admin is True:
+            pr.user_set_admin(user_id, True)
 
-    if project is not None:
-        pr = ProjectRef(project)
-        db.execute('REPLACE INTO project_access(project,user,admin) VALUES (?,?,0)',
-                   (project, user_id))
-        current_app.logger.info('User %s added as user for project %s' % (username,project))
-
-    db.commit()
-
+    # Provide access to all requested tasks
+    for t_k in task:
+        rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
+        pr = ProjectRef(rc['project'])
+        pr.user_grant_access(user_id)
+        if admin is True:
+            pr.user_set_admin(user_id, True)
+        db.execute('REPLACE INTO task_access (user,task) VALUES (?,?)', (user_id, t_k))
+        db.commit()
 
 
 @click.command('users-list')
@@ -1240,6 +1248,40 @@ def users_list_command():
         print(df)
 
 
+
+
+# --------------------------------
+# User permissions
+# --------------------------------
+@click.command('users-list-permissions')
+@click.argument('username', type=click.STRING)
+@with_appcontext
+def users_list_permissions(username):
+    """List permissions assigned to a user"""
+    db=get_db()
+
+    # Check that the user is in the system
+    rc = db.execute('SELECT id, site_admin FROM user WHERE username=?', (username,)).fetchone()
+    if rc is None:
+        current_app.logger.info('User %s does not exist' % (username,))
+        sys.exit(1)
+
+    user_id = rc['id']
+    site_admin = rc['site_admin']
+
+    # Describe the user
+    print('User:    %20s   Access level: %s' % (username, 'Site Admin' if site_admin > 0 else 'Regular'))
+
+    # List all projects that the user has access to
+    rc = db.execute('SELECT project, admin FROM project_access WHERE user=?', (user_id,))
+    for row in rc.fetchall():
+        prj = row['project']
+        print('Project: %20s   Access level: %s ' % (prj, 'Admin' if row['admin'] > 0 else 'Regular'))
+        rc_t = db.execute('SELECT id, name, restrict_access as ra FROM task_info WHERE project=? ', (prj,))
+        for row_t in rc_t.fetchall():
+            rc_ta = db.execute('SELECT * FROM task_access WHERE user=? AND task=?', (user_id, row_t['id'])).fetchone()
+            if row_t['ra'] == 0 or rc_ta is not None:
+                print('  Task: %s' % (row_t['name']))
 
 
 def init_app(app):
@@ -1265,3 +1307,4 @@ def init_app(app):
     app.cli.add_command(labelset_add_new_command)
     app.cli.add_command(users_list_command)
     app.cli.add_command(users_grant_permission_command)
+    app.cli.add_command(users_list_permissions)

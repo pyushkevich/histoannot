@@ -168,7 +168,6 @@ def project_admin_access_required(view):
     return wrapped_view
 
 
-
 def task_access_required(view):
     @functools.wraps(view)
     @login_required
@@ -181,15 +180,27 @@ def task_access_required(view):
         task_id = kwargs['task_id']
 
         db = get_db()
-        rc = db.execute('SELECT * FROM project_access PA '
-                        '         LEFT JOIN project_task PT on PA.project = PT.project '
-                        'WHERE PA.user=? AND PT.task_id=?',
-                        (g.user['id'], task_id)).fetchone()
 
+        # Make sure the user has access to the parent project
+        rc = db.execute('SELECT * FROM project_access PA '
+                        '         LEFT JOIN task_info TI on PA.project = TI.project '
+                        'WHERE PA.user=? AND TI.id=?',
+                        (g.user['id'], task_id)).fetchone()
+ 
+        failed = False
         if rc is None:
+            failed = True
+        elif rc['restrict_access'] > 0:
+            rc2 = db.execute('SELECT * FROM task_access WHERE user=? and task=?',
+                             (g.user['id'], task_id)).fetchone()
+            if rc2 is None:
+                failed = True
+
+        if failed is True:
             current_app.logger.warning('Unauthorized access to task %d at URL %s'
                                        % (task_id, request.url if request is not None else None))
             abort(403, "You are not authorized to access task %d" % task_id)
+        
         else:
             return view(**kwargs)
 

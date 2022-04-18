@@ -87,6 +87,25 @@ class SlideRef:
     def get_project_ref(self):
         return self._proj
 
+    # Get the metadata JSON or None
+    def get_metadata(self):
+        metadata_fn = self.get_local_copy('metadata')
+        if metadata_fn is not None:
+            with open(metadata_fn, 'r') as metadata_fd:
+                try:
+                    return json.load(metadata_fd)
+                except json.JSONDecodeError:
+                    print('Failed to read JSON from ' + metadata_fn)
+        return None
+
+    # Get dimensions
+    def get_dims(self):
+        md = get_metadata(self)
+        if md and 'dumensions' in md and len(md['dimensions']) == 2:
+            return md['dimensions']
+        else:
+            return None
+
 
 # Get a slide ref by database ID
 def get_slide_ref(slice_id, project=None):

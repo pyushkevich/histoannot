@@ -29,7 +29,7 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, get_slide_raw_dims, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
+from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
 from io import BytesIO
 
 import os
@@ -545,16 +545,11 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     # Load the metadata for the slide to get spacing information
     metadata_fn = sr.get_local_copy('metadata')
     context['spacing'] = [0,0]
-    if metadata_fn is not None:
-        with open(metadata_fn, 'r') as metadata_fd:
-            try:
-                metadata = json.load(metadata_fd)
-                if 'spacing' in metadata:
-                    context['spacing'] = metadata['spacing']
-                    if resolution == 'x16':
-                        context['spacing'] = [ 16.0 * x for x in context['spacing'] ]
-            except json.JSONDecodeError:
-                print('Failed to read JSON from ' + metadata_fn)
+    metadata = sr.get_metadata()
+    if metadata is not None and 'spacing' in metadata:
+        context['spacing'] = metadata['spacing']
+        if resolution == 'x16':
+            context['spacing'] = [ 16.0 * x for x in context['spacing'] ]
 
     # Add optional fields to context
     if 'slide_view_sample_data' in session:
@@ -1098,7 +1093,7 @@ def extract_svg(task, slide_id, stroke_width, strip_width, font_size, font_color
 
         # Get the raw slide dimensions
         sr = get_slide_ref(slide_id)
-        dims = get_slide_raw_dims(sr)
+        dims = sr.get_dims()
         if dims is None:
             raise ValueError("Missing slide dimensions information")
 
@@ -1256,9 +1251,9 @@ def export_annot_vtk(task, slide_id, out_file):
 
         # Get the raw slide dimensions
         sr = get_slide_ref(slide_id)
-        dims = get_slide_raw_dims(sr)
+        dims = sr.get_dims()
         if dims is None:
-            sys.exit("Missing slide dimensions information")
+            raise ValueError("Missing slide dimensions information")
 
         # Get the set of points
         pts = annot_sample_path_curves(data, 5000)

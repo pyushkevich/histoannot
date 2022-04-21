@@ -106,9 +106,13 @@ def project_listing():
 @project_access_required
 def task_listing(project):
     db=get_db()
+    user = session['user_id']
 
     # List the available tasks (TODO: check user access to task)
-    rc = db.execute('SELECT * FROM task_info WHERE project=?', (project,))
+    rc = db.execute("""
+                    SELECT * from task_info TI left join task_access TA on TI.id=TA.task 
+                    where project=? and (restrict_access=0 or user=?)
+                    """, (project, user))
 
     listing = []
     for row in rc.fetchall():

@@ -306,5 +306,32 @@ class ProjectRef:
 
         return rc['id'] if rc is not None else None
 
+    def user_grant_access(self, user):
+        """Provide access to a user"""
+        db=get_db()
+        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
+                        (user, self.name)).fetchone()
+        if rc is None:
+            db.execute('INSERT INTO project_access(user,project,admin) VALUES (?,?,0)',
+                       (user, self.name))
+            db.commit()
+    
+    def user_set_admin(self, user, is_admin):
+        """Provide access to a user"""
+        db=get_db()
+        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
+                        (user, self.name)).fetchone()
+        if rc is None:
+            db.execute('UPDATE project_access SET admin = ? WHERE user=? AND project=?',
+                       (is_admin, user, self.name))
+            db.commit()
+
+    def user_revoke_access(self, user):
+        """Remove access for a user"""
+        db=get_db()
+        db.execute('DELETE FROM project_access WHERE user=? AND project=?',
+                   (user, self.name)).fetchone()
+
+
 
 

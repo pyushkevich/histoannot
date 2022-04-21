@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from histoannot.project_ref import ProjectRef
 from histoannot.db import get_db
 import os
+import json
 from flask import g, current_app
 
 
@@ -86,6 +87,22 @@ class SlideRef:
     # Get the project of this slide ref
     def get_project_ref(self):
         return self._proj
+
+    # Get the spacing of the slide
+    def get_pixel_spacing(self, resolution):
+        metadata_fn = self.get_local_copy('metadata')
+        if metadata_fn is not None:
+            with open(metadata_fn, 'r') as metadata_fd:
+                try:
+                    metadata = json.load(metadata_fd)
+                    if 'spacing' in metadata:
+                        spacing = metadata['spacing']
+                        if resolution == 'x16':
+                            spacing = [ 16.0 * x for x in spacing ]
+                        return spacing
+                except json.JSONDecodeError:
+                    print('Failed to read JSON from ' + metadata_fn)
+        return None
 
 
 # Get a slide ref by database ID

@@ -1,0 +1,15 @@
+{
+  "base_url": "/data/hippogang/histology/irwin/archive",
+  "disp_name": "Dots Histology Database",
+  "desc": "Database of digitally scanned 20um slides from Penn ADRC/FTDC matched to MRI dots",
+  "manifest_mode": "individual_json", 
+  "url_schema": {
+    "pattern": {
+      "raw": "{specimen}/histo_raw/{slide_name}.{slide_ext}",
+      "thumb": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
+      "dims": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
+      "metadata": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_metadata.json"
+    },
+    "raw_slide_ext": [ "tif", "tiff", "mrxs", "svs"]
+  }
+}

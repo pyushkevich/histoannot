@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from histoannot.project_ref import ProjectRef
 from histoannot.db import get_db
 import os
+import json
 from flask import g, current_app
 
 
@@ -100,8 +101,9 @@ class SlideRef:
 
     # Get dimensions
     def get_dims(self):
-        md = get_metadata(self)
-        if md and 'dumensions' in md and len(md['dimensions']) == 2:
+        md = self.get_metadata()
+        print('Meta:', md)
+        if md and 'dimensions' in md and len(md['dimensions']) == 2:
             return md['dimensions']
         else:
             return None

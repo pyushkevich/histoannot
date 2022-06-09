@@ -244,7 +244,7 @@ def dzi(mode, project, slide_id, resource):
 
 
 # Download the raw data for the slide
-@bp.route('/dzi/download/<project>/<int:slide_id>/<resource>/<int:downsample>', methods=('GET', 'POST'))
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
 @project_access_required
 @forward_to_worker
 def dzi_download(project, slide_id, resource, downsample):
@@ -375,6 +375,53 @@ def get_random_patch(project, slide_id, resource, level, w, format):
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
     return resp
+
+
+# Queue patch generation at a worker
+@bp.route('/dzi/preload/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
+@project_access_required
+@forward_to_worker
+def patch_preload(project, slide_id, resource):
+
+
+        # Create a job that will sample the patch from the image. The reason we do this in a queue
+    # is that a server hosting the slide might have gone down and the slide would need to be
+    # downloaded again, and we don't want to hold up returning to the user for so long
+    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
+    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, 
+                    (patch_dim, patch_dim), osl_level, job_timeout="120s", result_ttl="60s")
+
+    # Stick the properties into the job
+    job.meta['args']=(slide_id, sample_id, rect)
+    job.save_meta()
+
+    # Only commit once this has been saved
+    db.commit()
+
+    # Return the sample id and the patch generation job id
+    return json.dumps({ 'id' : sample_id, 'patch_job_id' : job.id })
+
+    # Get a project reference, using either local database or remotely supplied dict
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+
+    # Check if the file exists locally. If so, there is no need to queue a worker
+    tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
+    print("Preload for %s,%s,%s returned local file %s" % (project, slide_id, resource, tiff_file))
+    if tiff_file is not None:
+        return json.dumps({ "status" : JobStatus.FINISHED })
+
+    # Get a redis queue
+    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
+    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, job_timeout="300s", result_ttl="60s")
+
+    # Stick the properties into the job
+    job.meta['args'] = (project, pr.get_dict(), sr.get_dict(), resource)
+    job.save_meta()
+
+    # Return the job id
+    return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
+
+
 
 
 # Get an image patch at level 0 from the raw image

@@ -1,3 +1,12 @@
+DROP TABLE IF EXISTS project;
+CREATE TABLE PROJECT (
+    id TEXT PRIMARY KEY,
+    disp_name TEXT NOT NULL,
+    desc TEXT,
+    base_url TEXT NOT NULL,
+    json TEXT NOT NULL
+);
+
 DROP TABLE IF EXISTS user;
 CREATE TABLE user (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,13 +35,33 @@ CREATE TABLE user_api_key (
   FOREIGN KEY(user) REFERENCES user(id)
 );
 
+/*
 DROP TABLE IF EXISTS block;
 CREATE TABLE block (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   specimen_name TEXT NOT NULL,
   block_name TEXT NOT NULL
 );
+*/
 
+/* A table for specimens. This was a big mistake not to create in the first place */
+DROP TABLE IF EXISTS specimen;
+CREATE TABLE specimen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project TEXT NOT NULL,
+  private_name TEXT NOT NULL,
+  public_name TEXT,
+  FOREIGN KEY(project) REFERENCES project(id),
+  UNIQUE(project, private_name)
+);
+
+DROP TABLE IF EXISTS block;
+CREATE TABLE block (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  specimen INTEGER NOT NULL,
+  block_name TEXT NOT NULL,
+  UNIQUE(specimen, block_name)
+);
 
 DROP TABLE IF EXISTS slide;
 CREATE TABLE slide (
@@ -55,7 +84,8 @@ CREATE TABLE task (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   json TEXT NOT NULL,
-  restrict_access BOOLEAN NOT NULL
+  restrict_access BOOLEAN NOT NULL,
+  anonymize BOOLEAN DEFAULT(0) NOT NULL
 );
 
 
@@ -109,17 +139,9 @@ CREATE TABLE slide_dzi_node (
 );
 
 
-DROP TABLE IF EXISTS project;
-CREATE TABLE PROJECT (
-    id TEXT PRIMARY KEY,
-    disp_name TEXT NOT NULL,
-    desc TEXT,
-    base_url TEXT NOT NULL,
-    json TEXT NOT NULL
-);
-
 
 /* Unique constraint on block means it can belong to only one project */
+/*
 DROP TABLE IF EXISTS project_block;
 CREATE TABLE project_block (
   project TEXT NOT NULL,
@@ -128,6 +150,21 @@ CREATE TABLE project_block (
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY(block) REFERENCES block(id)
 );
+*/
+
+/* A project-specimen mapping that contstraints specimen names in a project to be unique */
+DROP TABLE IF EXISTS project_specimen;
+CREATE TABLE project_specimen (
+  project TEXT NOT NULL,
+  specimen_id INT UNIQUE NOT NULL,
+  specimen_name TEXT NOT NULL,
+  PRIMARY KEY(project, specimen_id),
+  FOREIGN KEY(project) REFERENCES project(id),
+  FOREIGN KEY(specimen_id) REFERENCES specimen(id),
+  FOREIGN KEY(specimen_name) REFERENCES specimen(private_name),
+  UNIQUE(project, specimen_name)
+);
+
 
 /* Unique constraint on task means it can belong to only one project */
 DROP TABLE IF EXISTS project_task;
@@ -184,3 +221,4 @@ CREATE TABLE task_slide_index (
     FOREIGN KEY (slide) REFERENCES slide(id),
     FOREIGN KEY (task_id) REFERENCES task(id)
 );
+

@@ -35,14 +35,14 @@ class SlideRef:
 
     # Initialize a slide reference with a remote URL.
     # slide_info is a dict with fields specimen, block, slide_name, slide_ext
-    def __init__(self, project, specimen, block, name, ext):
+    def __init__(self, project, specimen, block, slide_name, slide_ext):
         """
         Slide reference constructor
 
         Args:
             project(ProjectRef): project object
-            specimen(str): ID of the specimen
-            block(str): ID of the block
+            specimen(str): private name of the specimen
+            block(str): name of the block
             name(str): name/ID of the slide (must be unique)
             ext(str): extension of the slide
         """
@@ -54,10 +54,13 @@ class SlideRef:
         self._d = {
             "specimen" : specimen,
             "block" : block,
-            "slide_name": name,
-            "slide_ext" : ext
+            "slide_name": slide_name,
+            "slide_ext" : slide_ext
         }
 
+    # Get the dictionary
+    def get_dict(self):
+        return self._d
 
     # Get a tuple identifying the slide
     def get_id_tuple(self):
@@ -142,6 +145,6 @@ def get_slide_ref(slice_id, project=None):
         project = ProjectRef(row['project'])
 
     # Create a slide reference
-    return SlideRef(project, row['specimen_name'], row['block_name'], row['slide_name'], row['slide_ext'])
+    return SlideRef(project, row['specimen_private'], row['block_name'], row['slide_name'], row['slide_ext'])
 
 

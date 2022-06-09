@@ -27,7 +27,7 @@ Specimen Listing - {{task['name']}}
 <a href="{{ url_for('slide.index')}}">Home</a> : 
 <a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
 {{task['name']}}
-<span id="span_specimen_name"></span>
+<span id="span_specimen_display"></span>
 <span id="span_block_name"></span>
 
 <div class="pure-g">
@@ -108,12 +108,12 @@ $(document).ready(function() {
 
   // AJAX url templates
   var url_spc="{{url_for('slide.task_specimen_listing', task_id=task_id)}}";
-  var url_blk="{{url_for('slide.specimen_block_listing', task_id=task_id, specimen_name='XXXX')}}";
-  var url_sld="{{url_for('slide.block_slide_listing', task_id=task_id, specimen_name='XXXX', block_name='YYYY')}}";
+  var url_blk="{{url_for('slide.specimen_block_listing', task_id=task_id, specimen=999999)}}";
+  var url_sld="{{url_for('slide.block_slide_listing', task_id=task_id, specimen=999999, block_name='YYYY')}}";
   var url_tmb="{{url_for('slide.thumb', id=999999)}}";
   var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
   var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
-  var url_self="{{url_for('slide.block_detail_by_name', task_id=task_id, specimen_name='XXXX', block_name='YYYY')}}";
+  var url_self="{{url_for('slide.block_detail_by_id', task_id=task_id, specimen=999999, block_name='YYYY')}}";
 
   // Thumbnail render function
   var fn_render_thumb = function(data, type, row) {
@@ -139,9 +139,9 @@ $(document).ready(function() {
 
   // Column descriptions for different tables
   col_desc = [ 
-    { data: "specimen_name" }, 
+    { data: "specimen_display" }, 
     { data: "nblocks" }, 
-    { data: "nslides" } 
+    { data: "nslides" },
   ];
 
   blk_col_desc = [ 
@@ -172,6 +172,9 @@ $(document).ready(function() {
     sld_col_desc.push({ data: "id", render: fn_browse_link});
   }
 
+  col_desc.push({ data: "specimen", visible: false, searchable: false });
+
+
   t_specimen = $('#specimen').DataTable( {
     "ajax": function(data, callback, settings) {
       $.ajax({
@@ -179,7 +182,7 @@ $(document).ready(function() {
         success: function(resp_text) {
           callback({data: JSON.parse(resp_text)});
           if(request_spc) {
-            fn_select_row(t_specimen, 0, request_spc);
+            fn_select_row(t_specimen, col_desc.length-1, request_spc);
             request_spc=null;
           }
         }
@@ -197,7 +200,7 @@ $(document).ready(function() {
     "ajax": function(data, callback, settings) {
       if(selected_spc) {
         $.ajax({
-          url: url_blk.replace('XXXX',selected_spc),
+          url: url_blk.replace('999999',selected_spc),
           success: function(resp_text) {
             callback({data: JSON.parse(resp_text)});
             if(request_blk) {
@@ -220,7 +223,8 @@ $(document).ready(function() {
   var selected_blk = null;
 
   var py2js = function(str) { return str==="None" ? null : str; }
-  var request_spc=py2js("{{specimen_name}}");
+  var py2int = function(str) { return str==="None" ? null : parseInt(str); }
+  var request_spc=py2int("{{specimen}}");
   var request_blk=py2js("{{block_name}}");
 
   var fn_select_row = function(table, col, value) {
@@ -236,7 +240,7 @@ $(document).ready(function() {
     "ajax": function(data, callback, settings) {
       if(selected_spc && selected_blk) {
         $.ajax({
-          url: url_sld.replace('XXXX',selected_spc).replace('YYYY',selected_blk),
+          url: url_sld.replace('999999',selected_spc).replace('YYYY',selected_blk),
           success: function(resp_text) {
             callback({data: JSON.parse(resp_text)});
           }
@@ -253,9 +257,10 @@ $(document).ready(function() {
   t_specimen.on('select', function(e,dt,type,indexes) {
     if(type==='row') {
       // Set the target url
-      selected_spc = t_specimen.rows(indexes).data().pluck('specimen_name')[0];
+      selected_spc = t_specimen.rows(indexes).data().pluck('specimen')[0];
+      selected_spc_name = t_specimen.rows(indexes).data().pluck('specimen_display')[0];
       t_block.ajax.reload();
-      $('#span_specimen_name').text(" : " + selected_spc);
+      $('#span_specimen_display').text(" : " + selected_spc_name);
       $('#span_block_name').text("");
       $('#d_blocks').css('display','block');
 
@@ -266,7 +271,7 @@ $(document).ready(function() {
 
   t_specimen.on('deselect', function(e,dt,type,indexes) {
     selected_spc = null;
-    $('#span_specimen_name').text("");
+    $('#span_specimen_display').text("");
     $('#d_blocks').css('display','none');
   })
 
@@ -277,7 +282,7 @@ $(document).ready(function() {
       t_slide.ajax.reload();
       $('#span_block_name').text(" : " + selected_blk);
       $('#d_slides').css('display','block');
-      var new_url=url_self.replace('XXXX', selected_spc).replace('YYYY', selected_blk);
+      var new_url=url_self.replace('999999', selected_spc).replace('YYYY', selected_blk);
       history.pushState({urlPath:new_url},selected_spc+":"+selected_blk,new_url);
     }
   });

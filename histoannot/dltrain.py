@@ -114,8 +114,8 @@ def get_samples_for_label(task_id, slide_id, label_id):
         where_arg = (label_id, task_id, slide_id)
     elif request.form['which'] == 'specimen':
         where_clause = '''label = ? and task = ? and S.block_id IN (
-                              SELECT id FROM block BB where BB.specimen_name = (
-                                  SELECT specimen_name FROM block B left join slide SS on B.id=SS.block_id
+                              SELECT id FROM block BB where BB.specimen = (
+                                  SELECT specimen FROM block B left join slide SS on B.id=SS.block_id
                                   WHERE SS.id=?))'''
         where_arg = (label_id, task_id, slide_id)
     else:
@@ -128,10 +128,9 @@ def get_samples_for_label(task_id, slide_id, label_id):
                       UE.username as editor, t_edit,
                       datetime(t_create,'unixepoch','localtime') as dt_create,
                       datetime(t_edit,'unixepoch','localtime') as dt_edit,
-                      BBB.specimen_name,BBB.block_name,S.section,S.slide,S.stain,S.id as slide_id
+                      S.specimen_display as specimen_name,S.block_name,S.section,S.slide,S.stain,S.id as slide_id
                FROM training_sample T LEFT JOIN edit_meta M on T.meta_id = M.id 
-                                      LEFT JOIN slide S on S.id = T.slide 
-                                      LEFT JOIN block BBB on BBB.id = S.block_id
+                                      LEFT JOIN task_slide_info S on S.id = T.slide and S.task_id = T.task
                                       LEFT JOIN user UC on UC.id = M.creator 
                                       LEFT JOIN user UE on UE.id = M.editor 
                WHERE %s 
@@ -490,12 +489,11 @@ def get_sample_custom_png(id, level, w, h):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(project,specimen,block,'raw',
-                             slide_name,slide_ext,level,
-                             ctr_x,ctr_y,w,h,'png').data
+        rawbytes = get_patch(project,slide_id,'raw',
+                             level, ctr_x,ctr_y,w,h,'png').data
     else:
-        url = '%s/dzi/patch/%s/%s/%s/raw/%s.%s/%d/%d_%d_%d_%d.png' % (
-                del_url, project, specimen, block, slide_name, slide_ext, 
+        url = '%s/dzi/patch/%s/raw/%d/%d_%d_%d_%d.png' % (
+                del_url, project, slide_id, 
                 level, ctr_x, ctr_y, w, h)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
@@ -546,12 +544,11 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_patch(project,specimen,block,'raw',
-                             slide_name,slide_ext,level,
-                             ctr_x,ctr_y,w,h,'png').data
+        rawbytes = get_patch(project,slide_id,'raw',
+                             level,ctr_x,ctr_y,w,h,'png').data
     else:
-        url = '%s/dzi/patch/%s/%s/%s/raw/%s.%s/%d/%d_%d_%d_%d.png' % (
-                del_url, project, specimen, block, slide_name, slide_ext, 
+        url = '%s/dzi/patch/%s/%d/raw/%d/%d_%d_%d_%d.png' % (
+                del_url, project, slide_id,  
                 level, ctr_x, ctr_y, w, h)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})

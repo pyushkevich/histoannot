@@ -109,189 +109,6 @@ def make_thumbnail(slide_id, tiff_file, lazy):
     thumb.save(thumb_fn)
 
 
-# A better way to import tiff files, actually synchronize the file system with
-# the database. That is go through all files in the directory and update or
-# create their records.
-def update_slide_db(src_dir):
-    db = get_db()
-
-    # Traverse over specimens and blocks
-    specimens = filter(lambda d: os.path.isdir(os.path.join(src_dir, d)), os.listdir(src_dir))
-    for s in specimens:
-        spec_dir = os.path.join(src_dir, s)
-        blocks = filter(lambda d: os.path.isdir(os.path.join(spec_dir, d)), os.listdir(spec_dir))
-        for b in blocks:
-            block_dir = os.path.join(spec_dir, b)
-
-            # Collect a list of valid slides with .mat files
-            mats = filter(lambda d: is_valid_slide(block_dir, d), os.listdir(block_dir))
-            print("%s: %d files" % (block_dir, len(mats)))
-
-            # Keep track of number of inserted and updated slides
-            (n_ins, n_upd) = (0, 0)
-
-            # There must be at least one slide
-            if len(mats) > 0:
-
-                # Make sure the block exists
-                brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', (s, b)).fetchone()
-                if brec is None:
-                    db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (s, b))
-                    brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', (s, b)).fetchone()
-
-                # Get the block id
-                block_id = brec['id']
-
-                # Loop over the slides
-                for m in mats:
-
-                    # Get the slide info from the filename
-                    si = parse_slide_filename(m, block_dir)
-
-                    # Search for the slide in the database
-                    srec = db.execute('SELECT * FROM slide'
-                                      ' WHERE block_id=? AND section=? AND stain=? AND slide=?',
-                                      (block_id, si['section'], si['stain'], si['slide'])).fetchone()
-
-                    # If slide was not found, insert one
-                    lazy = True
-                    if srec is None:
-                        db.execute('INSERT INTO slide (block_id, section, slide, stain, tiff_file, mat_file)'
-                                   ' VALUES (?,?,?,?,?,?)',
-                                   (block_id, si['section'], si['slide'],
-                                    si['stain'], si['tiff_file'], si['mat_file']))
-
-                        srec = db.execute('SELECT * FROM slide'
-                                          ' WHERE block_id=? AND section=? AND stain=? AND slide=?',
-                                          (block_id, si['section'], si['stain'], si['slide'])).fetchone()
-                        lazy = False
-                        n_ins += 1
-
-                    # If slide was found, check if it requires an updateA
-                    elif srec['tiff_file'] != si['tiff_file'] or srec['mat_file'] != si['mat_file']:
-                        db.execute('UPDATE slide SET tiff_file=?, mat_file=? WHERE id=?',
-                                   (si['tiff_file'], si['mat_file'], srec['id']))
-                        lazy = False
-                        n_upd += 1
-
-                    # Generate thumbnail
-                    make_thumbnail(srec['id'], srec['tiff_file'], lazy)
-
-                # Commit
-                db.commit()
-
-                # Print results
-                print("  Inserted: %d, Updated %d" % (n_ins, n_upd))
-
-
-# The administrator is expected to curate the image collection. The system simply
-# takes stock of the available data and presents it for segmentation. Each image
-# in the curated collection is associated with one or more segmentations. The SVG
-# files are updated as the segmentation progresses.
-def rebuild_slide_db(src_dir):
-    # Clear the block and slide tables
-    db = get_db()
-    db.execute('DELETE FROM block WHERE id >= 0')
-    db.execute('DELETE FROM slide WHERE id >= 0')
-    db.commit()
-
-    # Traverse over specimens and blocks
-    specimens = filter(lambda d: os.path.isdir(os.path.join(src_dir, d)), os.listdir(src_dir))
-    for s in specimens:
-        spec_dir = os.path.join(src_dir, s)
-        blocks = filter(lambda d: os.path.isdir(os.path.join(spec_dir, d)), os.listdir(spec_dir))
-        for b in blocks:
-            block_dir = os.path.join(spec_dir, b)
-
-            # Collect a list of valid slides with .mat files
-            mats = filter(lambda d: is_valid_slide(block_dir, d), os.listdir(block_dir))
-            print("%s: %d files" % (block_dir, len(mats)))
-
-            # There must be at least one slide
-            if len(mats) > 0:
-
-                # Add a block reference
-                db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (s, b))
-
-                # Get the inserted id
-                block_id = db.execute('SELECT id FROM block'
-                                      ' WHERE specimen_name=? AND block_name=?', (s, b)
-                                      ).fetchone()['id']
-
-                # Add each of the slides
-                for m in mats:
-                    si = parse_slide_filename(m, block_dir)
-
-                    slide_id = db.execute('INSERT INTO slide '
-                                          '    (block_id, section, slide, stain, tiff_file, mat_file)'
-                                          ' VALUES (?,?,?,?,?,?)',
-                                          (block_id, si['section'], si['slide'],
-                                           si['stain'], si['tiff_file'], si['mat_file'])).fetchone()
-
-                # Commit the database
-                db.commit()
-
-
-# The administrator is expected to curate the image collection. The system simply
-# takes stock of the available data and presents it for segmentation. Each image
-# in the curated collection is associated with one or more segmentations. The SVG
-# files are updated as the segmentation progresses.
-def rebuild_slide_db_block(src_dir, specimen, block, match_csv):
-    # Clear the block and slide tables
-    db = get_db()
-    brec = db.execute('SELECT * FROM block WHERE specimen_name=? AND block_name=?', (specimen, block)).fetchone()
-    if brec is not None:
-        db.execute('DELETE FROM slide WHERE block_id = ?', (brec['id'],))
-        db.execute('DELETE FROM block WHERE id = ?', (brec['id'],))
-        db.commit()
-
-    # Create a list of dicts from CSV
-    si = []
-
-    # Read CSV
-    with open(match_csv) as csv_file:
-        csv_reader = csv.reader(csv_file, delimiter=',')
-        for row in csv_reader:
-            # Check correctness
-            if row[2] != block:
-                raise ValueError('block name mismatch')
-
-            # Check for existence of file
-            fn = None
-            for ext in ('.svs', '.tiff', '.tif'):
-                fn_test = os.path.join(src_dir, row[0] + ext)
-                print('testing file %s' % fn_test)
-                if os.path.exists(fn_test):
-                    fn = fn_test
-                    print('found file %s' % fn)
-                    break
-
-            # If file exists, add it to the database
-            if fn is not None:
-                si.append({'tiff_file': fn, 'stain': row[1], 'section': row[3], 'slide': row[4], 'mat_file': 'blah'})
-
-    # Make sure we read some records
-    if len(si) > 0:
-
-        # Add a block reference
-        db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)', (specimen, block))
-
-        # Get the inserted id
-        block_id = db.execute('SELECT id FROM block'
-                              ' WHERE specimen_name=? AND block_name=?', (specimen, block)).fetchone()['id']
-
-        # Add each slide
-        for s in si:
-            db.execute('INSERT INTO slide '
-                       '    (block_id, section, slide, stain, tiff_file, mat_file)'
-                       ' VALUES (?,?,?,?,?,?)',
-                       (block_id, s['section'], s['slide'],
-                        s['stain'], s['tiff_file'], s['mat_file']))
-
-        # Commit the database
-        db.commit()
-
-
 @click.command('init-db')
 @with_appcontext
 def init_db_command():
@@ -314,16 +131,6 @@ def init_db_views_command():
     """Clear the existing data related to DL training and create new tables."""
     init_db_views()
     click.echo('Initialized the database views.')
-
-
-@click.command('scan-slides')
-@click.option('--src', prompt='Source directory',
-              help='Directory to import data from')
-@with_appcontext
-def scan_slides_command(src):
-    """Scan the local directory for slides and create block and slide database"""
-    update_slide_db(src)
-    click.echo('Scanned for slides')
 
 
 # A schema against which the JSON is validated
@@ -448,23 +255,24 @@ def project_get_json_command(project):
 def db_get_or_create_block(project, specimen, block):
     db = get_db()
 
-    # Find the block within the current project.
-    brec = db.execute('SELECT * FROM block_info '
-                      'WHERE specimen_name=? AND block_name=? AND project=?',
-                      (specimen, block, project)).fetchone()
-    if brec is not None:
-        return brec['id']
+    # Create the specimen record if not already present
+    db.execute('INSERT OR IGNORE INTO specimen(private_name,project) VALUES (?,?)',
+               (specimen, project))
 
-    # Block must be created
-    bid = db.execute('INSERT INTO block (specimen_name, block_name) VALUES (?,?)',
-                     (specimen, block)).lastrowid
+    # Create the block record if not already present
+    db.execute('INSERT OR IGNORE INTO block(specimen, block_name) '
+               'SELECT id,? FROM specimen WHERE private_name=? AND project=?',
+               (block, specimen, project))
 
-    rc = db.execute('INSERT INTO project_block (project,block) VALUES (?,?)',
-                    (project, bid))
-
+    # Commit the transaction
     db.commit()
 
-    return bid
+    # Retrieve the block id.
+    brec = db.execute('SELECT * FROM block_info '
+                      'WHERE specimen_private=? AND block_name=? AND project=?',
+                      (specimen, block, project)).fetchone()
+    
+    return brec['id'] if brec is None else None
 
 
 # Generic function to insert a slide, creating a block descriptor of needed
@@ -663,17 +471,15 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
             db.commit()
 
         # We may also need to update the specimen/block id
-        t1 = db.execute('SELECT * FROM slide S '
-                        '         LEFT JOIN block B on S.block_id = B.id '
-                        'WHERE B.specimen_name=? AND B.block_name=? AND S.id=?',
+        t1 = db.execute('SELECT * FROM slide_info '
+                        'WHERE specimen_private=? AND block_name=? AND id=?',
                         (specimen, block, slide_id)).fetchone()
 
         # Update the specimen/block for this slide
         if t1 is None:
             print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
             bid = db_get_or_create_block(pr.name, specimen, block)
-            db.execute('UPDATE slide SET block_id=? WHERE id=?',
-                       (bid, slide_id))
+            db.execute('UPDATE slide SET block_id=? WHERE id=?', (bid, slide_id))
             db.commit()
 
         # Finally, we may need to update the tags
@@ -915,6 +721,7 @@ task_schema = {
             "required": ["labelset"]
         },
         "restrict-access": {"type": "boolean"},
+        "anonymize": {"type": "boolean"},
         "stains": {
             "type": "array",
             "items": {
@@ -977,6 +784,10 @@ def add_task(project, json_file, update_existing_task_id=None):
             db.execute('UPDATE project_task SET project=? WHERE task_id=?', (project, task_id))
 
             print("Successfully updated task %d" % task_id)
+
+        # Update the anonymization, but only if specified in the task json
+        if 'anonymize' in data:
+            db.execute('UPDATE task SET anonymize=? WHERE id=?', (data['anonymize'], task_id))
 
         db.commit()
 
@@ -1284,6 +1095,41 @@ def users_list_permissions(username):
                 print('  Task: %s' % (row_t['name']))
 
 
+# ---------------------
+# Anonymization aliases
+# ---------------------
+@click.command('anon-list-specimen-aliases')
+@click.argument('project', type=click.STRING)
+@with_appcontext
+def anon_list_specimen_aliases(project):
+    """List anonymization aliases for a project"""
+    df = pandas.read_sql_query('SELECT private_name, public_name FROM specimen WHERE project=?', 
+                               get_db(), params=(project,))
+    with pandas.option_context('display.max_rows', None, 'display.max_colwidth', 20):
+        print(df)
+
+
+@click.command('anon-set-specimen-aliases')
+@click.argument('project', type=click.STRING)
+@click.argument('csv', type=click.Path(exists=True))
+@with_appcontext
+def anon_set_specimen_aliases_csv(project, csv):
+    """Set anonymization aliases for project PROJECT from file CSV, overriding existing aliases
+       The file CSV should have two columns, first is specimen name, second is alias"""
+    db=get_db()
+    try:
+        df = pandas.read_csv(csv, names=('private', 'public'))
+        
+        # Drop existing anonymization mapping
+        for index, row in df.iterrows():
+            db.execute('UPDATE specimen SET public_name=? WHERE project=? AND private_name=?',
+                       (row['public'], project, row['private']))  
+        db.commit()
+    
+    except:
+        print("Error reading/parsing CSV file")
+
+
 def init_app(app):
     app.cli.add_command(init_db_command)
     app.cli.add_command(init_db_dltrain_command)
@@ -1308,3 +1154,5 @@ def init_app(app):
     app.cli.add_command(users_list_command)
     app.cli.add_command(users_grant_permission_command)
     app.cli.add_command(users_list_permissions)
+    app.cli.add_command(anon_list_specimen_aliases)
+    app.cli.add_command(anon_set_specimen_aliases_csv)

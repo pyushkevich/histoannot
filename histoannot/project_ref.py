@@ -178,15 +178,7 @@ class ProjectRef:
         else:
             return os.path.join(self.url_base, rel_path)
 
-    def resource_exists(self, resource, d, local=True):
-        """
-        Look up a resource.
-        :param resource: Type of resource (e.g., "raw" for raw slide images)
-        :param d: Dictionary used to check the resource against the schema
-        :param local: Flag indicating to check that the resource is locally available
-        """
-        full_path = self.get_resource_url(resource, d, local)
-
+    def path_exists(self, full_path, local=True):
         # If the project does not use remote URLs, then simply check that the file exists
         if full_path is None:
             return None
@@ -194,7 +186,18 @@ class ProjectRef:
             return os.path.exists(full_path)
         else:
             return self._url_handler.exists(full_path)
-        
+
+    def resource_exists(self, resource, d, local=True, full_path=None):
+        """
+        Look up a resource.
+        :param resource: Type of resource (e.g., "raw" for raw slide images)
+        :param d: Dictionary used to check the resource against the schema
+        :param local: Flag indicating to check that the resource is locally available
+        """
+        full_path = self.get_resource_url(resource, d, local)
+        return self.path_exists(full_path, local)
+
+
     # Return a list of overlays for a slide
     def get_available_overlays(self, d, local=True):
         """
@@ -213,7 +216,7 @@ class ProjectRef:
         for name, o in ovl_dict.items():
             o_resource = o.get("pattern")
             o_path = self.get_resource_url(o_resource, d, local) if o_resource is not None else None
-            if o_path is not None:
+            if o_path is not None and self.path_exists(o_path, local):
                 o["url"] = o_path
                 ovl_dict_matched[name] = o
 

@@ -51,9 +51,11 @@ from flask.cli import with_appcontext
 
 
 # The function that is enqueued in RQ
-def do_preload_file(project, proj_dict, specimen, block, resource, slide_name, slide_ext):
+def do_preload_file(project, proj_info, slide_info, resource):
 
-    sr = SlideRef(ProjectRef(project, proj_dict), specimen, block, slide_name, slide_ext)
+    pr = ProjectRef(project, proj_info)
+    sr = SlideRef(pr, **slide_info)
+    _, specimen, block, slide_name, slide_ext = sr.get_id_tuple()
     print('Fetching %s %s %s %s.%s' % (project, specimen, block, slide_name, slide_ext))
     tiff_file = sr.get_local_copy(resource, check_hash=True)
     print('Fetched to %s' % tiff_file)
@@ -65,8 +67,11 @@ def forward_to_worker(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
 
+        # Get the slide id and project variables
+        project, slide_id = kwargs['project'], kwargs['slide_id']
+
         # Find or allocate an assigned worker for this slide
-        worker_url = find_delegate_for_slide(project=kwargs['project'], slide_name=kwargs['slide_name'])
+        worker_url = find_delegate_for_slide(slide_id)
 
         # If no worker, just call the method
         if worker_url is None:
@@ -77,7 +82,13 @@ def forward_to_worker(view):
 
         # Take the project information and embed it in the call as a POST parameter
         pr = ProjectRef(kwargs['project'])
-        post_data = urllib.parse.urlencode({'project_data': json.dumps(pr.get_dict())})
+        sr = get_slide_ref(slide_id, pr)
+        post_data = urllib.parse.urlencode({
+            'project_data': json.dumps(pr.get_dict()),
+            'slide_data': json.dumps(sr.get_dict())
+            })
+
+        # Pass the information to the delegate
         return urllib.request.urlopen(full_url, post_data.encode('ascii')).read()
 
     return wrapped_view
@@ -95,43 +106,54 @@ def dzi_get_project_ref(project):
         return ProjectRef(project, pdata)
 
 
-def dzi_preload(project, specimen, block, resource, slide_name, slide_ext):
+# Get the project data if present in the request
+def dzi_get_project_and_slide_ref(project, slide_id):
+
+    if current_app.config['HISTOANNOT_SERVER_MODE'] != 'dzi_node':
+        # TODO: Check permission!
+        pr = ProjectRef(project)
+        sr = get_slide_ref(slide_id, pr)
+        return pr, sr
+
+    else:
+        pdata = json.loads(request.form.get('project_data'))
+        sdata = json.loads(request.form.get('slide_data'))
+        ProjectRef(project, pdata), SlideRef(project, **sdata)
+
+
+# Preload the slide using complete information (no access to database needed)
+@bp.route('/dzi/preload/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
+@project_access_required
+@forward_to_worker
+def dzi_preload(project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = dzi_get_project_ref(project)
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
 
     # Check if the file exists locally. If so, there is no need to queue a worker
-    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
+    print("Preload for %s,%s,%s returned local file %s" % (project, slide_id, resource, tiff_file))
     if tiff_file is not None:
         return json.dumps({ "status" : JobStatus.FINISHED })
 
     # Get a redis queue
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, pr.get_dict(),
-            specimen, block, resource, slide_name, slide_ext,
-            job_timeout="300s", result_ttl="60s")
+    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, job_timeout="300s", result_ttl="60s")
 
     # Stick the properties into the job
-    job.meta['args']=(project, specimen, block, resource, slide_name, slide_ext)
+    job.meta['args'] = (project, pr.get_dict(), sr.get_dict(), resource)
     job.save_meta()
 
     # Return the job id
     return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
 
 
-# Prepare the DZI for a slide. Must be called first
-@bp.route('/dzi/preload/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi', methods=('GET', 'POST'))
+# Check the status of a job - version that does not require database but uses private ids
+@bp.route('/dzi/job/<project>/<int:slide_id>/<job_id>/status', methods=('GET', 'POST'))
 @project_access_required
 @forward_to_worker
-def dzi_preload_endpoint(project, specimen, block, resource, slide_name, slide_ext):
-
-    # Get a project reference, using either local database or remotely supplied dict
-    return dzi_preload(project, specimen, block, resource, slide_name, slide_ext)
-
-
-def dzi_job_status(project, slide_name, job_id):
-    pr = dzi_get_project_ref(project)
+def dzi_job_status(project, slide_id, job_id):
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     j = q.fetch_job(job_id)
 
@@ -143,18 +165,12 @@ def dzi_job_status(project, slide_name, job_id):
     print('JOB status: ', j)
 
     if j.get_status() == JobStatus.STARTED:
-        (project, specimen, block, resource, slide_name, slide_ext) = j.meta['args']
-        sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+        (project, proj_data, slide_data, resource) = j.meta['args']
+        pr = ProjectRef(project, proj_data)
+        sr = SlideRef(pr, **slide_data)
         res['progress'] = sr.get_download_progress(resource)
 
     return json.dumps(res)
-
-
-# Check the status of a job
-@bp.route('/dzi/job/<project>/<slide_name>/<job_id>/status', methods=('GET', 'POST'))
-@forward_to_worker
-def dzi_job_status_endpoint(project, slide_name, job_id):
-    return dzi_job_status(project, slide_name, job_id)
 
 
 # Get affine matrix corresponding to affine mode and resolution
@@ -206,19 +222,13 @@ def get_slide_raw_dims(slide_ref):
 
 
 # Get the DZI for a slide
-@bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>.dzi',
-          methods=('GET', 'POST'))
+@bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
 @project_access_required
 @forward_to_worker
-def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
+def dzi(mode, project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = dzi_get_project_ref(project)
-
-    # Get the raw SVS/tiff file for the slide (the resource should exist, 
-    # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
-
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     tiff_file = sr.get_local_copy(resource, check_hash=True)
 
     # Get an affine transform if that is an option
@@ -234,18 +244,13 @@ def dzi(mode, project, specimen, block, resource, slide_name, slide_ext):
 
 
 # Download the raw data for the slide
-@bp.route('/dzi/download/<mode>/<project>/<specimen>/<block>/<resource>/<int:downsample>/<slide_name>.<slide_ext>',
-          methods=('GET', 'POST'))
+@bp.route('/dzi/download/<project>/<int:slide_id>/<resource>/<int:downsample>', methods=('GET', 'POST'))
 @project_access_required
 @forward_to_worker
-def dzi_download(mode, project, specimen, block, resource, downsample, slide_name, slide_ext):
+def dzi_download(project, slide_id, resource, downsample):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = dzi_get_project_ref(project)
-
-    # Get the raw SVS/tiff file for the slide (the resource should exist,
-    # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
 
     # Get the resource
     tiff_file = sr.get_local_copy(resource, check_hash=True)
@@ -278,11 +283,11 @@ class PILBytesIO(BytesIO):
 
 
 # Get the tiles for a slide
-@bp.route('/dzi/<mode>/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>_files/<int:level>/<int:col>_<int:row>.<format>',
+@bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
 @project_access_required
 @forward_to_worker
-def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level, col, row, format):
+def tile_db(mode, project, slide_id, resource, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
@@ -290,11 +295,10 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
         abort(404)
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = dzi_get_project_ref(project)
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
 
     os = None
@@ -315,18 +319,17 @@ def tile(mode, project, specimen, block, resource, slide_name, slide_ext, level,
 
 
 # Method to actually get a patch
-def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
+def get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
         return 'bad format'
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr = dzi_get_project_ref(project)
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
 
     # Get the raw SVS/tiff file for the slide (the resource should exist,
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
     tiff_file = sr.get_local_copy(resource)
 
     # Read the region centered on the box of size 512x512
@@ -347,18 +350,15 @@ def get_patch(project, specimen, block, resource, slide_name, slide_ext, level, 
 
 
 # Method to get a patch sampled at random
-def get_random_patch(project, specimen, block, resource, slide_name, slide_ext, level, w, format):
+def get_random_patch(project, slide_id, resource, level, w, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
         return 'bad format'
 
-    # Get a project reference, using either local database or remotely supplied dict
-    pr = dzi_get_project_ref(project)
-
     # Get the raw SVS/tiff file for the slide (the resource should exist,
     # or else we will spend a minute here waiting with no response to user)
-    sr = SlideRef(pr, specimen, block, slide_name, slide_ext)
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     tiff_file = sr.get_local_copy(resource)
 
     # Read the region centered on the box of size 512x512
@@ -378,21 +378,21 @@ def get_random_patch(project, specimen, block, resource, slide_name, slide_ext, 
 
 
 # Get an image patch at level 0 from the raw image
-@bp.route('/dzi/patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
+@bp.route('/dzi/patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
 @project_access_required
 @forward_to_worker
-def get_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format):
-    return get_patch(project, specimen, block, resource, slide_name, slide_ext, level, ctrx, ctry, w, h, format)
+def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, format):
+    return get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format)
 
 
 # Get an image patch at level 0 from the raw image
-@bp.route('/dzi/random_patch/<project>/<specimen>/<block>/<resource>/<slide_name>.<slide_ext>/<int:level>/<int:width>.<format>',
+@bp.route('/dzi/random_patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:width>.<format>',
         methods=('GET','POST'))
 @project_access_required
 @forward_to_worker
-def get_random_patch_endpoint(project, specimen, block, resource, slide_name, slide_ext, level, width, format):
-    return get_random_patch(project, specimen, block, resource, slide_name, slide_ext, level, width, format)
+def get_random_patch_endpoint(project, slide_id, resource, level, width, format):
+    return get_random_patch(project, slide_id, resource, level, width, format)
 
 
 # Command to run preload worker

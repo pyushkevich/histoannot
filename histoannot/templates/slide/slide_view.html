@@ -4,7 +4,7 @@
 {% endblock %}
 
 {% block title %}
-{{slide_info['specimen_name']}} {{slide_info['block_name']}} {{slide_info['section']}} {{slide_info['slide']}} {{slide_info['stain']}} - {{task['name']}}
+{{slide_info['specimen_display']}} {{slide_info['block_name']}} {{slide_info['section']}} {{slide_info['slide']}} {{slide_info['stain']}} - {{task['name']}}
 {% endblock %}
 
 {% block content %}
@@ -199,8 +199,8 @@
                 <a href="{{ url_for('slide.index')}}">Home</a> :
                 <a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
                 <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
-                <a href="{{ url_for('slide.specimen_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name']) }}">{{ slide_info['specimen_name'] }}</a> :
-                <a href="{{ url_for('slide.block_detail_by_name', task_id = task_id, specimen_name=slide_info['specimen_name'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
+                <a href="{{ url_for('slide.specimen_detail_by_id', task_id = task_id, specimen=slide_info['specimen']) }}">{{ slide_info['specimen_display'] }}</a> :
+                <a href="{{ url_for('slide.block_detail_by_id', task_id = task_id, specimen=slide_info['specimen'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
             </td>
             <td align="center" style="white-space: nowrap;">
                 <form style="display:inline;" id="form-prev"
@@ -609,7 +609,7 @@ $(document).ready(function()
     var check_preload_progress = function(job_id, cb_complete) {
         var myurl =
             $.ajax({
-                url: "{{ url_for('dzi.dzi_job_status_endpoint', project=project, slide_name=slide_info['slide_name'], job_id=999999) }}".replace("999999",job_id),
+                url: "{{ url_for('dzi.dzi_job_status', project=project, slide_id=slide_id, job_id=999999) }}".replace("999999",job_id),
                 success: function(response_text) {
                     data = JSON.parse(response_text);
                     if(data.status === 'queued' || data.status === 'started') {

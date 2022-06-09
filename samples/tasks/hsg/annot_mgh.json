@@ -1,0 +1,6 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "Anatomical Labeling - MGH", 
+    "desc": "Histology labeling by the MGH team"
+}

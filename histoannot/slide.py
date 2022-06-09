@@ -543,13 +543,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     }
 
     # Load the metadata for the slide to get spacing information
-    metadata_fn = sr.get_local_copy('metadata')
-    context['spacing'] = [0,0]
-    metadata = sr.get_metadata()
-    if metadata is not None and 'spacing' in metadata:
-        context['spacing'] = metadata['spacing']
-        if resolution == 'x16':
-            context['spacing'] = [ 16.0 * x for x in context['spacing'] ]
+    slide_spacing = sr.get_pixel_spacing(resolution)
+    context['spacing'] = [0,0] if slide_spacing is None else slide_spacing
 
     # Add optional fields to context
     if 'slide_view_sample_data' in session:

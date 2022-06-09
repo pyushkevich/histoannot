@@ -1,0 +1,11 @@
+[
+  { "name" : "GM", "color" : "#18b497", "description" : "Gray Matter" },
+  { "name" : "WM", "color" : "#2816ba", "description" : "White Matter" },
+  { "name" : "Bkg", "color" : "#f97a8a", "description" : "Background" },
+  { "name" : "Fold", "color" : "#0bc027", "description" : "Tissue Fold" },
+  { "name" : "Edge:Pial", "color" : "#77d4c8", "description" : "Pial surface" },
+  { "name" : "Edge:Cut", "color" : "#ca06c9", "description" : "Edge where tissue was cut" },
+  { "name" : "Edge:Ventricle", "color" : "#b095b8", "description" : "Edge where tissue borders ventricle"},
+  { "name" : "Edge:Vessel", "color" : "#b095b8", "description" : "Edge where tissue borders a vessel"},
+  { "name" : "ask_dave", "color" : "#76916b", "description" : "Placeholder, replace with actual label later"}
+]

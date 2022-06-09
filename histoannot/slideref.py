@@ -88,7 +88,7 @@ class SlideRef:
     def get_project_ref(self):
         return self._proj
 
-    # Get the metadata JSON or None
+    # Get the metadata for this slide
     def get_metadata(self):
         metadata_fn = self.get_local_copy('metadata')
         if metadata_fn is not None:
@@ -99,10 +99,19 @@ class SlideRef:
                     print('Failed to read JSON from ' + metadata_fn)
         return None
 
+    # Get the spacing of the slide
+    def get_pixel_spacing(self, resolution):
+        md = self.get_metadata()
+        if md and 'spacing' in md:
+            spacing = md['spacing']
+            if resolution == 'x16':
+                spacing = [ 16.0 * x for x in spacing ]
+            return spacing
+        return None
+
     # Get dimensions
     def get_dims(self):
         md = self.get_metadata()
-        print('Meta:', md)
         if md and 'dimensions' in md and len(md['dimensions']) == 2:
             return md['dimensions']
         else:

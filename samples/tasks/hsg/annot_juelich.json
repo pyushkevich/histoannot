@@ -1,0 +1,6 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "Anatomical Labeling - Juelich", 
+    "desc": "Histology labeling by the Juelich team"
+}

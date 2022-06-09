@@ -1,0 +1,14 @@
+{
+    "restrict-access": true, 
+    "name": "H&E Gray/White Training",
+    "stains": [
+        "HE"
+    ], 
+    "dltrain": {
+        "labelset": "he_gray_white",
+	"min-size": 256,
+	"max-size": 256
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to recognize different areas of H&E slides"
+}

@@ -1,0 +1,6 @@
+{
+    "restrict-access": true, 
+    "mode": "annot", 
+    "name": "Anatomical Labeling - Allen", 
+    "desc": "Histology labeling by the Allen team"
+}

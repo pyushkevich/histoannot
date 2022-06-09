@@ -257,7 +257,15 @@ def dzi_download(mode, project, specimen, block, resource, downsample, slide_nam
         os = OpenSlide(tiff_file)
         thumb = os.get_thumbnail((downsample, downsample))
         buf = PILBytesIO()
-        thumb.save(buf, 'TIFF')
+
+        # Get the spacing
+        mpp = sr.get_pixel_spacing(resource)
+        if mpp:
+            dpcm = [10. * thumb.size[0] / (mpp[0] * os.dimensions[0]),
+                    10. * thumb.size[1] / (mpp[1] * os.dimensions[1])]
+            thumb.save(buf, 'TIFF', resolution_unit=3, resolution=dpcm)
+        else:
+            thumb.save(buf, 'TIFF')
         resp = make_response(buf.getvalue())
         resp.mimetype = 'application/octet-stream'
         return resp

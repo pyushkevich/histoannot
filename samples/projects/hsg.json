@@ -1,0 +1,5 @@
+{
+  "base_url": "gs://svsbucket/hsg",
+  "disp_name": "HSG Histology Annotation",
+  "desc" : "Anatomical labeling of histology for the Hippocampal Subfields Group"
+}

@@ -1,0 +1,7 @@
+{
+    "restrict-access": false,
+    "mode": "browse",
+    "name": "Browse (no CTL slides)",
+    "desc": "Browse the slide collection, not control slides",
+    "tags": { "not" :  [ "control" ] }
+}

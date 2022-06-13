@@ -19,7 +19,7 @@ import urllib.parse as urlparse
 import os
 import threading
 from google.cloud import storage
-from io import StringIO
+import io
 
 # This class handles remote URLs for Google cloud. The remote URLs must have format
 # "gs://bucket/path/to/blob.ext"
@@ -64,6 +64,8 @@ class GCSHandler:
         blob = bucket.get_blob(o.path.strip('/'))
         self._blob_cache[uri] = blob
 
+        print('Getting blob ', uri, ' size ', blob.size if blob is not None else 0)
+
         # Get the blob in the bucket
         return blob
 
@@ -95,9 +97,10 @@ class GCSHandler:
     # Download a text file directory to memory
     def download_text_file(self, uri):
         blob = self._get_blob(uri)
-        sfile = StringIO.StringIO()
+        sfile = io.BytesIO()
         self.get_client().download_blob_to_file(blob, sfile)
-        return sfile.getvalue()
+        print(sfile.getvalue())
+        return sfile.getvalue().decode('UTF-8')
 
     # Get the remote download size
     def get_size(self, uri):

@@ -486,8 +486,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     overlays = sr.get_available_overlays(local = False)
 
     # Remove the URL from the overlay dict - this is not for public consumption
-    for k,v in overlays.items():
-        v.pop('url', None)
+    if overlays:
+        for k,v in overlays.items():
+            v.pop('url', None)
     print("Overlays: ", overlays)
 
     if (affine_mode == 'affine' and not have_affine) or (resolution == 'x16' and not have_x16):
@@ -565,7 +566,7 @@ def get_annot_json_file(task_id, slide_id):
 
     # Generate a file
     json_filename = "annot_%s_%s_%s_%s_%02d_%02d.json" % (
-        si['project'], si['specimen_name'], si['block_name'], si['stain'], si['section'], si['slide'])
+        si['project'], si['specimen_private'], si['block_name'], si['stain'], si['section'], si['slide'])
 
     # Create a directory locally
     json_dir = os.path.join(current_app.instance_path, 'annot', si['project'], 'task_%03d' % task_id)

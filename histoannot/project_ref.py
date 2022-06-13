@@ -145,6 +145,9 @@ class ProjectRef:
         else:
             self._url_handler = None
 
+    def __str__(self):
+        return "Project {}".format(self.name)
+
     def get_url_schema(self):
         return self._dict.get('url_schema', _default_histo_url_schema)
 

@@ -460,14 +460,14 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
 
         # Check if the metadata matches
         t0 = db.execute('SELECT * FROM slide '
-                        'WHERE section=? AND slide=? AND stain=? AND id=?',
-                        (section, slide_no, stain, slide_id)).fetchone()
+                        'WHERE section=? AND slide=? AND stain=? AND id=? AND slide_ext=?',
+                        (section, slide_no, stain, slide_id, sr.slide_ext)).fetchone()
 
         # We may need to update the properties
         if t0 is None:
             print('UPDATING metadata for slide %s' % (slide_name,))
-            db.execute('UPDATE slide SET section=?, slide=?, stain=? '
-                       'WHERE id=?', (section, slide_no, stain, slide_id))
+            db.execute('UPDATE slide SET section=?, slide=?, stain=?, slide_ext=? '
+                       'WHERE id=?', (section, slide_no, stain, sr.slide_ext, slide_id))
             db.commit()
 
         # We may also need to update the specimen/block id
@@ -617,9 +617,9 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                 continue
 
             # For each line in the URL consider it as a new slide
+            print(specimen_manifest_contents)
             r = csv.reader(specimen_manifest_contents.splitlines()[1:])
             for sl in r:
-
                 # Read the elements from the string into a dict, ignoring blank lines or other
                 # lines that cannot be parsed
                 try:

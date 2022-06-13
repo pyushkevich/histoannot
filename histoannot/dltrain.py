@@ -314,32 +314,6 @@ def get_labelset_label_listing(project, lset):
     return json.dumps([dict(x) for x in rc.fetchall()])
 
 
-
-
-
-
-# Get an annotation filename for slide
-def get_annot_json_file(id):
-    
-    # Get the slide details
-    db = get_db()
-    si = db.execute(
-        'SELECT s.*, b.specimen_name, b.block_name'
-        ' FROM block b join slide s on b.id = s.block_id'
-        ' WHERE s.id = ?', (id,)).fetchone()
-
-    # Generate a file
-    json_filename = "annot_%s_%s_%s_%02d_%02d.json" % (si['specimen_name'], si['block_name'], si['stain'], si['section'], si['slide'])
-
-    # Create a directory locally
-    json_dir = os.path.join(current_app.instance_path, 'annot')
-    if not os.path.exists(json_dir):
-        os.makedirs(json_dir)
-
-    # Get the filename
-    return os.path.join(json_dir, json_filename)
-
-
 # Check sample validity
 def check_rect(task_id, rect):
 
@@ -357,8 +331,6 @@ def check_rect(task_id, rect):
 
     if max_size is not None and (w > max_size or h > max_size):
         abort(Response('Box is too large', 401))
-
-
     
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/create', methods=('POST',))
@@ -624,15 +596,14 @@ def labelset_editor(project):
 def make_dbview_full(view_name):
     db=get_db()
     db.execute("""CREATE TEMP VIEW %s AS
-                  SELECT T.*, B.specimen_name, B.block_name, L.name as label_name,
+                  SELECT T.*, S.specimen_private, S.block_name, L.name as label_name,
                          UC.username as creator, UE.username as editor,
                          EM.t_create, EM.t_edit, S.slide_name, S.stain
                   FROM training_sample T
                       INNER JOIN edit_meta EM on EM.id = T.meta_id
                       INNER JOIN user UC on UC.id = EM.creator
                       INNER JOIN user UE on UE.id = EM.editor
-                      INNER JOIN slide S on T.slide = S.id
-                      INNER JOIN block B on S.block_id = B.id
+                      INNER JOIN task_slide_info S on T.slide = S.id and T.task = S.task_id
                       INNER JOIN label L on T.label = L.id""" % (view_name,))
 
 
@@ -648,7 +619,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
     if list_metadata:
         keys = keys + ('t_create', 'creator', 't_edit', 'editor')
     if list_block:
-        keys = keys + ('specimen_name', 'block_name', 'stain')
+        keys = keys + ('specimen_private', 'block_name', 'stain')
     if list_ids:
         keys = ('id',) + keys
 
@@ -771,7 +742,7 @@ def delete_samples(
     # Build up a where clause
     w = [('creator LIKE ?', creator),
          ('editor LIKE ?', editor),
-         ('specimen_name LIKE ?', specimen),
+         ('specimen_private LIKE ?', specimen),
          ('block_name LIKE ?', block),
          ('slide = ?', slide),
          ('label_name = ?', label),
@@ -899,7 +870,7 @@ def samples_random_from_annot_cmd(
     make_slide_dbview(int(task_annot), 'v_full')
 
     if specimen is not None:
-        rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0 AND specimen_name=?', (specimen,)).fetchall()
+        rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0 AND specimen_private=?', (specimen,)).fetchall()
     else:
         rc = db.execute('SELECT id FROM v_full WHERE n_paths > 0').fetchall()
 

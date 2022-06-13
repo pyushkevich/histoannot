@@ -58,6 +58,26 @@ class SlideRef:
             "slide_ext" : slide_ext
         }
 
+    def __str__(self):
+        return "SlideRef (project:{}, dict:{})".format(self._proj, self._d)
+
+    # Access the slide properties
+    @property
+    def specimen(self):
+        return self._d['specimen']
+
+    @property
+    def block(self):
+        return self._d['block']
+
+    @property
+    def slide_name(self):
+        return self._d['slide_name']
+
+    @property
+    def slide_ext(self):
+        return self._d['slide_ext']
+
     # Get the dictionary
     def get_dict(self):
         return self._d

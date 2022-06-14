@@ -272,7 +272,7 @@ def db_get_or_create_block(project, specimen, block):
                       'WHERE specimen_private=? AND block_name=? AND project=?',
                       (specimen, block, project)).fetchone()
     
-    return brec['id'] if brec is None else None
+    return brec['id'] if brec is not None else None
 
 
 # Generic function to insert a slide, creating a block descriptor of needed
@@ -424,8 +424,8 @@ slide_json_schema = {
         "block": {"type": "string"},
         "stain": {"type": "string"},
         "section": {"type": "integer"},
-        "slide": {"type": "integer"},
-        "certainty": {"type": "string"},
+        "slide_number": {"type": "integer"},
+        "cert": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
     },
     "required": [ "specimen", "block", "stain" ]
@@ -434,7 +434,7 @@ slide_json_schema = {
 
 # Imports a single slide into the database
 def refresh_slide(pr, sr, slide_name, specimen, stain, block,
-                  section=0, slide_no=0, cert="", tags=[], check_hash = True):
+                  section=0, slide_number=0, cert="", tags=[], check_hash = True):
 
     # Database cursor
     db = get_db()
@@ -461,13 +461,13 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
         # Check if the metadata matches
         t0 = db.execute('SELECT * FROM slide '
                         'WHERE section=? AND slide=? AND stain=? AND id=? AND slide_ext=?',
-                        (section, slide_no, stain, slide_id, sr.slide_ext)).fetchone()
+                        (section, slide_number, stain, slide_id, sr.slide_ext)).fetchone()
 
         # We may need to update the properties
         if t0 is None:
             print('UPDATING metadata for slide %s' % (slide_name,))
             db.execute('UPDATE slide SET section=?, slide=?, stain=?, slide_ext=? '
-                       'WHERE id=?', (section, slide_no, stain, sr.slide_ext, slide_id))
+                       'WHERE id=?', (section, slide_number, stain, sr.slide_ext, slide_id))
             db.commit()
 
         # We may also need to update the specimen/block id
@@ -511,7 +511,7 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
             slide_ext = pathlib.Path(url).suffix[1:]
 
             # The raw slide has been found, so the slide will be entered into the database.
-            sid = db_create_slide(pr.name, specimen, block, section, slide_no, stain,
+            sid = db_create_slide(pr.name, specimen, block, section, slide_number, stain,
                                   slide_name, slide_ext, tags)
 
             print('Slide %s located with url %s and assigned new id %d' %
@@ -624,7 +624,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                 # lines that cannot be parsed
                 try:
                     data = dict(zip(
-                        ['slide_name', 'stain', 'block', 'section', 'slide_no', 'cert'],
+                        ['slide_name', 'stain', 'block', 'section', 'slide_number', 'cert'],
                         [str(sl[0]), str(sl[1]), str(sl[2]), int(sl[3]), int(sl[4]), str(sl[5])]))
                 except ValueError:
                     continue
@@ -1046,19 +1046,46 @@ def users_grant_permission_command(username, project, task, admin, site_admin):
 
 
 @click.command('users-list')
+@click.option('--project','-p', help="List users with access to given project", multiple=True)
+@click.option('--task','-t', help="List users with access to given task", multiple=True, type=click.INT)
+@click.option('--csv', '-c', type=click.Path(), help="Export to a CSV file")
 @with_appcontext
-def users_list_command():
+def users_list_command(project, task, csv):
     """List users"""
     db = get_db()
 
-    # Create a Pandas data frame
-    df = pandas.read_sql_query('SELECT id,username,site_admin FROM user ORDER BY id', get_db())
+    # Subset of users to include
+    user_set = set({})
+
+    # For each project, get a list of user IDs that have access
+    for p in project:
+        rc = db.execute('SELECT id FROM user U '
+                        'LEFT JOIN project_access PA ON U.id = PA.user '
+                        'WHERE project=?', (p,))
+        for row in rc.fetchall():
+            user_set.add(row['id'])
+
+    # For each task, get a list of user IDs that have access
+    for t in task:
+        rc = db.execute('SELECT id FROM user U '
+                        'LEFT JOIN task_access TA ON U.id = TA.user '
+                        'WHERE task=?', (t,))
+        for row in rc.fetchall():
+            user_set.add(row['id'])
+
+    # Initialize dataframe
+    df = pandas.read_sql_query('SELECT id,username,email,site_admin FROM user ORDER BY id', get_db())
+
+    # Get subset of selected rows
+    if len(user_set):
+        df = df[df['id'].isin(user_set)]
 
     # Dump the database entries
-    with pandas.option_context('display.max_rows', None):
-        print(df)
-
-
+    if csv:
+        df.to_csv(csv)
+    else:
+        with pandas.option_context('display.max_rows', None):
+            print(df)
 
 
 # --------------------------------

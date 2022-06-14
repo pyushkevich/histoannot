@@ -1,11 +1,13 @@
 {
-    "base_url": "gs://irwinlab_histology/Histology",
-    "disp_name": "Irwin Lab Histology",
-    "desc" : "Irwin Lab Histology Projects",
+    "base_url": "/data/hippogang/histology/PDNL/archive",
+    "disp_name": "PDNL Digital Slide Database",
+    "desc" : "Penn Digital Neuropathology Lab (PNDR) Histology Archive",
+    "manifest_mode": "individual_json",
     "url_schema": {
         "pattern": {
-            "raw": "histo_raw/{specimen}/{slide_name}.{slide_ext}",
-            "thumb": "histo_proc/{specimen}/{slide_name}/{slide_name}_thumb.png"
-        }
+            "raw": "{specimen}/histo_raw/{slide_name}.{slide_ext}",
+            "thumb": "{specimen}/histo_proc/{slide_name}/{slide_name}_thumb.png"
+	},
+    "raw_slide_ext": [ "svs", "mrxs" ]
     }
 }

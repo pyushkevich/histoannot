@@ -38,6 +38,7 @@ import urllib
 import random
 import colorsys
 from PIL import Image
+import pandas
 
 from . import slide
 
@@ -663,11 +664,12 @@ def samples_export_csv_command(task, output_file, header, metadata, specimen, id
 @click.command('samples-import-csv')
 @click.argument('task')
 @click.argument('input_file', type=click.File('rt'))
-@click.option('-u','--user', help='User name under which to insert samples', required=True)
+@click.option('-u','--user', help='User name under which to insert samples')
 @with_appcontext
 def samples_import_csv_command(task, input_file, user):
     """Import training samples from a CSV file"""
     db = get_db()
+    df = pandas.read_csv(input_file)
 
     # Look up the labelset for the current task
     project,tdata = get_task_data(task)
@@ -677,33 +679,50 @@ def samples_import_csv_command(task, input_file, user):
 
     lsid = get_labelset_id(project, tdata)
 
-    # Look up the user
-    g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()
-    if g.user is None:
-        print('User %s is not in the system' % user)
-        return -1
-
-    lines = input_file.read().splitlines()
-    for line in lines:
-        fields = line.split(',')
-        if len(fields) < 6:
-            print('skipping ill-formatted line "%s"' % (line,))
-            continue
-
-        (slide_name,label_name,x,y,w,h) = fields[0:6]
+    # As a first pass, validate the table to make sure entries can be matched to the existing database
+    good_rows = []
+    for index, row in df.iterrows():
 
         # Look up the slide
-        rcs = db.execute('SELECT id FROM slide WHERE slide_name=?', (slide_name,)).fetchone()
+        rcs = db.execute('SELECT id FROM slide WHERE slide_name=?', (row['slide_name'],)).fetchone()
         if rcs is None:
-            print('Slide %s does not exist, skipping line %s' % (slide_name, line))
+            print('Line %d: Slide %s does not exist' % (index, row['slide_name']))
             continue
 
         # Look up the label
         rcl = db.execute('SELECT id FROM label WHERE name=? AND labelset=?',
-                (label_name, lsid)).fetchone()
+                (row['label_name'], lsid)).fetchone()
         if rcl is None:
-            print('Label %s does not exist, skipping line %s' % (label_name, line))
+            print('Line %d: Label %s does not exist' % (index, row['label_name']))
             continue
+
+        # Look up the user
+        for kind in 'creator', 'editor':
+            if kind in df.columns:
+                rcu = db.execute('SELECT id FROM user WHERE username=? AND disabled=FALSE', (row[kind],)).fetchone()
+                if rcu is None:
+                    print('Line %d: User %s not in the system' % (index, row[kind]))
+                    continue
+
+        # Add the index to the row
+        good_rows.append(index)
+
+    # Check how many rows pass validation
+    if len(good_rows) < len(df.index):
+        print('Samples did not pass validation')
+        return -1
+
+    # Look up the current user
+    if 'creator' not in df.columns or 'editor' not in df.columns:
+        g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone() if user is not None else None
+        if g.user is None:
+            print('Valid user not specified and metadata absent from file' % user)
+            return -1
+
+    return 0
+
+    # Add the samples one by one
+    for index, row in df.iterrows():
 
         # Create a data record
         rect = (float(x),float(y),float(x)+float(w),float(y)+float(h))
@@ -720,7 +739,7 @@ def samples_import_csv_command(task, input_file, user):
             # for row in rc_intercept:
             #    print(row)
             print('There are %d overlapping samples for sample "%s"' %
-                    (len(rc_intercept), line))
+                    (len(rc_intercept), index))
             continue
 
         # Create the sample
@@ -728,6 +747,8 @@ def samples_import_csv_command(task, input_file, user):
 
         # Success 
         print('Imported new sample %d from line "%s"' % (result['id'], line))
+
+
         
 
 # Command to delete samples based on a set of filters

@@ -35,6 +35,7 @@ import sys
 import uuid
 import json
 import csv
+import pandas
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -555,15 +556,26 @@ def user_add_command(username, projects, projects_admin, site_admin, expiry, ema
 @click.command('users-get-reset-link')
 @click.argument('username')
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
+@click.option('--csv', is_flag=True, help="Read usernames from CSV file with field 'username'")
 @with_appcontext
-def user_get_reset_link_command(username, expiry):
-    user_id = get_user_id(username)
-    if user_id is not None:
-        url = create_password_reset_link(user_id, expiry)
-        print(url)
+def user_get_reset_link_command(username, expiry, csv=False):
+    
+    # Read one or more user ids from file
+    if csv is True:
+        df = pandas.read_csv(username)
+        users = df['username'].unique()
     else:
-        print('User is not in the system')
-        sys.exit(1)
+        users = [ username ]
+
+    # For each user id, generate a link
+    for u in users:
+        id = get_user_id(u)
+        if id is not None:
+            url = create_password_reset_link(id, expiry)
+            print("%s: %s" % (u, url))
+        else:
+            print('User %s is not in the system' % (u,))
+            continue
 
 
 @click.command('users-bulk-add')
@@ -576,12 +588,19 @@ def users_bulk_add(csv_file, expiry, notify):
     with open(csv_file, newline='') as fdesc:
         rd = csv.DictReader(fdesc)
         for row in rd:
-            prj = row["projects"].strip(' ;').split(";")
-            prj_admin = row["projects_admin"].strip(' ;').split(";")
+
+            prj = []
+            if 'projects' in row:
+                prj = row["projects"].strip(' ;').split(";")
+            
+            prj_admin = []
+            if 'projects_admin' in row:
+                prj_admin = row["projects_admin"].strip(' ;').split(";")
+            
+            site_admin = bool(row.get("site_admin", False))
             try:
                 # Try adding the user
-                add_user(row["username"], prj, prj_admin,
-                         bool(row["site_admin"]),
+                add_user(row["username"], prj, prj_admin, site_admin,
                          expiry, row["email"], notify)
             except UserException: pass
 

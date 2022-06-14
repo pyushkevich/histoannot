@@ -110,7 +110,7 @@ def task_listing(project):
 
     # List the available tasks (TODO: check user access to task)
     rc = db.execute("""
-                    SELECT * from task_info TI left join task_access TA on TI.id=TA.task 
+                    SELECT DISTINCT TI.* from task_info TI left join task_access TA on TI.id=TA.task 
                     where project=? and (restrict_access=0 or user=?)
                     """, (project, user))
 
@@ -996,6 +996,35 @@ def api_slide_job_status(task_id, slide_id, jobid):
     #    return urllib.request.urlopen(url, post_data).read()
 
 
+# Export all annotations for a task as a single JSON file
+@click.command('annot-export-task')
+@click.argument('task', type=click.INT)
+@click.argument('output', type=click.Path())
+@with_appcontext
+def export_task_annot_cmd(task, output):
+    db = get_db()
+
+    # List all annotations for this task
+    rc = db.execute('SELECT A.*, EM.*, S.slide_name '
+                    'FROM annot A '
+                    '  LEFT JOIN task_slide_info S ON A.task_id = S.task_id AND A.slide_id = S.id '
+                    '  LEFT JOIN edit_meta EM on A.meta_id = EM.id '
+                    'WHERE A.task_id = ? ORDER BY A.slide_id', (task,)).fetchall()
+
+    # Fields that we want to extract
+    fields = [ 'slide_name', 'json', 'creator', 't_create', 'editor', 't_edit' ]
+
+    # Form a dictionary with this annotation
+    data = []
+    for row in rc:
+        d = dict(zip(fields, [ row[x] for x in fields ] ))
+        data.append(d)
+
+    # Save the data as a json file
+    with open(output, 'wt') as jfile:
+        json.dump(data, jfile)
+
+
 # CLI commands
 @click.command('annot-import')
 @click.argument('task', type=click.INT)
@@ -1042,8 +1071,6 @@ def import_annot_cmd(task, slide_id, annot_file, affine, user, raw_stroke_width,
             for x in data[0][1]['children']:
                 if x[0] == 'PointText':
                     x[1]['fontSize']=font_size
-
-
 
     # Update annotation
     _do_update_annot(task, slide_id, data, stats)
@@ -1334,4 +1361,5 @@ def init_app(app):
     app.cli.add_command(export_annot_svg)
     app.cli.add_command(export_annot_vtk)
     app.cli.add_command(slides_list_cmd)
+    app.cli.add_command(export_task_annot_cmd)
 

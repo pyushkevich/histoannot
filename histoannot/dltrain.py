@@ -39,6 +39,7 @@ import random
 import colorsys
 from PIL import Image
 import pandas
+import sys
 
 from . import slide
 
@@ -47,7 +48,7 @@ from rq.job import Job, JobStatus
 from redis import Redis
 
 import click
-from flask.cli import with_appcontext
+from flask.cli import cli, with_appcontext
 
 bp = Blueprint('dltrain', __name__)
 
@@ -537,14 +538,14 @@ def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
 
 
 # Callable function for creating a sample
-def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0):
+def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0, metadata={}):
 
     project,t_data = get_task_data(task_id)
 
     db = get_db()
 
     # Create a meta record
-    meta_id = create_edit_meta()
+    meta_id = create_edit_meta(**metadata)
 
     # Create the main record
     sample_id = db.execute(
@@ -665,11 +666,24 @@ def samples_export_csv_command(task, output_file, header, metadata, specimen, id
 @click.argument('task')
 @click.argument('input_file', type=click.File('rt'))
 @click.option('-u','--user', help='User name under which to insert samples')
+@click.option('-f','--force', is_flag=True, help='Proceed with import even if errors found')
+@click.option('-o','--max-overlap', type=click.FLOAT, default=0.99,
+              help='Maximum overlap allowed with existing samples')
 @with_appcontext
-def samples_import_csv_command(task, input_file, user):
+def samples_import_csv_command(task, input_file, user, force, max_overlap):
     """Import training samples from a CSV file"""
     db = get_db()
     df = pandas.read_csv(input_file)
+
+    # If user is specified, get their id and substitute for missing samples
+    user_id = None
+    if user:
+        rc = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone()
+        if rc:
+            user_id = rc['id']
+        else:
+            print('Specified user ID does not exist')
+            sys.exit(-1)
 
     # Look up the labelset for the current task
     project,tdata = get_task_data(task)
@@ -679,77 +693,95 @@ def samples_import_csv_command(task, input_file, user):
 
     lsid = get_labelset_id(project, tdata)
 
-    # As a first pass, validate the table to make sure entries can be matched to the existing database
-    good_rows = []
-    for index, row in df.iterrows():
+    # To speed up validation, check for missing slides, missing labels, missing users
+    validation = True
 
-        # Look up the slide
-        rcs = db.execute('SELECT id FROM slide WHERE slide_name=?', (row['slide_name'],)).fetchone()
-        if rcs is None:
-            print('Line %d: Slide %s does not exist' % (index, row['slide_name']))
-            continue
+    slide_map = {}
+    for slide in df['slide_name'].unique():
+        rc = db.execute('SELECT id FROM slide WHERE slide_name=?', (slide,)).fetchone()
+        if rc is None:
+            print('Slide %s does not exist' % (slide,))
+            validation = False
+        else:
+            slide_map[slide] = rc['id']
 
-        # Look up the label
-        rcl = db.execute('SELECT id FROM label WHERE name=? AND labelset=?',
-                (row['label_name'], lsid)).fetchone()
-        if rcl is None:
-            print('Line %d: Label %s does not exist' % (index, row['label_name']))
-            continue
+    label_map = {}
+    for label in df['label_name'].unique():
+        rc = db.execute('SELECT id FROM label WHERE name=? AND labelset=?', (label,lsid)).fetchone()
+        if rc is None:
+            print('Label %s does not exist in task' % (label,))
+            validation = False
+        else:
+            label_map[label] = rc['id']
 
-        # Look up the user
-        for kind in 'creator', 'editor':
-            if kind in df.columns:
-                rcu = db.execute('SELECT id FROM user WHERE username=? AND disabled=FALSE', (row[kind],)).fetchone()
-                if rcu is None:
-                    print('Line %d: User %s not in the system' % (index, row[kind]))
-                    continue
+    user_map = {}
+    uc = df['creator'].unique() if 'creator' in df else []
+    ue = df['editor'].unique() if 'editor' in df else []
+    for uname in list(set(uc) | set(ue)):
+        rc = db.execute('SELECT id FROM user WHERE username=? AND disabled=FALSE', (uname,)).fetchone()
+        if rc is None:
+            print('User %s not in the system' % (uname,))
+            validation = False
+        else:
+            user_map[uname] = rc['id']
 
-        # Add the index to the row
-        good_rows.append(index)
-
-    # Check how many rows pass validation
-    if len(good_rows) < len(df.index):
-        print('Samples did not pass validation')
-        return -1
-
-    # Look up the current user
-    if 'creator' not in df.columns or 'editor' not in df.columns:
-        g.user = db.execute('SELECT * FROM user WHERE username=?', (user,)).fetchone() if user is not None else None
-        if g.user is None:
-            print('Valid user not specified and metadata absent from file' % user)
-            return -1
-
-    return 0
+    # Stop if not passing validation
+    if not validation and not force:
+        print('Failed validation')
+        sys.exit(1)
 
     # Add the samples one by one
     for index, row in df.iterrows():
 
         # Create a data record
+        x,y,w,h = row['x'],row['y'],row['w'],row['h']
         rect = (float(x),float(y),float(x)+float(w),float(y)+float(h))
 
-        # Check for overlapping samples
-        rc_intercept = db.execute(
-                'SELECT max(x0,?) as p0, min(x1,?) as p1, '
-                '       max(y0,?) as q0, min(y1,?) as q1, * '
-                'FROM training_sample '
-                'WHERE p0 < p1 AND q0 < q1 AND task=? and slide=?', 
-                (rect[0], rect[2], rect[1], rect[3], task, rcs['id'])).fetchall() 
+        # Look up the ids
+        slide_id = slide_map.get(row['slide_name'], None)
+        label_id = label_map.get(row['label_name'], None)
+        creator_id = user_map.get(row['creator'], user_id if 'creator' not in df.columns else None)
+        editor_id = user_map.get(row['editor'],  user_id if 'editor' not in df.columns else None)
 
-        if len(rc_intercept) > 0:
-            # for row in rc_intercept:
-            #    print(row)
-            print('There are %d overlapping samples for sample "%s"' %
-                    (len(rc_intercept), index))
+        # If one of the ids is missing, skip this sample
+        if not slide_id or not label_id or not creator_id or not editor_id:
+            print('Skipping sample %d due to missing data ' % (index,))
             continue
 
+        # Perform a query to measure overlap
+        rci = db.execute(
+                'SELECT max(min(x1,?)-max(x0,?),0) * max(min(y1,?)-max(y0,?),0) as a_intercept, '
+                '       (x1-x0) * (y1-y0) as a_sample, id '
+                'FROM training_sample '
+                'WHERE task=? and slide=? and a_intercept > 0 ',
+                (rect[2], rect[0], rect[3], rect[1], task, slide_id)).fetchall() 
+
+        if len(rci) > 0:
+            my_max_overlap, my_max_overlap_sample = 0, 0
+            for dbrow in rci:
+                dice = 2.0 * dbrow['a_intercept'] / (dbrow['a_sample'] + w * h)
+                if dice > my_max_overlap:
+                    my_max_overlap, my_max_overlap_sample = dice, dbrow['id']
+            if my_max_overlap > max_overlap:
+                print('Sample %d overlap with existing sample %d is too high: %f' % 
+                        (index, my_max_overlap_sample, my_max_overlap))
+                continue
+
+        # Set up the metadata
+        metadata = { 'creator': creator_id, 'editor': editor_id }
+
+        # Append the timestamp if available
+        if 't_create' in df.columns:
+            metadata['t_create'] = row['t_create']
+        if 't_edit' in df.columns:
+            metadata['t_edit'] = row['t_edit']
+
         # Create the sample
-        result = json.loads(create_sample_base(task, rcs['id'], rcl['id'], rect))
+        result = json.loads(create_sample_base(task, slide_id, label_id, rect, metadata=metadata))
 
         # Success 
-        print('Imported new sample %d from line "%s"' % (result['id'], line))
+        print('Imported new sample %d from line %d' % (result['id'], index))
 
-
-        
 
 # Command to delete samples based on a set of filters
 def delete_samples(

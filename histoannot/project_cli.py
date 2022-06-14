@@ -993,11 +993,16 @@ def update_edit_meta(meta_id):
                (g.user['id'], time.time(), meta_id))
 
 
-def create_edit_meta():
+def create_edit_meta(creator=None, editor=None, t_create=None, t_edit=None):
     t_stamp = time.time()
     db = get_db()
-    return db.execute("INSERT INTO edit_meta (creator, editor, t_create, t_edit) VALUES (?,?,?,?)",
-                      (g.user['id'], g.user['id'], t_stamp, t_stamp)).lastrowid
+
+    return db.execute("INSERT INTO edit_meta (creator, editor, t_create, t_edit) "
+                      "VALUES (?,?,?,?) RETURNING id",
+                      (creator if creator is not None else g.user['id'], 
+                       editor if editor is not None else g.user['id'], 
+                       t_create if t_create is not None else t_stamp, 
+                       t_edit if t_edit is not None else t_stamp)).fetchone()['id']
 
 
 
@@ -1008,41 +1013,55 @@ def create_edit_meta():
 @click.argument('username', type=click.STRING)
 @click.option('--project','-p', help="Grant permission to specified project", multiple=True)
 @click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
-@click.option('--admin', type=click.BOOL, help="Make user the administrator for all specified projects")
-@click.option('--site-admin', type=click.BOOL, help="Grant side-wide administrative permission")
+@click.option('--admin', is_flag=True, help="Make user the administrator for all specified projects")
+@click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
+@click.option('--csv', is_flag=True, help="Read usernames from CSV with column 'username'")
 @with_appcontext
-def users_grant_permission_command(username, project, task, admin, site_admin):
-    """Grant permissions to users on projects and globally"""
+def users_grant_permission_command(username, project, task, admin, site_admin, csv):
+    """Grant permissions to a user or list of users on projects and tasks"""
     db=get_db()
 
-    # Check that the user is in the system
-    rc = db.execute('SELECT id FROM user WHERE username=?', (username,)).fetchone()
-    if rc is None:
-        current_app.logger.info('User %s does not exist' % (username,))
-        sys.exit(1)
+    # Check if CSV specified
+    if csv is True:
+        df = pandas.read_csv(username)
+        if 'username' not in df.columns:
+            print('CSV file missing column "username"')
+            sys.exit(-1)
+        users = df['username'].unique()
+    else:
+        users = [username]
 
-    user_id = rc['id']
+    # Loop over the users
+    for user in users:
 
-    if site_admin is True:
-        db.execute('UPDATE user SET site_admin=1 WHERE id=?', (user_id,))
-        current_app.logger.info('User %s added as site administrator' % (username,))
+        # Check that the user is in the system
+        rc = db.execute('SELECT id FROM user WHERE username=?', (user,)).fetchone()
+        if rc is None:
+            current_app.logger.info('User %s does not exist' % (username,))
+            continue
 
-    # Provide access to all requested projects
-    for p_k in project:
-        pr = ProjectRef(p_k)
-        pr.user_grant_access(user_id)
-        if admin is True:
-            pr.user_set_admin(user_id, True)
+        user_id = rc['id']
 
-    # Provide access to all requested tasks
-    for t_k in task:
-        rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
-        pr = ProjectRef(rc['project'])
-        pr.user_grant_access(user_id)
-        if admin is True:
-            pr.user_set_admin(user_id, True)
-        db.execute('REPLACE INTO task_access (user,task) VALUES (?,?)', (user_id, t_k))
-        db.commit()
+        if site_admin is True:
+            db.execute('UPDATE user SET site_admin=1 WHERE id=?', (user_id,))
+            current_app.logger.info('User %s added as site administrator' % (username,))
+
+        # Provide access to all requested projects
+        for p_k in project:
+            pr = ProjectRef(p_k)
+            pr.user_grant_access(user_id)
+            if admin is True:
+                pr.user_set_admin(user_id, True)
+
+        # Provide access to all requested tasks
+        for t_k in task:
+            rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
+            pr = ProjectRef(rc['project'])
+            pr.user_grant_access(user_id)
+            if admin is True:
+                pr.user_set_admin(user_id, True)
+            db.execute('REPLACE INTO task_access (user,task) VALUES (?,?)', (user_id, t_k))
+            db.commit()
 
 
 @click.command('users-list')
@@ -1082,7 +1101,7 @@ def users_list_command(project, task, csv):
 
     # Dump the database entries
     if csv:
-        df.to_csv(csv, index=False)
+        df.to_csv(csv)
     else:
         with pandas.option_context('display.max_rows', None):
             print(df)

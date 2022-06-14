@@ -1082,7 +1082,7 @@ def users_list_command(project, task, csv):
 
     # Dump the database entries
     if csv:
-        df.to_csv(csv)
+        df.to_csv(csv, index=False)
     else:
         with pandas.option_context('display.max_rows', None):
             print(df)

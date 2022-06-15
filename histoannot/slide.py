@@ -1046,27 +1046,34 @@ def import_task_annot_cmd(task, input):
         # Find slide
         rc = db.execute('SELECT id FROM slide WHERE slide_name=?', (a['slide_name'],)).fetchone()
         if rc is None:
-            print('Annot %d: Slide %s does not exist' % (i,a['slide_name'],))
+            print('Annot %d, slide %s: Slide does not exist' % (i,a['slide_name'],))
             continue
         slide_id = rc['id']
 
         # Find creator and editor
         cid, eid = get_user_id(a['creator_name']), get_user_id(a['editor_name'])
         if cid is None:
-            print('Annot %d: User %s does not exist' % (i,a['creator_name'],))
+            print('Annot %d, slide %s: User %s does not exist' % (i,a['slide_name'],a['creator_name'],))
             continue
         if eid is None:
-            print('Annot %d: User %s does not exist' % (i,a['editor_name'],))
+            print('Annot %d, slide %s: User %s does not exist' % (i,a['slide_name'],a['editor_name'],))
             continue
 
         # Generate the metadata dict
         metadata = {'creator': cid, 'editor': eid, 't_create': a['t_create'], 't_edit': a['t_edit']}
 
         # Transform the data and count items
-        (data, stats) = transform_annot(a['json'], np.eye(3))
+        try:
+            # Update annotation
+            data = json.loads(a['json'])
+            (data, stats) = transform_annot(data, np.eye(3))
+            _do_update_annot(task, slide_id, data, stats, metadata=metadata)            
 
-        # Update annotation
-        _do_update_annot(task, slide_id, data, stats, metadata)
+            # Report
+            print("Annot %d, slide %s: Successfully imported!" % (i, a['slide_name']))
+
+        except:
+            print("Annot %d, slide %s: JSON parse error" % (i, a['slide_name']))
 
 
 # CLI commands

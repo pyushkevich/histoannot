@@ -23,7 +23,7 @@ from flask import(
 )
 from werkzeug.exceptions import abort
 
-from histoannot.auth import login_required, project_access_required, task_access_required
+from histoannot.auth import login_required, project_access_required, task_access_required, get_user_id
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
@@ -723,7 +723,7 @@ def annot_get_path_segments(data):
 
 # Update annotation for a slide, the annotation assumed to be already transformed
 # into raw slide space. Parameter annot is a dict loaded from JSON
-def _do_update_annot(task_id, slide_id, annot, stats):
+def _do_update_annot(task_id, slide_id, annot, stats, metadata={}):
 
     # See if an annotation already exists
     db = get_db()
@@ -733,7 +733,7 @@ def _do_update_annot(task_id, slide_id, annot, stats):
     if a_row is not None:
 
         # Update the timestamp
-        update_edit_meta(a_row['meta_id'])
+        update_edit_meta(a_row['meta_id'], **metadata)
         
         # Update the row
         db.execute(
@@ -744,7 +744,7 @@ def _do_update_annot(task_id, slide_id, annot, stats):
     else:
 
         # Create a new timestamp
-        meta_id = create_edit_meta()
+        meta_id = create_edit_meta(**metadata)
 
         # Insert a new row
         db.execute(
@@ -1002,13 +1002,16 @@ def api_slide_job_status(task_id, slide_id, jobid):
 @click.argument('output', type=click.Path())
 @with_appcontext
 def export_task_annot_cmd(task, output):
+    """Export all annotations from a task to a JSON file"""
     db = get_db()
 
     # List all annotations for this task
-    rc = db.execute('SELECT A.*, EM.*, S.slide_name '
+    rc = db.execute('SELECT A.*, EM.*, S.slide_name, UC.username as creator_name, UE.username as editor_name '
                     'FROM annot A '
                     '  LEFT JOIN task_slide_info S ON A.task_id = S.task_id AND A.slide_id = S.id '
                     '  LEFT JOIN edit_meta EM on A.meta_id = EM.id '
+                    '  LEFT JOIN user UC on EM.creator = UC.id '
+                    '  LEFT JOIN user UE on EM.editor = UE.id '
                     'WHERE A.task_id = ? ORDER BY A.slide_id', (task,)).fetchall()
 
     # Fields that we want to extract
@@ -1023,6 +1026,47 @@ def export_task_annot_cmd(task, output):
     # Save the data as a json file
     with open(output, 'wt') as jfile:
         json.dump(data, jfile)
+
+
+# Export all annotations for a task as a single JSON file
+@click.command('annot-import-task')
+@click.argument('task', type=click.INT)
+@click.argument('input', type=click.File('rt'))
+@with_appcontext
+def import_task_annot_cmd(task, input):
+    """Import all annotations from a task from a JSON file using annot-export-task format"""
+    db = get_db()
+
+    # Read the data
+    annot = json.load(input)
+
+    # Import each entry
+    for i,a in enumerate(annot):
+
+        # Find slide
+        rc = db.execute('SELECT id FROM slide WHERE slide_name=?', (a['slide_name'],)).fetchone()
+        if rc is None:
+            print('Annot %d: Slide %s does not exist' % (i,a['slide_name'],))
+            continue
+        slide_id = rc['id']
+
+        # Find creator and editor
+        cid, eid = get_user_id(a['creator']), get_user_id(a['editor'])
+        if cid is None:
+            print('Annot %d: User %s does not exist' % (i,a['creator'],))
+            continue
+        if eid is None:
+            print('Annot %d: User %s does not exist' % (i,a['editor'],))
+            continue
+
+        # Generate the metadata dict
+        metadata = {'creator': cid, 'editor': eid, 't_create': a['t_create'], 't_edit': a['t_edit']}
+
+        # Transform the data and count items
+        (data, stats) = transform_annot(a['json'], np.eye(3))
+
+        # Update annotation
+        _do_update_annot(task, slide_id, data, stats, metadata)
 
 
 # CLI commands
@@ -1362,4 +1406,5 @@ def init_app(app):
     app.cli.add_command(export_annot_vtk)
     app.cli.add_command(slides_list_cmd)
     app.cli.add_command(export_task_annot_cmd)
+    app.cli.add_command(import_task_annot_cmd)
 

@@ -1015,7 +1015,7 @@ def export_task_annot_cmd(task, output):
                     'WHERE A.task_id = ? ORDER BY A.slide_id', (task,)).fetchall()
 
     # Fields that we want to extract
-    fields = [ 'slide_name', 'json', 'creator', 't_create', 'editor', 't_edit' ]
+    fields = [ 'slide_name', 'json', 'creator_name', 't_create', 'editor_name', 't_edit' ]
 
     # Form a dictionary with this annotation
     data = []
@@ -1051,12 +1051,12 @@ def import_task_annot_cmd(task, input):
         slide_id = rc['id']
 
         # Find creator and editor
-        cid, eid = get_user_id(a['creator']), get_user_id(a['editor'])
+        cid, eid = get_user_id(a['creator_name']), get_user_id(a['editor_name'])
         if cid is None:
-            print('Annot %d: User %s does not exist' % (i,a['creator'],))
+            print('Annot %d: User %s does not exist' % (i,a['creator_name'],))
             continue
         if eid is None:
-            print('Annot %d: User %s does not exist' % (i,a['editor'],))
+            print('Annot %d: User %s does not exist' % (i,a['editor_name'],))
             continue
 
         # Generate the metadata dict

@@ -327,8 +327,8 @@ class ProjectRef:
         db=get_db()
         rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
                         (user, self.name)).fetchone()
-        if rc is None:
-            db.execute('UPDATE project_access SET admin = ? WHERE user=? AND project=?',
+        if rc is not None:
+            db.execute('UPDATE project_access SET admin=? WHERE user=? AND project=?',
                        (is_admin, user, self.name))
             db.commit()
 

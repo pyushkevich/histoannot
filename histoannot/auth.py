@@ -27,6 +27,7 @@ from flask_mail import Message, Mail
 
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
+from histoannot.project_cli import users_grant_permission
 import os
 import click
 import hashlib
@@ -498,7 +499,7 @@ class DuplicateEmailException(UserException):
     pass
 
 
-def add_user(username, projects, projects_admin, site_admin, expiry, email, notify):
+def add_user(username, expiry, email, notify, project, task, all_tasks, admin, site_admin):
 
     # Check if the user is already in the system
     if get_user_id(username) is not None:
@@ -518,17 +519,8 @@ def add_user(username, projects, projects_admin, site_admin, expiry, email, noti
                     (username,email,site_admin,dummy_password))
     user_id = rc.lastrowid
 
-    # Combine the sets of projects
-    prj_set = set.union(set(projects), set(projects_admin))
-
-    # Provide the user access to the requested projects
-    for prj in prj_set:
-        rc = db.execute('SELECT * FROM project WHERE id=?', (prj,)).fetchone()
-        if rc is None:
-            db.execute('INSERT INTO project_access(project, user, admin) '
-                       'VALUES (?,?,?)', (prj, user_id, prj in projects_admin))
-
-    db.commit()
+    # Call the command to grant permissions
+    users_grant_permission(username, project, task, all_tasks, admin, site_admin)
 
     # Generate a password reset link for the user.
     if notify is True and email is not None:
@@ -540,17 +532,18 @@ def add_user(username, projects, projects_admin, site_admin, expiry, email, noti
 
 @click.command('users-add')
 @click.argument('username')
-@click.option('-p', '--projects', multiple=True, help='Add user to specified project')
-@click.option('-P', '--projects-admin', multiple=True, help='Add user as administrator to specified project')
-@click.option('-S', '--site-admin', is_flag=True, help='Make the user a system administrator', default=False)
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
 @click.option('-e', '--email', help='User email address')
 @click.option('-n', '--notify', is_flag=True, help='Send the user a notification email')
-
+@click.option('--project','-p', help="Grant permission to specified project", multiple=True)
+@click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
+@click.option('--all-tasks', '-T', is_flag=True, help="Grant permission to all tasks in all specified projects")
+@click.option('--admin', is_flag=True, help="Make user the administrator for all specified projects")
+@click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
 @with_appcontext
-def user_add_command(username, projects, projects_admin, site_admin, expiry, email, notify):
+def user_add_command(username, expiry, email, notify, project, task, all_tasks, admin, site_admin):
     """Create a new user and generate a password reset link"""
-    add_user(username, projects, projects_admin, site_admin, expiry, email, notify)
+    add_user(username, expiry, email, notify, project, task, all_tasks, admin, site_admin)
 
 
 @click.command('users-get-reset-link')
@@ -582,26 +575,20 @@ def user_get_reset_link_command(username, expiry, csv=False):
 @click.argument('csv_file')
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
 @click.option('-n', '--notify', is_flag=True, help='Send the user a notification email')
+@click.option('--project','-p', help="Grant permission to specified project", multiple=True)
+@click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
+@click.option('--all-tasks', '-T', is_flag=True, help="Grant permission to all tasks in all specified projects")
+@click.option('--admin', is_flag=True, help="Make user the administrator for all specified projects")
+@click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
 @with_appcontext
-def users_bulk_add(csv_file, expiry, notify):
+def users_bulk_add(csv_file, expiry, notify, project, task, all_tasks, admin, site_admin):
     """Create multiple users from CSV file"""
     with open(csv_file, newline='') as fdesc:
         rd = csv.DictReader(fdesc)
         for row in rd:
-
-            prj = []
-            if 'projects' in row:
-                prj = row["projects"].strip(' ;').split(";")
-            
-            prj_admin = []
-            if 'projects_admin' in row:
-                prj_admin = row["projects_admin"].strip(' ;').split(";")
-            
-            site_admin = bool(row.get("site_admin", False))
             try:
                 # Try adding the user
-                add_user(row["username"], prj, prj_admin, site_admin,
-                         expiry, row["email"], notify)
+                add_user(row["username"], expiry, row["email"], notify, project, task, all_tasks, admin, site_admin)
             except UserException: pass
 
 

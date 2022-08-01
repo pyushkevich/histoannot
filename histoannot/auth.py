@@ -27,7 +27,6 @@ from flask_mail import Message, Mail
 
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
-from histoannot.project_cli import users_grant_permission
 import os
 import click
 import hashlib
@@ -117,11 +116,10 @@ def login_required(view):
     return wrapped_view
 
 
-def project_access_required(view):
+def _project_access_required(view, min_access_level):
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
-
         # On the dzi worker node, there is no database, access is managed through
         # nginx server and firewall
         if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
@@ -136,46 +134,35 @@ def project_access_required(view):
         rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
                         (g.user['id'], project)).fetchone()
 
-        if rc is None:
-            current_app.logger.warning('Unauthorized access to project %s at URL %s'
-                                       % (project, request.url if request is not None else None))
-            abort(403, "You are not authorized to access project %s" % project)
+        if rc is None or AccessLevel.check_access(rc['access'], min_access_level) is False:
+            current_app.logger.warning('Unauthorized %s access to project %s at URL %s'
+                                       % (min_access_level, project, request.url if request is not None else None))
+            abort(403, "You do not have %s privileges on project %s" % (min_access_level, project))
         else:
             return view(**kwargs)
 
     return wrapped_view
 
 
-def project_admin_access_required(view):
+def access_project_read(view):
+    return _project_access_required(view, 'read')
+
+
+def access_project_write(view):
+    return _project_access_required(view, 'write')
+
+
+def access_project_admin(view):
+    return _project_access_required(view, 'admin')
+
+
+def _task_access_required(view, min_access_level):
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
 
         # The project keyword must exist
-        if 'project' not in kwargs:
-            abort(404, "Project not specified")
-
-        project = kwargs['project']
-        db = get_db()
-        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=? AND admin > 0',
-                        (g.user['id'], project)).fetchone()
-
-        if rc is None:
-            current_app.logger.warning('Unauthorized access to project %s at URL %s'
-                                       % (project, request.url if request is not None else None))
-            abort(403, "You are not authorized to access project %s" % project)
-        else:
-            return view(**kwargs)
-
-    return wrapped_view
-
-
-def task_access_required(view):
-    @functools.wraps(view)
-    @login_required
-    def wrapped_view(**kwargs):
-
-        # The project keyword must exist
+        print('*** TASK_ACCESS_CHECK %s ***' % (min_access_level,))
         if 'task_id' not in kwargs:
             abort(404, "Task ID not specified")
 
@@ -188,25 +175,38 @@ def task_access_required(view):
                         '         LEFT JOIN task_info TI on PA.project = TI.project '
                         'WHERE PA.user=? AND TI.id=?',
                         (g.user['id'], task_id)).fetchone()
- 
+
         failed = False
-        if rc is None:
+        if rc is None or AccessLevel.check_access(rc['access'], min_access_level) is False:
             failed = True
         elif rc['restrict_access'] > 0:
             rc2 = db.execute('SELECT * FROM task_access WHERE user=? and task=?',
                              (g.user['id'], task_id)).fetchone()
-            if rc2 is None:
+            if rc2 is None or AccessLevel.check_access(rc2['access'], min_access_level) is False:
                 failed = True
 
         if failed is True:
-            current_app.logger.warning('Unauthorized access to task %d at URL %s'
-                                       % (task_id, request.url if request is not None else None))
-            abort(403, "You are not authorized to access task %d" % task_id)
-        
+            current_app.logger.warning('Unauthorized %s access to task %d at URL %s'
+                                       % (min_access_level, task_id, request.url if request is not None else None))
+            abort(403, "You do not have %s privileges on task %d" % (min_access_level, task_id))
+
         else:
             return view(**kwargs)
 
     return wrapped_view
+
+
+def access_task_read(view):
+    return _task_access_required(view, 'read')
+
+
+def access_task_write(view):
+    return _task_access_required(view, 'write')
+
+
+def access_task_admin(view):
+    return _task_access_required(view, 'admin')
+
 
 def get_mail():
     if 'mail' not in g:
@@ -499,7 +499,7 @@ class DuplicateEmailException(UserException):
     pass
 
 
-def add_user(username, expiry, email, notify, project, task, all_tasks, admin, site_admin):
+def add_user(username, expiry, email, notify):
 
     # Check if the user is already in the system
     if get_user_id(username) is not None:
@@ -515,12 +515,9 @@ def add_user(username, expiry, email, notify, project, task, all_tasks, admin, s
 
     # Create the username with an unguessable password
     dummy_password = str(uuid.uuid4())
-    rc = db.execute('INSERT INTO user(username, email, site_admin, password) VALUES (?,?,?,?)',
-                    (username,email,site_admin,dummy_password))
+    rc = db.execute('INSERT INTO user(username, email, password) VALUES (?,?,?)',
+                    (username,email,dummy_password))
     user_id = rc.lastrowid
-
-    # Call the command to grant permissions
-    users_grant_permission(username, project, task, all_tasks, admin, site_admin)
 
     # Generate a password reset link for the user.
     if notify is True and email is not None:
@@ -535,15 +532,10 @@ def add_user(username, expiry, email, notify, project, task, all_tasks, admin, s
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
 @click.option('-e', '--email', help='User email address')
 @click.option('-n', '--notify', is_flag=True, help='Send the user a notification email')
-@click.option('--project','-p', help="Grant permission to specified project", multiple=True)
-@click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
-@click.option('--all-tasks', '-T', is_flag=True, help="Grant permission to all tasks in all specified projects")
-@click.option('--admin', is_flag=True, help="Make user the administrator for all specified projects")
-@click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
 @with_appcontext
-def user_add_command(username, expiry, email, notify, project, task, all_tasks, admin, site_admin):
+def user_add_command(username, expiry, email, notify):
     """Create a new user and generate a password reset link"""
-    add_user(username, expiry, email, notify, project, task, all_tasks, admin, site_admin)
+    add_user(username, expiry, email, notify)
 
 
 @click.command('users-get-reset-link')

@@ -19,7 +19,9 @@ from flask import (
     Blueprint, flash, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response, url_for, session
 )
 from werkzeug.exceptions import abort
-from histoannot.auth import login_required, task_access_required, project_access_required, project_admin_access_required
+from histoannot.auth import login_required, \
+    access_project_read, access_project_write, access_project_admin, \
+    access_task_read, access_task_write, access_task_admin
 from histoannot.db import get_db
 
 # TODO: these should be moved to another module
@@ -56,7 +58,7 @@ bp = Blueprint('dltrain', __name__)
 
 # Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table/json', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_labelset_labels_table_json(task_id, slide_id):
     db = get_db()
 
@@ -78,7 +80,7 @@ def get_labelset_labels_table_json(task_id, slide_id):
 
 # Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_labelset_labels_table(task_id, slide_id):
     db = get_db()
 
@@ -98,7 +100,7 @@ def get_labelset_labels_table(task_id, slide_id):
 
 # Get a table of recently created annotations
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/label/<int:label_id>/samples/table/json', methods=('POST','GET'))
-@task_access_required
+@access_task_read
 def get_samples_for_label(task_id, slide_id, label_id):
     db = get_db()
 
@@ -142,14 +144,14 @@ def get_samples_for_label(task_id, slide_id, label_id):
 
 
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/samples/table', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_samples_for_label_table(task_id, slide_id):
 
     return render_template('dbtrain/sample_table.html', task_id=task_id, slide_id=slide_id, label_id=1)
 
 
 @bp.route('/dltrain/task/<int:task_id>/sample/<int:sample_id>/nav', methods=('GET',))
-@task_access_required
+@access_task_read
 def navigate_to_sample(task_id, sample_id):
     db = get_db()
 
@@ -165,7 +167,7 @@ def navigate_to_sample(task_id, sample_id):
 
 
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/picker', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_labelset_labels_picker(task_id, slide_id):
 
     return render_template('dbtrain/label_picker.html', task_id=task_id, slide_id=slide_id)
@@ -191,7 +193,7 @@ def get_label_id_in_task(task_id, label_name):
 
 
 @bp.route('/dltrain/<project>/add_labelset', methods=('POST',))
-@project_access_required
+@access_project_write
 def add_labelset(project):
 
     # Read form
@@ -212,7 +214,7 @@ def add_labelset(project):
 
 
 @bp.route('/dltrain/task/<int:task_id>/labelset/addlabel', methods=('POST',))
-@task_access_required
+@access_task_write
 def add_labelset_label(task_id):
 
     db = get_db()
@@ -230,7 +232,7 @@ def add_labelset_label(task_id):
 
 
 @bp.route('/dltrain/api/<project>/label/<int:label_id>/update', methods=('POST',))
-@project_admin_access_required
+@access_project_admin
 def project_update_label(project, label_id):
     db = get_db()
     db.execute("UPDATE label SET name=?, description=?, color=? WHERE id=?",
@@ -240,7 +242,7 @@ def project_update_label(project, label_id):
 
 
 @bp.route('/dltrain/api/<project>/label/<int:label_id>/delete', methods=('POST',))
-@project_admin_access_required
+@access_project_admin
 def project_delete_label(project, label_id):
     db = get_db()
 
@@ -255,7 +257,7 @@ def project_delete_label(project, label_id):
 
 
 @bp.route('/dltrain/api/<project>/labelset/<int:labelset_id>/add_label', methods=('POST',))
-@project_admin_access_required
+@access_project_admin
 def project_labelset_add_label(project, labelset_id):
     db = get_db()
 
@@ -279,7 +281,7 @@ def project_labelset_add_label(project, labelset_id):
 
 # Get a listing of labelsets with statistics
 @bp.route('/dltrain/api/<project>/labelsets', methods=('GET',))
-@project_access_required
+@access_project_read
 def get_project_labelset_listing(project):
     db = get_db()
 
@@ -301,7 +303,7 @@ def get_project_labelset_listing(project):
 
 
 @bp.route('/dltrain/api/<project>/labelset/<int:lset>/labels', methods=('GET',))
-@project_access_required
+@access_project_read
 def get_labelset_label_listing(project, lset):
     db = get_db()
 
@@ -336,7 +338,7 @@ def check_rect(task_id, rect):
     
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/create', methods=('POST',))
-@task_access_required
+@access_task_write
 def create_sample(task_id, slide_id):
 
     data = json.loads(request.get_data())
@@ -349,7 +351,7 @@ def create_sample(task_id, slide_id):
 
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/samples', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_samples(task_id, slide_id):
     db = get_db()
     ll = db.execute(
@@ -578,7 +580,7 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0, metadata=
 # Web pages
 # --------------------------------
 @bp.route('/dltrain/<project>/labelsets')
-@project_admin_access_required
+@access_project_admin
 def labelset_editor(project):
 
     # Read the project ref
@@ -639,7 +641,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
 
 
 @bp.route('/dltrain/api/task/<int:task_id>/samples/manifest.csv', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_sample_manifest_for_task(task_id):
     fout = io.StringIO()
     samples_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True)

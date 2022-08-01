@@ -41,7 +41,7 @@ from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.auth import project_access_required
+from histoannot.auth import access_project_read
 
 bp = Blueprint('dzi', __name__)
 
@@ -123,7 +123,7 @@ def dzi_get_project_and_slide_ref(project, slide_id):
 
 # Preload the slide using complete information (no access to database needed)
 @bp.route('/dzi/preload/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def dzi_preload(project, slide_id, resource):
 
@@ -150,7 +150,7 @@ def dzi_preload(project, slide_id, resource):
 
 # Check the status of a job - version that does not require database but uses private ids
 @bp.route('/dzi/job/<project>/<int:slide_id>/<job_id>/status', methods=('GET', 'POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def dzi_job_status(project, slide_id, job_id):
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
@@ -223,7 +223,7 @@ def get_slide_raw_dims(slide_ref):
 
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def dzi(mode, project, slide_id, resource):
 
@@ -245,7 +245,7 @@ def dzi(mode, project, slide_id, resource):
 
 # Download the raw data for the slide
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def dzi_download(project, slide_id, resource, downsample):
 
@@ -285,7 +285,7 @@ class PILBytesIO(BytesIO):
 # Get the tiles for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def tile_db(mode, project, slide_id, resource, level, col, row, format):
     format = format.lower()
@@ -379,7 +379,7 @@ def get_random_patch(project, slide_id, resource, level, w, format):
 
 # Queue patch generation at a worker
 @bp.route('/dzi/preload/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def patch_preload(project, slide_id, resource):
 
@@ -427,7 +427,7 @@ def patch_preload(project, slide_id, resource):
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, format):
     return get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format)
@@ -436,7 +436,7 @@ def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, for
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/random_patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:width>.<format>',
         methods=('GET','POST'))
-@project_access_required
+@access_project_read
 @forward_to_worker
 def get_random_patch_endpoint(project, slide_id, resource, level, width, format):
     return get_random_patch(project, slide_id, resource, level, width, format)

@@ -23,7 +23,9 @@ from flask import(
 )
 from werkzeug.exceptions import abort
 
-from histoannot.auth import login_required, project_access_required, task_access_required, get_user_id
+from histoannot.auth import login_required, get_user_id, \
+    access_project_read, access_project_write, access_project_admin, \
+    access_task_read, access_task_write, access_task_admin
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
@@ -57,7 +59,7 @@ def index():
 
 # The index
 @bp.route('/project/<project>')
-@project_access_required
+@access_project_read
 def project_detail(project):
 
     # Render the entry page
@@ -78,7 +80,7 @@ def project_listing():
 
     # List all projects for the current user
     if session.get('user_is_site_admin', False) is not True:
-        rc = db.execute('SELECT P.*, PA.admin FROM project P '
+        rc = db.execute('SELECT P.*, PA.access="admin" as admin FROM project P '
                         'LEFT JOIN project_access PA ON PA.project=P.id '
                         'WHERE PA.user = ?'
                         'ORDER BY P.disp_name', (user,))
@@ -103,7 +105,7 @@ def project_listing():
 
 
 @bp.route('/api/project/<project>/tasks')
-@project_access_required
+@access_project_read
 def task_listing(project):
     db=get_db()
     user = session['user_id']
@@ -111,7 +113,7 @@ def task_listing(project):
     # List the available tasks (TODO: check user access to task)
     rc = db.execute("""
                     SELECT DISTINCT TI.* from task_info TI left join task_access TA on TI.id=TA.task 
-                    where project=? and (restrict_access=0 or user=?)
+                    where project=? and (restrict_access=0 or (user=? and access != "none"))
                     """, (project, user))
 
     listing = []
@@ -140,7 +142,7 @@ def task_listing(project):
 
 # Specimen listing for a task
 @bp.route('/api/task/<int:task_id>/specimens')
-@task_access_required
+@access_task_read
 def task_specimen_listing(task_id):
     db = get_db()
     print("IN task_specimen_listing!!!")
@@ -187,7 +189,7 @@ def task_specimen_listing(task_id):
 
 # Task detail
 @bp.route('/task/<int:task_id>')
-@task_access_required
+@access_task_read
 def task_detail(task_id):
 
     # Get the current task data
@@ -199,7 +201,7 @@ def task_detail(task_id):
 
 # Specimen detail (same template as the task detail, but points to a specimen
 @bp.route('/task/<int:task_id>/specimen/<int:specimen>')
-@task_access_required
+@access_task_read
 def specimen_detail_by_id(task_id, specimen):
 
     # Get the current task data
@@ -211,7 +213,7 @@ def specimen_detail_by_id(task_id, specimen):
 
 # Block detail (same template as the task detail, but points to a block
 @bp.route('/task/<int:task_id>/specimen/<int:specimen>/block/<block_name>')
-@task_access_required
+@access_task_read
 def block_detail_by_id(task_id, specimen, block_name):
 
     # Get the current task data
@@ -223,7 +225,7 @@ def block_detail_by_id(task_id, specimen, block_name):
 
 # Task detail
 @bp.route('/api/task/<int:task_id>/specimen/<specimen>/blocks')
-@task_access_required
+@access_task_read
 def specimen_block_listing(task_id, specimen):
 
     db = get_db()
@@ -322,7 +324,7 @@ def make_slide_dbview(task_id, view_name):
 
 # The block detail listing
 @bp.route('/api/task/<int:task_id>/specimen/<int:specimen>/block/<block_name>/slides', methods=('GET', 'POST'))
-@task_access_required
+@access_task_read
 def block_slide_listing(task_id, specimen, block_name):
     db = get_db()
 
@@ -463,7 +465,7 @@ def get_dltrain_fixed_box_size(task):
 
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<resolution>/<affine_mode>', methods=('GET', 'POST'))
-@task_access_required
+@access_task_read
 def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the current task data
@@ -775,7 +777,7 @@ user_preferences_schema = {
 
 # Receive user preferences for the slide, such as preferred rotation and flip
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/user_preferences/set', methods=('POST',))
-@task_access_required
+@access_task_read
 def set_slide_user_preferences(task_id, slide_id):
 
     # Get the json and validate
@@ -797,7 +799,7 @@ def set_slide_user_preferences(task_id, slide_id):
 
 # Receive updated json for the slide
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/set', methods=('POST',))
-@task_access_required
+@access_task_write
 def update_annot_json(task_id, mode, resolution, slide_id):
 
     # Get the raw json
@@ -817,7 +819,7 @@ def update_annot_json(task_id, mode, resolution, slide_id):
 
 # Send the json for the slide
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/get', methods=('GET',))
-@task_access_required
+@access_task_read
 def get_annot_json(task_id, mode, resolution, slide_id):
 
     # Find the annotation in the database
@@ -916,7 +918,7 @@ def thumb(id):
 
 # Get a random patch from the slide
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<int:width>', methods=('GET','POST'))
-@task_access_required
+@access_task_read
 def api_get_slide_random_patch(task_id, slide_id, width):
     db = get_db()
 
@@ -950,7 +952,7 @@ def api_get_slide_random_patch(task_id, slide_id, width):
 
 # Preload a slide (using task/id)
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/preload/<resource>', methods=('GET','POST'))
-@task_access_required
+@access_task_read
 def api_slide_preload(task_id, slide_id, resource):
     (project,task) = get_task_data(task_id)
     return dzi_preload(project, slide_id, resource)
@@ -974,7 +976,7 @@ def api_slide_preload(task_id, slide_id, resource):
 
 
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/job/<jobid>/status', methods=('GET','POST'))
-@task_access_required
+@access_task_read
 def api_slide_job_status(task_id, slide_id, jobid):
     (project,task) = get_task_data(task_id)
     return dzi_job_status(project, slide_id, jobid)

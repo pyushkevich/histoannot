@@ -1007,17 +1007,17 @@ def create_edit_meta(creator=None, editor=None, t_create=None, t_edit=None):
 
 
 # --------------------------------
-# User permissions
+# User access level
 # --------------------------------
-def users_grant_permission(user, project, task, all_tasks, admin, site_admin):
+def user_set_access_level(user, access_level, project, task, all_tasks, site_admin):
     db=get_db()
 
     # Check that the user is in the system
     rc = db.execute('SELECT id FROM user WHERE username=?', (user,)).fetchone()
     if rc is None:
-        current_app.logger.info('User %s does not exist' % (user,))
-        return
+        raise ValueError('User %s does not exist' % (user,))
 
+    # Get the numeric user ID
     user_id = rc['id']
 
     if site_admin is True:
@@ -1027,39 +1027,27 @@ def users_grant_permission(user, project, task, all_tasks, admin, site_admin):
     # Provide access to all requested projects
     for p_k in project:
         pr = ProjectRef(p_k)
-        pr.user_grant_access(user_id,)
-        if admin is True:
-            pr.user_set_admin(user_id, True)
+        pr.user_set_access_level(user_id, access_level)
         if all_tasks is True:
-            rc = db.execute("SELECT * FROM project_task WHERE project=?", (p_k,)).fetchall()
-            for row in rc:
-                t_k = row['task_id']
-                print('Granting access to task %d project %s to user %s' % (t_k, p_k, user))
-                db.execute('REPLACE INTO task_access (user,task) VALUES (?,?)', (user_id, t_k))
-                db.commit()
+            pr.user_set_all_tasks_access_level(user_id, access_level)
 
     # Provide access to all requested tasks
     for t_k in task:
         rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
         pr = ProjectRef(rc['project'])
-        pr.user_grant_access(user_id)
-        if admin is True:
-            pr.user_set_admin(user_id, True)
-        print('Granting access to task %d project %s to user %s' % (t_k, p_k, user))
-        db.execute('REPLACE INTO task_access (user,task) VALUES (?,?)', (user_id, t_k))
-        db.commit()
+        pr.user_set_task_access_level(t_k, user_id, access_level)
 
 
-@click.command('users-grant-permission')
+@click.command('users-set-access-level')
 @click.argument('username', type=click.STRING)
-@click.option('--project','-p', help="Grant permission to specified project", multiple=True)
-@click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
-@click.option('--all-tasks', '-T', is_flag=True, help="Grant permission to all tasks in all specified projects")
-@click.option('--admin', is_flag=True, help="Make user the administrator for all specified projects")
+@click.argument('access_level', type=click.STRING)
+@click.option('--project','-p', help="Set access level for specified project(s)", multiple=True)
+@click.option('--task','-t', help="Set access level for specified task(s)", multiple=True)
+@click.option('--all-tasks', '-T', is_flag=True, help="Set access level for all tasks the specified project(s)")
 @click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
 @click.option('--csv', is_flag=True, help="Read usernames from CSV with column 'username'")
 @with_appcontext
-def users_grant_permission_command(username, project, task, all_tasks, admin, site_admin, csv):
+def users_set_access_level_command(username, access_level, project, task, all_tasks, site_admin, csv):
     """Grant permissions to a user or list of users on projects and tasks"""
     db=get_db()
 
@@ -1075,7 +1063,7 @@ def users_grant_permission_command(username, project, task, all_tasks, admin, si
 
     # Loop over the users
     for user in users:
-        users_grant_permission(user, project, task, all_tasks, admin, site_admin)
+        user_set_access_level(user, access_level, project, task, all_tasks, site_admin)
 
 
 @click.command('users-list')
@@ -1094,7 +1082,7 @@ def users_list_command(project, task, csv):
     for p in project:
         rc = db.execute('SELECT id FROM user U '
                         'LEFT JOIN project_access PA ON U.id = PA.user '
-                        'WHERE project=?', (p,))
+                        'WHERE project=? AND PA.access != "none"', (p,))
         for row in rc.fetchall():
             user_set.add(row['id'])
 
@@ -1102,7 +1090,7 @@ def users_list_command(project, task, csv):
     for t in task:
         rc = db.execute('SELECT id FROM user U '
                         'LEFT JOIN task_access TA ON U.id = TA.user '
-                        'WHERE task=?', (t,))
+                        'WHERE task=? and TA.access != "none"', (t,))
         for row in rc.fetchall():
             user_set.add(row['id'])
 
@@ -1144,15 +1132,18 @@ def users_list_permissions(username):
     print('User:    %20s   Access level: %s' % (username, 'Site Admin' if site_admin > 0 else 'Regular'))
 
     # List all projects that the user has access to
-    rc = db.execute('SELECT project, admin FROM project_access WHERE user=?', (user_id,))
+    rc = db.execute('SELECT project, access FROM project_access WHERE user=? AND access != "none"', (user_id,))
     for row in rc.fetchall():
         prj = row['project']
-        print('Project: %20s   Access level: %s ' % (prj, 'Admin' if row['admin'] > 0 else 'Regular'))
-        rc_t = db.execute('SELECT id, name, restrict_access as ra FROM task_info WHERE project=? ', (prj,))
-        for row_t in rc_t.fetchall():
-            rc_ta = db.execute('SELECT * FROM task_access WHERE user=? AND task=?', (user_id, row_t['id'])).fetchone()
-            if row_t['ra'] == 0 or rc_ta is not None:
-                print('  Task %03d: %s' % (row_t['id'], row_t['name']))
+        print('Project: %20s   Access level: %s ' % (prj, row['access']))
+        rc2 = db.execute('SELECT TI.name, TI.id, TA.access '
+                         'FROM task_info TI left join task_access TA on TI.id = TA.task '
+                         'WHERE TI.project = ? AND '
+                         '  (TI.restrict_access IS FALSE) OR (TA.user=? AND TA.access != "none")',
+                         (prj, user_id))
+        for row_t in rc2.fetchall():
+            access = row_t['access'] if row_t['access'] is not None else row['access']
+            print('  Task: %03d [%40s]   Access level: %s' % (row_t['id'], row_t['name'], access))
 
 
 # ---------------------
@@ -1212,7 +1203,7 @@ def init_app(app):
     app.cli.add_command(update_labelset_from_json_command)
     app.cli.add_command(labelset_add_new_command)
     app.cli.add_command(users_list_command)
-    app.cli.add_command(users_grant_permission_command)
+    app.cli.add_command(users_set_access_level_command)
     app.cli.add_command(users_list_permissions)
     app.cli.add_command(anon_list_specimen_aliases)
     app.cli.add_command(anon_set_specimen_aliases_csv)

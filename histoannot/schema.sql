@@ -93,6 +93,7 @@ DROP TABLE IF EXISTS task_access;
 CREATE TABLE task_access (
   user INTEGER NOT NULL,
   task INTEGER NOT NULL,
+  access TEXT CHECK(access in ('none','read','write','admin')) NOT NULL DEFAULT 'none',
   PRIMARY KEY(user, task),
   FOREIGN KEY (user) REFERENCES user (id),
   FOREIGN KEY (task) REFERENCES task (id)
@@ -182,7 +183,7 @@ DROP TABLE IF EXISTS project_access;
 CREATE TABLE project_access (
   user INTEGER NOT NULL,
   project TEXT NOT NULL,
-  admin BOOLEAN NOT NULL DEFAULT(0),
+  access TEXT CHECK(access in ('none','read','write','admin')) NOT NULL DEFAULT 'none',
   PRIMARY KEY(user, project),
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY (user) REFERENCES user (id)

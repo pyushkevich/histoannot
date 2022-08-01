@@ -4,6 +4,7 @@ import heapq
 from flask import current_app, g
 from histoannot.gcs_handler import GCSHandler
 from histoannot.db import get_db
+from histoannot.common import AccessLevel
 
 # This class represents a project configuration. It stores data associated
 # with the project that is not kept in a database, but rather stored in 
@@ -312,31 +313,67 @@ class ProjectRef:
 
         return rc['id'] if rc is not None else None
 
-    def user_grant_access(self, user):
-        """Provide access to a user"""
+    def user_set_access_level(self, user, access_level):
+        """Provide access to a user with level (none,read,write,admin) """
         db=get_db()
-        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
-                        (user, self.name)).fetchone()
-        if rc is None:
-            db.execute('INSERT INTO project_access(user,project,admin) VALUES (?,?,0)',
-                       (user, self.name))
-            db.commit()
-    
-    def user_set_admin(self, user, is_admin):
-        """Provide access to a user"""
-        db=get_db()
-        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
-                        (user, self.name)).fetchone()
-        if rc is not None:
-            db.execute('UPDATE project_access SET admin=? WHERE user=? AND project=?',
-                       (is_admin, user, self.name))
-            db.commit()
+        if not AccessLevel.is_valid(access_level):
+            raise ValueError("Invalid access level %s" % access_level)
 
-    def user_revoke_access(self, user):
-        """Remove access for a user"""
+        # Get the list of tasks in this project with access for this user
+        rc1 = db.execute('SELECT TA.* FROM task_info TI '
+                         '  LEFT JOIN task_access TA on TI.id = TA.task '
+                         'WHERE TI.project=? and TA.user=?', (self.name, user))
+
+        # Set the access level for the project
+        rc2 = db.execute('INSERT OR REPLACE INTO project_access (user,project,access) VALUES (?,?,?)',
+                        (user, self.name, access_level))
+
+        # For each task, make sure its access level is <= that of the project access level
+        for row in rc1.fetchall():
+            if AccessLevel.to_int(row['access']) > AccessLevel.to_int(access_level):
+                db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
+                           (access_level, row['task'], user))
+
+        db.commit()
+
+    def get_tasks(self):
+        """List tasks in this project by id"""
         db=get_db()
-        db.execute('DELETE FROM project_access WHERE user=? AND project=?',
-                   (user, self.name)).fetchone()
+        rc = db.execute('SELECT id FROM task_info WHERE project=?', (self.name,))
+        return [ int(x['id']) for x in rc.fetchall() ]
+
+    def user_set_task_access_level(self, task, user, access_level):
+        """Provide access to a user with level (none,read,write,admin) """
+        if not AccessLevel.is_valid(access_level):
+            raise ValueError("Invalid access level %s" % access_level)
+
+        if task not in self.get_tasks():
+            raise ValueError('Task %d not in project %s', (task, self.name))
+
+        # Set the task access level
+        db=get_db()
+        db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
+                   (access_level, task, user))
+
+        # Make sure the project access is at least as high as the
+        row = db.execute('SELECT * FROM project_access WHERE project=? AND user=?',
+                         (self.name, user)).fetchone()
+        if row is None or AccessLevel.to_int(row['access']) < AccessLevel.to_int(access_level):
+            db.execute('INSERT OR REPLACE INTO project_access (user,project,access) VALUES (?,?,?)',
+                       (user, self.name, access_level))
+
+        # Commit
+        db.commit()
+
+    def user_set_all_tasks_access_level(self, user, access_level):
+        for t in self.get_tasks():
+            self.user_set_task_access_level(t, user, access_level)
+
+
+
+
+
+
 
 
 

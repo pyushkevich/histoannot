@@ -27,6 +27,7 @@ from . import dzi
 from . import delegate
 from . import project_ref
 from . import project_cli
+from . import admin
 from glob import glob
 from histoannot.project_ref import RemoteResourceCache, ProjectRef
 from socket import gethostname
@@ -114,6 +115,9 @@ def create_app(test_config = None):
         # DLTrain blueprint
         app.register_blueprint(dltrain.bp)
         dltrain.init_app(app)
+
+        # Admin bluepring
+        app.register_blueprint(admin.bp)
 
         # Pure CSS
         app.config['PURECSS_RESPONSIVE_GRIDS'] = True

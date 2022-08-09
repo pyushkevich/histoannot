@@ -10,12 +10,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
   </head>
 <body>
-  <div class="header">A
-    <div class="home-menu pure-menu pure-menu-horizontal pure-menu-fixed">
-      <a class="pure-menu-heading" href="/">PICSL Histology Annotator</a>
-      <ul class="pure-menu-list">
+  <div class="header"">
+    <div class="home-menu pure-menu pure-menu-horizontal pure-menu-fixed" style="padding-top:0px; padding-bottom:0px; vertical-align: middle;">
+      <a class="pure-menu-heading" href="/" style="padding-left:0px">
+        <img src="{{ url_for('static', filename='icons/microscope_icon_40.png') }}"
+             alt="Microscope icon" style="vertical-align:middle"></img>
+        PICSL Histology Annotator
+      </a>
+      <ul class="pure-menu-list" style="position:absolute; top:50%; left:100%; transform: translate(-100%,-50%);">
         {% if g.user %}
-          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.edit_user_profile') }}">{{ g.user['username'] }}</a>
+          <li class="pure-menu-item pure-menu-has-children pure-menu-allow-hover">
+            <a href="#" class="pure-menu-link">{{ g.user['username'] }}</a>
+            <ul class="pure-menu-children">
+                <li class="pure-menu-item">
+                    <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Update profile</a>
+                </li>
+                {% if g.user['site_admin'] > 0 %}
+                  <li class="pure-menu-item">
+                      <a href="{{ url_for('admin.user_management') }}" class="pure-menu-link">Manage users</a>
+                  </li>
+                {% endif %}
+            </ul>
+          </li>
           <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Log Out</a>
         {% else %}
           <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Log In</a>
@@ -24,7 +40,7 @@
     </div>
 
     <div id="main">
-      <div class="content">
+      <div class="content" style="padding-top:56px">
         <h1> {% block header %}{% endblock %} </h1>
         {% for message in get_flashed_messages() %}
           <div class="flash" style="color:darkred">{{ message }}</div>

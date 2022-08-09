@@ -42,6 +42,8 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.db import get_db
 from histoannot.gcs_handler import GCSHandler
+from histoannot.auth import get_user_id
+from histoannot.common import AccessLevel
 
 def init_db_dltrain():
     db = get_db()
@@ -1009,30 +1011,50 @@ def create_edit_meta(creator=None, editor=None, t_create=None, t_edit=None):
 # --------------------------------
 # User access level
 # --------------------------------
-def user_set_access_level(user, access_level, project, task, all_tasks, site_admin):
+@click.command('users-set-site-admin')
+@click.argument('username', type=click.STRING)
+@click.option('--revoke','-R', is_flag=True, help="Revoke sysadmin status instead of granting it")
+@with_appcontext
+def users_set_site_admin_command(username, revoke):
+    """Make the specified user a site administrator"""
     db=get_db()
 
     # Check that the user is in the system
-    rc = db.execute('SELECT id FROM user WHERE username=?', (user,)).fetchone()
-    if rc is None:
-        raise ValueError('User %s does not exist' % (user,))
+    user_id = get_user_id(username)
+    if user_id is None:
+        raise ValueError('User %s does not exist' % (username,))
 
-    # Get the numeric user ID
-    user_id = rc['id']
-
-    if site_admin is True:
+    # Update the user level
+    if not revoke:
         db.execute('UPDATE user SET site_admin=1 WHERE id=?', (user_id,))
-        current_app.logger.info('User %s added as site administrator' % (user,))
+        current_app.logger.info('User %s added as site administrator' % (username,))
+    else:
+        db.execute('UPDATE user SET site_admin=0 WHERE id=?', (user_id,))
+        current_app.logger.info('User %s site administrator status revoked' % (username,))
+
+    db.commit()
+
+
+def user_set_access_level(username, project, project_and_tasks, task):
+    db=get_db()
+
+    # Check that the user is in the system
+    user_id = get_user_id(username)
+    if user_id is None:
+        raise ValueError('User %s does not exist' % (username,))
 
     # Provide access to all requested projects
-    for p_k in project:
-        pr = ProjectRef(p_k)
-        pr.user_set_access_level(user_id, access_level)
-        if all_tasks is True:
-            pr.user_set_all_tasks_access_level(user_id, access_level)
+    for i, project_set in enumerate([project, project_and_tasks]):
+        for (p_k, abbrv) in project_set:
+            pr = ProjectRef(p_k)
+            access_level = AccessLevel.from_abbrv(abbrv)
+            pr.user_set_access_level(user_id, access_level)
+            if i > 0:
+                pr.user_set_all_tasks_access_level(user_id, access_level)
 
     # Provide access to all requested tasks
-    for t_k in task:
+    for (t_k, abbrv) in task:
+        access_level = AccessLevel.from_abbrv(abbrv)
         rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
         pr = ProjectRef(rc['project'])
         pr.user_set_task_access_level(t_k, user_id, access_level)
@@ -1040,15 +1062,24 @@ def user_set_access_level(user, access_level, project, task, all_tasks, site_adm
 
 @click.command('users-set-access-level')
 @click.argument('username', type=click.STRING)
-@click.argument('access_level', type=click.STRING)
-@click.option('--project','-p', help="Set access level for specified project(s)", multiple=True)
-@click.option('--task','-t', help="Set access level for specified task(s)", multiple=True)
-@click.option('--all-tasks', '-T', is_flag=True, help="Set access level for all tasks the specified project(s)")
-@click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
+@click.option('--project','-p', help="Set access level for specified project", nargs=2, multiple=True)
+@click.option('--project-and-tasks','-P', help="Set access level for specified project and subtasks", nargs=2, multiple=True)
+@click.option('--task','-t', help="Set access level for specified task", nargs=2, multiple=True)
 @click.option('--csv', is_flag=True, help="Read usernames from CSV with column 'username'")
 @with_appcontext
-def users_set_access_level_command(username, access_level, project, task, all_tasks, site_admin, csv):
-    """Grant permissions to a user or list of users on projects and tasks"""
+def users_set_access_level_command(username, project, project_and_tasks, task, csv):
+    """
+    Set project/task access permissions for a user or list of users.
+
+    Typical use of this function is to provide a list of project and/or tasks with access levels that
+    the user will be given access to. Access levels are 'none', 'read', 'write', 'admin', abbreviated
+    by 'N', 'R', 'W' and 'A'.
+
+    Example usage:
+
+    flask users-set-access-level -p proj1 R -t 22 R -P proj2 W username
+    flask users-set-access-level -p proj1 R -t 22 R -P proj2 W --csv users.csv
+    """
     db=get_db()
 
     # Check if CSV specified
@@ -1063,7 +1094,68 @@ def users_set_access_level_command(username, access_level, project, task, all_ta
 
     # Loop over the users
     for user in users:
-        user_set_access_level(user, access_level, project, task, all_tasks, site_admin)
+        user_set_access_level(user, project, project_and_tasks, task)
+
+
+@click.command('users-set-access-level-from-metadata')
+@click.option('--project','-p', help="Set access level for specified project", multiple=True)
+@with_appcontext
+def users_set_access_level_from_metadata_command(project):
+    """
+    Set project/task access permissions based on edit metadata in the database.
+
+    Users will be given write access to restricted tasks if they have contributed to those
+    tasks in the past, otherwise their access will not be changed. This command is mainly
+    intended for database upgrades from older version of PHAS when permissions were just
+    binary access flags
+    """
+    db=get_db()
+
+    # Get a list of users
+    users = [ {'id': x['id'], 'username': x['username']} for x in db.execute('SELECT * FROM user').fetchall() ]
+
+    # This counts the number of annotations that each user contributed to each task
+    annot_counts = {}
+    rc = db.execute('select U.id as user, A.task_id as task, count(M.id) as n FROM user U '
+                    '  left join edit_meta M on (U.id=M.creator or U.id=M.editor) '
+                    '  left join annot A on A.meta_id = M.id where A.task_id is not null '
+                    '  group by U.id, A.task_id')
+    for row in rc.fetchall():
+        annot_counts[(row['user'], row['task'])] = int(row['n'])
+
+    # This counts the number of dltrain markings that each user contributed to each task
+    dltrain_counts = {}
+    rc = db.execute('select U.id as user, T.task as task, count(M.id) as n FROM user U '
+                    '  left join edit_meta M on (U.id=M.creator or U.id=M.editor) '
+                    '  left join training_sample T on T.meta_id = M.id where T.task is not null '
+                    '  group by U.id, T.task')
+    for row in rc.fetchall():
+        dltrain_counts[(row['user'], row['task'])] = int(row['n'])
+
+    print(annot_counts, dltrain_counts)
+
+    # Iterate over projects
+    all_proj = db.execute('SELECT id FROM project').fetchall();
+    for row_p in all_proj:
+        p_id = row_p['id']
+        if len(project)==0 or p_id in project:
+            # Get the project reference
+            pr = ProjectRef(p_id)
+
+            # Iterate over the tasks in the project
+            for t_id in pr.get_tasks():
+                print('Project {} Task {}: '.format(p_id, t_id))
+
+                # Iterate over users
+                for u in users:
+                    count = annot_counts.get((u['id'], t_id), 0) + dltrain_counts.get((u['id'], t_id), 0)
+                    if count > 0:
+                        rc = pr.user_set_task_access_level(t_id, u['id'], "write", increase_only = True)
+                        if rc:
+                            print('User {} access increased to "write"'.format(u['username']))
+                        else:
+                            print('User {} already has write access'.format(u['username']))
+
 
 
 @click.command('users-list')
@@ -1138,8 +1230,8 @@ def users_list_permissions(username):
         print('Project: %20s   Access level: %s ' % (prj, row['access']))
         rc2 = db.execute('SELECT TI.name, TI.id, TA.access '
                          'FROM task_info TI left join task_access TA on TI.id = TA.task '
-                         'WHERE TI.project = ? AND '
-                         '  (TI.restrict_access IS FALSE) OR (TA.user=? AND TA.access != "none")',
+                         'WHERE TI.project = ? '
+                         '  AND ((TI.restrict_access IS FALSE) OR (TA.user=? AND TA.access != "none"))',
                          (prj, user_id))
         for row_t in rc2.fetchall():
             access = row_t['access'] if row_t['access'] is not None else row['access']
@@ -1204,6 +1296,8 @@ def init_app(app):
     app.cli.add_command(labelset_add_new_command)
     app.cli.add_command(users_list_command)
     app.cli.add_command(users_set_access_level_command)
+    app.cli.add_command(users_set_access_level_from_metadata_command)
     app.cli.add_command(users_list_permissions)
+    app.cli.add_command(users_set_site_admin_command)
     app.cli.add_command(anon_list_specimen_aliases)
     app.cli.add_command(anon_set_specimen_aliases_csv)

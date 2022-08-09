@@ -330,7 +330,9 @@ class ProjectRef:
 
         # For each task, make sure its access level is <= that of the project access level
         for row in rc1.fetchall():
+            print(row['task'], row['access'], access_level)
             if AccessLevel.to_int(row['access']) > AccessLevel.to_int(access_level):
+                print("Lowering access ", access_level, row['task'], user)
                 db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
                            (access_level, row['task'], user))
 
@@ -342,18 +344,28 @@ class ProjectRef:
         rc = db.execute('SELECT id FROM task_info WHERE project=?', (self.name,))
         return [ int(x['id']) for x in rc.fetchall() ]
 
-    def user_set_task_access_level(self, task, user, access_level):
+    def user_set_task_access_level(self, task, user, access_level, increase_only=False):
         """Provide access to a user with level (none,read,write,admin) """
         if not AccessLevel.is_valid(access_level):
             raise ValueError("Invalid access level %s" % access_level)
 
-        if task not in self.get_tasks():
+        if int(task) not in self.get_tasks():
             raise ValueError('Task %d not in project %s', (task, self.name))
 
-        # Set the task access level
         db=get_db()
-        db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
-                   (access_level, task, user))
+
+        # Check the current access level
+        row = db.execute('SELECT access FROM task_access WHERE user=? AND task=?', (user, task)).fetchone()
+        val_current = AccessLevel.to_int(row['access'] if row is not None else "none")
+        val_new = AccessLevel.to_int(access_level)
+
+        # Don't change access if not needed
+        if (increase_only is True and val_current >= val_new) or val_current == val_new:
+            return False
+
+        # Set the task access level
+        db.execute('INSERT OR REPLACE INTO task_access (user,task,access) VALUES (?,?,?)',
+                   (user, task, access_level))
 
         # Make sure the project access is at least as high as the
         row = db.execute('SELECT * FROM project_access WHERE project=? AND user=?',
@@ -364,6 +376,7 @@ class ProjectRef:
 
         # Commit
         db.commit()
+        return True
 
     def user_set_all_tasks_access_level(self, user, access_level):
         for t in self.get_tasks():

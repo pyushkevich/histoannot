@@ -1,0 +1,703 @@
+{% extends 'base.html' %}
+
+{% block title %}
+PICSL Histology Annotation Server User Admin
+{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/dt-1.10.25/datatables.min.css"/>
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.3/css/select.dataTables.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/v/dt/dt-1.10.25/datatables.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.3/js/dataTables.select.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/buttons/1.7.1/js/dataTables.buttons.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://unpkg.com/ui-contextmenu@1.18.1/jquery.ui-contextmenu.min.js"></script>
+
+
+<style>
+.spanner {
+  height: 75px;
+}
+
+.ellipsis {
+  opacity: 0.5;
+}
+
+.ellipsis:hover {
+  opacity: 1.0;
+}
+
+.ui-menu {
+  font-size: 80%;
+  line-height: $line-height * 0.8;
+  white-space: nowrap;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.global_access_select {
+  font-size: 80%;
+}
+
+.project_access_select {
+  font-size: 80%;
+}
+
+.task_access_select {
+  font-size: 80%;
+}
+
+.access_read {
+  background-color: #e6ffe6;
+}
+
+.access_write {
+  background-color: #ffffe6;
+}
+
+.access_admin {
+  background-color: #ffe6e6;
+}
+
+.access_site_admin {
+  background-color: #ffe6e6;
+}
+
+.access_active {
+  background-color: #ccffff;
+}
+
+.access_inactive {
+  background-color: #e6e6e6;
+}
+
+.button_bar {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+
+</style>
+
+<!-- DataTable support -->
+<div class="pure-g">
+  <!-- User table -->
+  <div class="pure-u-1 pure-u-md-7-24">
+    <h3 align="center">USERS</h3>
+    <div id="d_users_table">
+      <table id="users" class="compact stripe hover" style="width:100%">
+        <thead class="text-left">
+          <tr>
+            <th>Id</th>
+            <th>User</th>
+            <th>Email</th>
+            <th>Access</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </div>
+    <div id="no_users_message" style="display:none; text-align:center;">
+      No users have been configured for this installation.
+    </div>
+  </div>
+  <div class="pure-u-1 pure-u-md-1-24">
+  </div>
+  <div class="pure-u-1 pure-u-md-7-24" id="d_project_area" style="display:none;">
+    <h3 align="center">PROJECT ACCESS</h3>
+    <div id="d_project_table">
+      <table id="projects" class="compact stripe hover" style="width:100%">
+        <thead class="text-left">
+          <tr>
+            <th>Project</th>
+            <th>Access</th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </div>
+    <div id="no_projects_message" style="display:none; text-align:center;">
+      No projects have been configured for this installation.
+    </div>
+  </div>
+  <div class="pure-u-1 pure-u-md-1-24">
+  </div>
+  <div class="pure-u-1 pure-u-md-8-24" id="d_task_area" style="display:none;">
+    <h3 align="center">TASK ACCESS</h3>
+    <div id="d_task_table">
+      <table id="tasks" class="compact stripe hover" style="width:100%">
+        <thead class="text-left">
+          <tr>
+            <th>Task Id</th>
+            <th>Task Name</th>
+            <th>Access</th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </div>
+    <div id="no_tasks_message" style="display:none; text-align:center;">
+      There are no privileged tasks in this project.
+    </div>
+  </div>
+</div>
+
+<div class="pure-g button_bar" id="button_bar">
+  <button class="pure-button pure-button-primary topbutton" id="new_user_button">New User</button>
+</div>
+
+<!-- Reset password dialog -->
+<div id="dialog-user-reset-link-message" title="Password Reset Link">
+  <p>A link allowing user <b><span id="user-reset-link-username"></span></b> to reset their password has been created.</p>
+  <ul>
+    <li>Reset link: <b><span id="user-reset-link-url"></span></b></li>
+    <li>User's email: <b><span id="user-reset-link-email"></span></b></li>
+    <li>This link expires in one week</li>
+  </ul>
+</div>
+
+<!-- Add/edit user dialog -->
+<div id="dialog-user-edit-profile" title="Edit User" style="display:none">
+  <form method="post" id="form-user-edit" class="pure-form pure-form-stacked">
+    <fieldset>
+      <label for="form-user-edit-username">Username:</label>
+      <input name="username" id="form-user-edit-username"
+             pattern="[A-Za-z][A-Za-z0-9._]*"
+             title="The username should start with a letter and contain letters and numbers (. and _ also allowed)"
+             style="width:100%">
+
+      <label for="form-user-edit-email">Email:</label>
+      <input name="email" type="email" id="form-user-edit-email" style="width:100%">
+
+      <label for="form-user-edit-access-level">Access level:</label>
+      <select name="accesslevel" id="form-user-edit-access-level" style="width:100%">
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="site_admin">Site Admin</option>
+      </select>
+    </fieldset>
+  </form>
+</div>
+
+
+<script type="text/javascript" charset="utf8">
+
+
+$(document).ready(function() {
+
+  // AJAX url templates
+  let url_user_listing="{{url_for('admin.user_listing')}}";
+  let url_user_reset_link="{{url_for('admin.user_get_reset_link', user_id='999999')}}";
+  let url_user_update_profile="{{url_for('admin.user_update_profile', user_id='999999')}}";
+  let url_user_project_listing="{{url_for('admin.user_get_project_access_listing', user_id='999999')}}";
+  let url_user_project_task_listing="{{url_for('admin.user_get_task_access_listing', user_id='999999', project='XXXXXX')}}";
+  let url_user_set_project_access="{{url_for('admin.user_set_project_access', user_id='999999', project='XXXXXX', access_level='YYYYYY')}}";
+  let url_user_set_task_access="{{url_for('admin.user_set_task_access', user_id='999999', project='XXXXXX', task_id='888888', access_level='YYYYYY')}}";
+  let url_user_create="{{url_for('admin.user_create')}}";
+  let url_user_delete="{{url_for('admin.user_delete', user_id='999999')}}";
+  // var url_task="{{url_for('slide.task_listing', project='XXXX')}}";
+  // var url_action="{{url_for('slide.task_detail', task_id='999999')}}";
+  // var url_labelset_edt="{{url_for('dltrain.labelset_editor', project='XXXX')}}";
+
+  // Define default error handler for ajax
+  let fn_ajax_error_handler = function (xhr, ajaxOptions, thrownError) {
+    alert(JSON.parse(xhr.responseText).error)
+  };
+
+  // Render callback for global access level selectors
+  let access_opts_user = ["active", "inactive", "site_admin"];
+  let access_opts_project = ["none", "read", "write", "admin"];
+  let access_opts_task = ["none", "read", "write", "admin"];
+  let fn_render_access_select = function(data, type, opts, id_string, class_name)
+  {
+    let select = $("<select></select>", {
+                    "id": id_string,
+                    "value": data});
+    select.addClass(class_name);
+    $.each(opts, function(k,v) {
+      let option = $("<option></option>", {"text": v, "value": v});
+      if (data === v) {
+        option.attr("selected", "selected");
+        select.addClass("access_" + v);
+      }
+      select.append(option);
+    });
+    return select.prop("outerHTML");
+  };
+
+  // Column descriptions for the user table. Note the last column
+  // sets up the context menu
+  let user_listing_col_desc = [
+    { data: "id", visible: false },
+    { data: "username" },
+    { data: "email" },
+    {
+      data: "access",
+      render: function (data, type, row) {
+        return fn_render_access_select(data, type, access_opts_user, "global_access_" + row.id, "global_access_select");
+      }
+    },
+    {
+      data: null,
+      className: "dt-center context-menu",
+      defaultContent: '<div class="user-context-menu-trigger"><button class="fa fa-ellipsis-v ellipsis"/></div>',
+      orderable: false
+    }
+  ];
+
+  // A function to update a single row in the project table
+  let fn_update_users_row = function(row_data) {
+    row = t_users.row("#" + row_data.id);
+    row.data(row_data);
+    $("#global_access_" + row_data.id).on('change', function(e) {
+      fn_global_access_select_onchange(e);
+    });
+  };
+
+  // A callback for the project access select element
+  let fn_global_access_select_onchange = function(event) {
+    let select = event.target;
+    let user_id = select.id.substr('global_access_'.length);
+    $.ajax({
+      url: url_user_update_profile.replace('999999', user_id),
+      method: "post",
+      data: JSON.stringify({access: $(select).val(), email: t_users.row("#" + user_id).data().email}),
+      success: function (resp_text) {
+        var resp_json = JSON.parse(resp_text);
+        if (resp_json.id == user_id) {
+          fn_update_users_row(resp_json);
+        }
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        fn_ajax_error_handler(xhr, ajaxOptions, thrownError);
+        t_users.ajax.reload();
+      }
+    });
+  };
+
+  // Set up the users table
+  let t_users = $('#users').DataTable( {
+    "ajax": function(data, callback, settings) {
+      $.ajax({
+        url: url_user_listing,
+        success: function(resp_text) {
+          resp_data = JSON.parse(resp_text);
+          callback({data: resp_data});
+          if(resp_data.length === 0) {
+            $('#d_users_table').css('display', 'none');
+            $('#no_users_message').css('display', 'block');
+          }
+          else {
+            $('#d_users_table').css('display', 'block');
+            $('#no_users_message').css('display', 'none');
+          }
+          $(".global_access_select").on('change', function(e) {
+            fn_global_access_select_onchange(e);
+          });
+        },
+        error: fn_ajax_error_handler
+      });
+    },
+    columns: user_listing_col_desc,
+    rowId: 'id',
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single',
+    searching: true
+  } );
+
+  // Handle context button press on users table
+  t_users.on('click', 'td.context-menu', function(e) {
+    if (event.which === 1) {
+      let row = t_users.row($(this).closest('tr'));
+      $(document).contextmenu("open", e, row);
+      e.stopPropagation();
+    }
+    return true;
+  });
+
+  // This prevents from clicks on the access selector from activating row selection
+  t_users.on('click', 'select', function(e) { e.stopPropagation(); });
+
+  // Function to populate and show the reset link dialog
+  let fn_show_reset_dialog = function(user, reset_link) {
+    $("#user-reset-link-url").text(reset_link);
+    $("#user-reset-link-username").text(user.username);
+    $("#user-reset-link-email").text(user.email);
+    $("#dialog-user-reset-link-message").dialog("open");
+  };
+
+  // Function to reset the password
+  let fn_reset_password = function(user) {
+    $.ajax({
+      url: url_user_reset_link.replace('999999',user.id),
+      success: function(resp_text) {
+        var resp_json = JSON.parse(resp_text);
+        fn_show_reset_dialog(user, resp_json['reset_link']);
+      },
+      error: fn_ajax_error_handler
+    });
+  };
+
+  // Function to delete a user
+  let fn_delete_user = function(user) {
+    $.ajax({
+      url: url_user_delete.replace('999999',user.id),
+      success: function(resp_text) {
+        t_users.ajax.reload()
+      },
+      error: fn_ajax_error_handler
+    });
+  };
+
+  // Set up the user context menu, including actions when the menu items are clicked
+  $(document).contextmenu({
+    delegate: ".user-context-menu-trigger",
+    menu: [
+      { title: "Edit profile...", cmd: "edit" },
+      { title: "Reset password...", cmd: "reset" },
+      { title: "---" },
+      { title: "Delete user",
+        children: [
+                { title: "Never mind" },
+                { title: "Really delete user", children: [
+                        { title: "Never mind" },
+                        { title: "---" },
+                        { title: "DELETE USER, REALLY!", cmd: "delete"}
+                  ] }
+                ]
+      }
+    ],
+    autoTrigger: false,
+    select: function (event, ui) {
+      let user = ui.extraData.data();
+      if(ui.cmd === "reset")
+        fn_reset_password(user);
+      if(ui.cmd === "edit")
+        fn_edit_profile(ui.extraData);
+      if(ui.cmd === "delete")
+        fn_delete_user(ui.extraData);
+      return true;
+    }
+  });
+
+  // Project table column descriptor
+  let project_listing_col_desc = [
+    { data: "project" },
+    {
+      data: "access",
+      className: "dt-right",
+      render: function (data, type, row) {
+        return fn_render_access_select(data, type, access_opts_project, "project_access_" + row.project, "project_access_select");
+      }
+    }
+  ];
+
+  // A function to update a single row in the project table
+  let fn_update_project_row = function(row_data, user) {
+    row = t_projects.row("#" + row_data.project);
+    row.data(row_data);
+    $("#project_access_" + row_data.project).on('change', function(e) {
+      fn_project_access_select_onchange(e, user);
+    });
+  };
+
+  // A callback for the project access select element
+  let fn_project_access_select_onchange = function(event, user) {
+    let select = event.target;
+    let project_id = select.id.substr('project_access_'.length);
+    $.ajax({
+      url: url_user_set_project_access
+              .replace('999999', user)
+              .replace('XXXXXX', project_id)
+              .replace('YYYYYY', $(select).val()),
+      success: function (resp_text) {
+        resp_data = JSON.parse(resp_text);
+        fn_update_project_row(resp_data, user);
+        t_tasks.ajax.reload();
+      },
+      error: fn_ajax_error_handler
+    });
+  };
+
+
+  // Set up the project table
+  let t_projects = $('#projects').DataTable( {
+    "ajax": function(data, callback, settings) {
+      // Get the selected user
+      let s_rows = t_users.rows('.selected').data();
+      if(s_rows.length == 1) {
+        selected_user = s_rows[0].id;
+        // user_id = t_users.data("selected_row").data().id;
+        $.ajax({
+          url: url_user_project_listing.replace('999999', selected_user),
+          success: function (resp_text) {
+            resp_data = JSON.parse(resp_text);
+            callback({data: resp_data});
+            if (resp_data.length === 0) {
+              $('#d_project_table').css('display', 'none');
+              $('#no_project_message').css('display', 'block');
+            } else {
+              $('#d_project_table_table').css('display', 'block');
+              $('#no_project_message').css('display', 'none');
+            }
+            $(".project_access_select").on('change', function(e) {
+              fn_project_access_select_onchange(e, selected_user);
+            });
+          },
+          error: fn_ajax_error_handler
+        });
+      }
+    },
+    columns: project_listing_col_desc,
+    rowId: 'project',
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single',
+    searching: true
+  } );
+
+  // Handle row selection
+  t_users.on('select', function(e,dt,type,indexes) {
+    if(type === 'row') {
+      // Set the selected row as an attached data value
+      t_projects.ajax.reload();
+      $('#d_project_area').css('display','block');
+    }
+  });
+
+  t_users.on('deselect', function(e,dt,type,indexes) {
+    $('#d_project_area').css('display','none');
+    $('#d_task_area').css('display','none');
+  });
+
+  // Task table column descriptor
+  let task_listing_col_desc = [
+    { data: "task" },
+    { data: "task_name" },
+    {
+      data: "access",
+      className: "dt-right",
+      render: function(data, type, row) {
+        return fn_render_access_select(data, type, access_opts_task, "task_access_" + row.task, "task_access_select");
+      }
+    }
+  ];
+
+  // A function to update a single row in the tasks table
+  let fn_update_task_row = function(row_data, user, project) {
+    row = t_tasks.row("#" + row_data.task);
+    row.data(row_data);
+    $("#task_access_" + row_data.task).on('change', function(e) {
+      fn_task_access_select_onchange(e, user, project);
+    });
+  };
+
+  // A callback for the task access select element
+  let fn_task_access_select_onchange = function(event, user, proj) {
+    let select = event.target;
+    let task_id = select.id.substr('task_access_'.length);
+    $.ajax({
+      url: url_user_set_task_access
+              .replace('999999', user)
+              .replace('XXXXXX', proj)
+              .replace('888888', task_id)
+              .replace('YYYYYY', $(select).val()),
+      success: function (resp_text) {
+        resp_data = JSON.parse(resp_text);
+        fn_update_project_row(resp_data.project, user);
+        fn_update_task_row(resp_data.task, user, proj);
+      },
+      error: fn_ajax_error_handler
+    });
+  };
+
+  // Set up the project table
+  let t_tasks = $('#tasks').DataTable( {
+    "ajax": function(data, callback, settings) {
+      // Get the selected user
+      let s_rows_user = t_users.rows('.selected').data();
+      let s_rows_proj = t_projects.rows('.selected').data();
+      if(s_rows_user.length == 1 && s_rows_proj.length == 1) {
+        selected_user = s_rows_user[0].id;
+        selected_proj = s_rows_proj[0].project;
+        $.ajax({
+          url: url_user_project_task_listing.replace('999999', selected_user).replace('XXXXXX', selected_proj),
+          success: function (resp_text) {
+            resp_data = JSON.parse(resp_text);
+            if (resp_data.length === 0) {
+              $('#d_task_table').css('display', 'none');
+              $('#no_task_message').css('display', 'block');
+            } else {
+              $('#d_task_table_table').css('display', 'block');
+              $('#no_task_message').css('display', 'none');
+            }
+            callback({data: resp_data});
+            t_tasks.columns.adjust().draw();
+            $(".task_access_select").on('change', function(e) {
+              fn_task_access_select_onchange(e, selected_user, selected_proj);
+              return true;
+            });
+          },
+          error: fn_ajax_error_handler
+        });
+      }
+    },
+    columns: task_listing_col_desc,
+    rowId: 'task',
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single',
+    searching: true
+  } );
+
+  // Handle project row selection
+  t_projects.on('select', function(e,dt,type,indexes) {
+    if(type === 'row') {
+      // Set the selected row as an attached data value
+      t_tasks.ajax.reload();
+      $('#d_task_area').css('display','block');
+    }
+  });
+
+  t_projects.on('deselect', function(e,dt,type,indexes) {
+    $('#d_task_area').css('display','none');
+  });
+
+  // This prevents from clicks on the access selector from activating row selection
+  t_projects.on('click', 'select', function(e) { e.stopPropagation(); });
+  t_tasks.on('click', 'select', function(e) { e.stopPropagation(); });
+
+  // Set up the reset link message dialog
+  $( "#dialog-user-reset-link-message" ).dialog({
+      autoOpen: false,
+      modal: true,
+      width: "auto",
+      buttons: {
+        "Copy URL": function() {
+          navigator.clipboard.writeText($("#user-reset-link-url").text());
+        },
+        "Copy Email": function() {
+          navigator.clipboard.writeText($("#user-reset-link-email").text());
+        },
+        "Close": function() {
+          $( this ).dialog( "close" );
+        }
+      }
+    });
+
+  // Set up the user edit dialog
+  $("#dialog-user-edit-profile").dialog({
+      autoOpen: false,
+      modal: true,
+      width: "50%",
+      buttons: [
+        {
+          id: "duep-button-update",
+          text: "Update User",
+          click: function () {
+            email = $("#form-user-edit-email").val();
+            access = $("#form-user-edit-access-level").val();
+            row = $("#form-user-edit").data("row");
+            $.ajax({
+              url: url_user_update_profile.replace('999999', row.data().id),
+              method: "post",
+              data: JSON.stringify({access: access, email: email}),
+              success: function (resp_text) {
+                var resp_json = JSON.parse(resp_text);
+                fn_update_users_row(resp_json);
+              },
+              error: fn_ajax_error_handler
+            });
+            $(this).dialog("close");
+          }
+        },
+        {
+          id: "duep-button-create",
+          text: "Create User",
+          click: function () {
+            username = $("#form-user-edit-username").val();
+            email = $("#form-user-edit-email").val();
+            access = $("#form-user-edit-access-level").val();
+            $.ajax({
+              url: url_user_create,
+              method: "post",
+              data: JSON.stringify({username: username, access: access, email: email}),
+              success: function (resp_text) {
+                let resp_json = JSON.parse(resp_text);
+                let user_id = resp_json.user.id
+
+                // Reload the user table and select the current user
+                t_users.ajax.reload( function(json) {
+                  row = t_users.row("#" + user_id)
+                  row.select();
+                  fn_show_reset_dialog(row.data(), resp_json.url);
+                });
+              },
+              error: fn_ajax_error_handler
+            });
+            $(this).dialog("close");
+          }
+        },
+        {
+          id: "duep-button-cancel",
+          text: "Cancel",
+          click: function () {
+            $(this).dialog("close");
+          }
+        }]
+  });
+
+  // Function to display edit user dialog
+  let fn_edit_profile = function(row) {
+    $("#form-user-edit-username").prop("disabled", true);
+    $("#form-user-edit-username").val(row.data().username);
+    $("#form-user-edit-email").val(row.data().email);
+    $("#form-user-edit-access-level").val(row.data().access);
+    $("#form-user-edit").data("row", row);
+    $("#duep-button-create").button().hide();
+    $("#duep-button-update").button().show();
+    $("#dialog-user-edit-profile").dialog("option", "title", "Edit User");
+    $("#dialog-user-edit-profile").dialog("open");
+  };
+
+  // Function to display edit user dialog
+  let fn_add_new_user = function(row) {
+    $("#form-user-edit-username").prop("disabled", false);
+    $("#form-user-edit-username").val("");
+    $("#form-user-edit-email").val("");
+    $("#form-user-edit-access-level").val("active");
+    $("#form-user-edit").data("row", null);
+    $("#dialog-user-edit-profile").dialog("option", "title", "Add New User");
+    $("#duep-button-create").button().show();
+    $("#duep-button-update").button().hide();
+    $("#dialog-user-edit-profile").dialog("open");
+  };
+
+
+  $('#new_user_button').on('click', function() {
+    fn_add_new_user();
+    return false;
+  });
+
+});
+
+</script>
+
+{% endblock %}

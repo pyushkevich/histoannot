@@ -26,6 +26,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from flask_mail import Message, Mail
 
 from histoannot.db import get_db
+from histoannot.common import AccessLevel
+
 from histoannot.project_ref import ProjectRef
 import os
 import click
@@ -91,8 +93,7 @@ def load_logged_in_user():
         g.login_via_api_key = session.get('user_api_key', False)
 
 
-# Decorator to require login for all views
-def login_required(view):
+def _login_required(view, site_admin=False):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
 
@@ -101,19 +102,34 @@ def login_required(view):
         if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
             return view(**kwargs)
 
-        # The user must exist
+        # The user must exist, if not redirect to the login page
         if g.user is None:
             current_app.logger.warning('Unauthorized access to %s' % request.url if request is not None else None)
             return redirect(url_for('auth.login'))
+
+        # The user must be an administrator, eslse send a not found page
+        if site_admin is True and g.user['site_admin'] < 1:
+            print(g.user['site_admin'])
+            current_app.logger.warning('Unauthorized admin access to %s by user %s' %
+                                       (request.url if request is not None else None, g.user['username']))
+            return abort(404)
 
         # The user should have a completed profile
         if g.user['email'] is None:
             return redirect(url_for('auth.edit_user_profile'))
 
-
         return view(**kwargs)
 
     return wrapped_view
+
+
+# Decorator to require login for all views
+def login_required(view):
+    return _login_required(view, False)
+
+# Decorator to require login for all views
+def site_admin_access_required(view):
+    return _login_required(view, True)
 
 
 def _project_access_required(view, min_access_level):
@@ -265,14 +281,11 @@ def send_user_resetlink(user_id, email=None, expiry=86400):
     mail.send(msg)
 
 
-def send_user_invitation(user_id, expiry=86400):
+def send_user_invitation(user_id, url):
     # Get user record
     db=get_db()
     rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
     if rc is not None:
-        # Create a reset link
-        url=create_password_reset_link(rc['id'], expiry)
-
         # Send the email
         mail = get_mail()
         server_name = current_app.config['HISTOANNOT_PUBLIC_NAME']
@@ -515,16 +528,23 @@ def add_user(username, expiry, email, notify):
 
     # Create the username with an unguessable password
     dummy_password = str(uuid.uuid4())
-    rc = db.execute('INSERT INTO user(username, email, password) VALUES (?,?,?)',
-                    (username,email,dummy_password))
-    user_id = rc.lastrowid
+    db.execute('INSERT INTO user(username, email, password) VALUES (?,?,?)',
+               (username,email,dummy_password))
+    db.commit()
+
+    # Extract the user record from the database
+    row = db.execute('SELECT * FROM user WHERE username=?', (username,)).fetchone()
+    user_id = row['id']
 
     # Generate a password reset link for the user.
+    url = create_password_reset_link(row['id'], expiry)
     if notify is True and email is not None:
-        send_user_invitation(user_id, expiry)
-    else:
-        url = create_password_reset_link(user_id, expiry)
-        print("User: %d  Email: %s  ResetLink: %s" % (user_id, email, url))
+        send_user_invitation(row['id'], url)
+
+    # Return user details as a dict
+    d = { x : row[x] for x in ('id', 'username', 'email') }
+    d['url'] = url
+    return d
 
 
 @click.command('users-add')
@@ -535,7 +555,8 @@ def add_user(username, expiry, email, notify):
 @with_appcontext
 def user_add_command(username, expiry, email, notify):
     """Create a new user and generate a password reset link"""
-    add_user(username, expiry, email, notify)
+    d = add_user(username, expiry, email, notify)
+    print("User: %d  Email: %s  ResetLink: %s" % (d['id'], d['email'], d['url']))
 
 
 @click.command('users-get-reset-link')
@@ -563,28 +584,6 @@ def user_get_reset_link_command(username, expiry, csv=False):
             continue
 
 
-@click.command('users-bulk-add')
-@click.argument('csv_file')
-@click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
-@click.option('-n', '--notify', is_flag=True, help='Send the user a notification email')
-@click.option('--project','-p', help="Grant permission to specified project", multiple=True)
-@click.option('--task','-t', help="Grant permission to specified task and its project", multiple=True)
-@click.option('--all-tasks', '-T', is_flag=True, help="Grant permission to all tasks in all specified projects")
-@click.option('--admin', is_flag=True, help="Make user the administrator for all specified projects")
-@click.option('--site-admin', is_flag=True, help="Grant side-wide administrative permission")
-@with_appcontext
-def users_bulk_add(csv_file, expiry, notify, project, task, all_tasks, admin, site_admin):
-    """Create multiple users from CSV file"""
-    with open(csv_file, newline='') as fdesc:
-        rd = csv.DictReader(fdesc)
-        for row in rd:
-            try:
-                # Try adding the user
-                add_user(row["username"], expiry, row["email"], notify, project, task, all_tasks, admin, site_admin)
-            except UserException: pass
-
-
 def init_app(app):
     app.cli.add_command(user_add_command)
     app.cli.add_command(user_get_reset_link_command)
-    app.cli.add_command(users_bulk_add)

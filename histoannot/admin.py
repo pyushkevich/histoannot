@@ -80,7 +80,7 @@ def user_get_reset_link(user_id):
 
 # Email validation
 def validate_email(email):
-    pat = "^[a-zA-Z0-9-_]+@[a-zA-Z0-9]+\.[a-z]{1,3}$"
+    pat = "([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+"
     return True if re.match(pat, email) else False
 
 

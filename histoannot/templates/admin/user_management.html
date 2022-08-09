@@ -88,7 +88,7 @@ PICSL Histology Annotation Server User Admin
 <!-- DataTable support -->
 <div class="pure-g">
   <!-- User table -->
-  <div class="pure-u-1 pure-u-md-7-24">
+  <div class="pure-u-1 pure-u-md-9-24">
     <h3 align="center">USERS</h3>
     <div id="d_users_table">
       <table id="users" class="compact stripe hover" style="width:100%">
@@ -111,7 +111,7 @@ PICSL Histology Annotation Server User Admin
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
-  <div class="pure-u-1 pure-u-md-7-24" id="d_project_area" style="display:none;">
+  <div class="pure-u-1 pure-u-md-5-24" id="d_project_area" style="display:none;">
     <h3 align="center">PROJECT ACCESS</h3>
     <div id="d_project_table">
       <table id="projects" class="compact stripe hover" style="width:100%">
@@ -146,7 +146,7 @@ PICSL Histology Annotation Server User Admin
         </tbody>
       </table>
     </div>
-    <div id="no_tasks_message" style="display:none; text-align:center;">
+    <div id="no_task_message" style="display:none; text-align:center;">
       There are no privileged tasks in this project.
     </div>
   </div>
@@ -235,12 +235,25 @@ $(document).ready(function() {
     return select.prop("outerHTML");
   };
 
+  // An ellipsis renderer for long text
+  let fn_render_ellipsis = function(data, type, row, npos) {
+    if(data.length > npos) {
+      let span = $("<span></span>");
+      span.prop("title", data);
+      span.text(data.substr(0, npos)+"…");
+      return span.prop("outerHTML");
+    }
+    else {
+      return data;
+    }
+  }
+
   // Column descriptions for the user table. Note the last column
   // sets up the context menu
   let user_listing_col_desc = [
     { data: "id", visible: false },
-    { data: "username" },
-    { data: "email" },
+    { data: "username", render: function(d,t,r) { return fn_render_ellipsis(d,t,r,12); } },
+    { data: "email", render: function(d,t,r) { return fn_render_ellipsis(d,t,r,16); } },
     {
       data: "access",
       render: function (data, type, row) {
@@ -311,7 +324,7 @@ $(document).ready(function() {
     columns: user_listing_col_desc,
     rowId: 'id',
     paging: false,
-    scrollY: "600px",
+    scrollY: "65vh",
     scrollCollapse: true,
     info: false,
     select: 'single',
@@ -543,7 +556,7 @@ $(document).ready(function() {
               $('#d_task_table').css('display', 'none');
               $('#no_task_message').css('display', 'block');
             } else {
-              $('#d_task_table_table').css('display', 'block');
+              $('#d_task_table').css('display', 'block');
               $('#no_task_message').css('display', 'none');
             }
             callback({data: resp_data});
@@ -589,18 +602,36 @@ $(document).ready(function() {
       autoOpen: false,
       modal: true,
       width: "auto",
-      buttons: {
-        "Copy URL": function() {
-          navigator.clipboard.writeText($("#user-reset-link-url").text());
+      buttons: [
+        {
+          id: "durlm-button-copy-url",
+          text: "Copy URL",
+          click: function() {
+            navigator.clipboard.writeText($("#user-reset-link-url").text());
+          }
         },
-        "Copy Email": function() {
-          navigator.clipboard.writeText($("#user-reset-link-email").text());
+        {
+          id: "durlm-button-copy-email",
+          text: "Copy Email",
+          click: function() {
+            navigator.clipboard.writeText($("#user-reset-link-email").text());
+          }
         },
-        "Close": function() {
-          $( this ).dialog( "close" );
+        {
+          id: "durlm-button-close",
+          text: "Close",
+          click: function() {
+            $( this ).dialog( "close" );
+          }
         }
-      }
+      ]
     });
+
+  // Toggle buttons that require clipboard
+  if(!window.isSecureContext) {
+    $("#durlm-button-copy-url").button().hide();
+    $("#durlm-button-copy-email").button().hide();
+  }
 
   // Set up the user edit dialog
   $("#dialog-user-edit-profile").dialog({

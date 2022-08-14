@@ -1,0 +1,16 @@
+{
+	"restrict-access": false,
+	"name": "R13 (α-syn) Validation",
+	"stains": [
+		"R13",
+		"MJFR13"
+	],
+	"dltrain": {
+		"labelset": "r13",
+		"min-size": 32,
+		"max-size": 512
+	},
+	"mode": "dltrain",
+	"desc": "Annotations for validating R13 Alpha-synuclein classifier"
+}
+

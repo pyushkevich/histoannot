@@ -19,7 +19,7 @@ import functools
 import time
 
 from flask import (
-    Blueprint, flash, abort, g, redirect, render_template, request, session, url_for, current_app, make_response
+    Blueprint, flash, abort, g, redirect, render_template, request, session, url_for, current_app, make_response, jsonify
 )
 from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -475,6 +475,18 @@ def login_with_api_key():
             return make_response({"status": "ok"}, 200)
 
         return make_response({"status": "failed", "error": error}, 401)
+
+
+@bp.route('/sitemap', methods=('GET',))
+@login_required
+def list_api_routes():
+    links = []
+    for rule in current_app.url_map.iter_rules():
+        if rule.rule.find('/api/') != -1:
+            links.append(rule.rule)
+    links.sort()
+
+    return jsonify(links)
 
 
 def get_user_id(username):

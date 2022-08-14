@@ -1,0 +1,15 @@
+{
+	"restrict-access": false,
+	"name": "R13 (α-syn) Training",
+	"stains": [
+		"R13"
+	],
+	"dltrain": {
+		"labelset": "r13",
+		"min-size": 32,
+		"max-size": 512
+	},
+	"mode": "dltrain",
+	"desc": "Training a classifier to recognize Alpha-synuclein inclusions on the R13 stain"
+}
+

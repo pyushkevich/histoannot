@@ -19,7 +19,7 @@ import uuid
 
 from flask import(
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response,
-    current_app, send_from_directory, session, send_file
+    current_app, send_from_directory, session, send_file, Response, jsonify
 )
 from werkzeug.exceptions import abort
 
@@ -32,7 +32,7 @@ from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import os
 import json
@@ -185,6 +185,35 @@ def task_specimen_listing(task_id):
                ORDER BY specimen_display""", (task_id,)).fetchall()
 
     return json.dumps([dict(row) for row in blocks])
+
+
+# Slide listing for a task - simple
+@bp.route('/api/task/<int:task_id>/slide_manifest.csv')
+@access_task_read
+def task_slide_listing(task_id):
+    db = get_db()
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+    fout = StringIO()
+
+    # Select keys to export
+    keys = ('id', 'specimen', 'block', 'stain', 'section', 'slide')
+
+    # List all the blocks that meet requirements for the current task
+    rc = db.execute(
+            """SELECT S.id, S.stain, S.specimen_display as specimen, S.block_name as block,
+                      S.section, S.slide
+               FROM task_slide_info S
+               WHERE S.task_id = ?
+               ORDER BY S.id""", (task_id,))
+
+    fout.write(','.join(keys) + '\n')
+    for row in rc.fetchall():
+        vals = map(lambda a: str(row[a]), keys)
+        fout.write(','.join(vals) + '\n')
+
+    return Response(fout.getvalue(), mimetype='text/csv')
 
 
 # Task detail
@@ -542,7 +571,13 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Load the metadata for the slide to get spacing information
     slide_spacing = sr.get_pixel_spacing(resolution)
-    context['spacing'] = [0,0] if slide_spacing is None else slide_spacing
+    if slide_spacing is None:
+        context['spacing'] = [0,0]
+        context['spacing_str'] = 'Unknown'
+    else:
+        context['spacing'] = slide_spacing
+        sp_mm = tuple(1000. * x for x in slide_spacing)
+        context['spacing_str'] = '{} x {}'.format(sp_mm[0], sp_mm[1])
 
     # Add optional fields to context
     if 'slide_view_sample_data' in session:
@@ -916,6 +951,23 @@ def thumb(id):
     return send_from_directory(thumb_dir, thumb_fn, as_attachment=False)
 
 
+# Slide metadata
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/slide_admin_info', methods=('GET','POST'))
+@access_task_admin
+def api_get_slide_admin_info(task_id, slide_id):
+    sr = get_slide_ref(slide_id)
+    return jsonify({
+        "id": slide_id,
+        "specimen": sr.specimen, 
+        "block": sr.block,
+        "slide_name": sr.slide_name,
+        "slide_ext": sr.slide_ext,
+        "raw_url_local": sr.get_resource_url("raw", True),
+        "raw_url_remote": sr.get_resource_url("raw", False),
+        "metadata": sr.get_metadata()
+    })
+
+
 # Get a random patch from the slide
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<int:width>', methods=('GET','POST'))
 @access_task_read
@@ -936,10 +988,9 @@ def api_get_slide_random_patch(task_id, slide_id, width):
     # If local, call the method directly
     rawbytes = None
     if del_url is None:
-        rawbytes = get_random_patch(project,specimen,block,'raw',slide_name,slide_ext,0,width,'png').data
+        rawbytes = get_random_patch(project, slide_id, 'raw', 0, width, 'png')
     else:
-        url = '%s/dzi/random_patch/%s/%s/%s/raw/%s.%s/%d/%d.png' % (
-                del_url, project, specimen, block, slide_name, slide_ext, 0, width)
+        url = '%s/dzi/random_patch/%s/%d/raw/0/%d.png' % (del_url, project, slide_id, width)
         pr = sr.get_project_ref()
         post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
         rawbytes = urllib.request.urlopen(url, post_data).read()

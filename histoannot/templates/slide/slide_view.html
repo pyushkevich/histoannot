@@ -224,7 +224,7 @@
                 </form>
                 <span class="display-opts-dropdown">
                     <button class="dropbtn">Display <i class="fa fa-caret-down"></i></button>
-                    <div class="display-opts-dropdown-content">
+                    <div class="display-opts-dropdown-content" style="font-size: 75%;">
                         <div class="header">
                             <h3>Display Options</h3>
                         </div>
@@ -292,6 +292,21 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        <div id="div_slide_info">
+                            <div class="header">
+                                <h3>Slide Properties</h3>
+                            </div>
+                            <form id="form_slide_info" target="#" class="pure-form pure-form-aligned">
+                                <fieldset>
+                                    <div class="pure-control-group">
+                                        <label for="form_info_spacing">Pixel spacing (µm):</label>
+                                        <input id="form_info_spacing" class="pure-input-1-2" 
+                                               value="{{spacing_str}}" readonly>
+                                    </div>
+                                </fieldset>
+                            </form>
                         </div>
                         {% endif %}
                     </div>

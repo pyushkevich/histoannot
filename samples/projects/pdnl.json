@@ -1,0 +1,17 @@
+{
+  "base_url": "/data/hippogang/histology/PDNL/archive",
+  "disp_name": "PDNL Digital Slide Database",
+  "desc": "Penn Digital Neuropathology Lab (PNDR) Histology Archive",
+  "manifest_mode": "individual_json",
+  "url_schema": {
+    "pattern": {
+      "raw": "{specimen}/histo_raw/{slide_name}.{slide_ext}",
+      "thumb": "{specimen}/histo_proc/{slide_name}/{slide_name}_thumb.png",
+      "metadata": "{specimen}/histo_proc/{slide_name}/{slide_name}_metadata.json"
+    },
+    "raw_slide_ext": [
+      "svs",
+      "mrxs"
+    ]
+  }
+}

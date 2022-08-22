@@ -23,7 +23,7 @@
             <a href="#" class="pure-menu-link">{{ g.user['username'] }}</a>
             <ul class="pure-menu-children">
                 <li class="pure-menu-item">
-                    <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Update profile</a>
+                    <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Edit profile</a>
                 </li>
                 {% if g.user['site_admin'] > 0 %}
                   <li class="pure-menu-item">

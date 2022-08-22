@@ -1,12 +1,11 @@
 {% extends 'base.html' %}
 
 {% block header %}
-  {% block title %}Update Profile{% endblock %}
+  {% block title %}User Profile{% endblock %}
 {% endblock %}
 
 {% block content %}
 <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
-
 
     <form method="post" class="pure-form pure-form-stacked">
       <fieldset>
@@ -26,5 +25,14 @@
         </div>
       </fieldset>
     </form>
+
+<h3>Generate API Key</h3>
+<p style="max-width: 640px;">If you need to interface with the server using the REST API (e.g., in a Python script), use the button below to download a JSON file containing your API key. <b>Please store this file securely</b>. A person with access to this file will have the same access to the system as someone who has your username and password.</p>
+
+<a href="{{url_for('auth.generate_api_key')}}" download="phas_{{username}}_api_key.json">
+	<div class="pure-u-1 pure-u-md-1-3">
+		<button type="submit" class="pure-button pure-button-primary">Download API Key</button>
+	</div>
+</a>
 {% endblock %}
 

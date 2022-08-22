@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file
+    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, jsonify
 )
 from werkzeug.exceptions import abort
 
@@ -199,26 +199,15 @@ def get_affine_matrix(slide_ref, mode, resolution='raw', target='annot'):
     return M
 
 
-# Read the dimensions of the slide at a given level. Uses information from the
-# resolution.txt file
-def get_slide_raw_dims(slide_ref):
-
-    # Resolution files have level information. We convert them to json to read easily
-    resfile = slide_ref.get_local_copy('dims')
-    if resfile is not None:
-        with open(resfile) as f:
-
-            # Expression to search for
-            cre = re.compile("Level dimensions: *(.*)")
-
-            for line in f:
-                m = cre.match(line)
-                if m is not None:
-                    json_line = m.group(1).replace('(','[').replace(')',']')
-                    return json.loads(json_line)[0]
-
-    return None
-
+# Get the dimensions for a slide in JSON format
+@bp.route('/dzi/<project>/<int:slide_id>/header', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_slide_dimensions(project, slide_id):
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+    return jsonify(
+        {"dimensions": sr.get_dims(),
+         "spacing": sr.get_pixel_spacing('raw') })
 
 
 # Get the DZI for a slide

@@ -64,8 +64,6 @@ class GCSHandler:
         blob = bucket.get_blob(o.path.strip('/'))
         self._blob_cache[uri] = blob
 
-        print('Getting blob ', uri, ' size ', blob.size if blob is not None else 0)
-
         # Get the blob in the bucket
         return blob
 

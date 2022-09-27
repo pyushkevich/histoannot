@@ -237,7 +237,7 @@ $(document).ready(function() {
 
   // An ellipsis renderer for long text
   let fn_render_ellipsis = function(data, type, row, npos) {
-    if(data.length > npos) {
+    if(data && data.length > npos) {
       let span = $("<span></span>");
       span.prop("title", data);
       span.text(data.substr(0, npos)+"…");

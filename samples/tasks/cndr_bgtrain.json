@@ -1,0 +1,12 @@
+{
+    "restrict-access": true, 
+    "name": "Fg/Bkg Training",
+    "dltrain": {
+        "labelset": "foreground_detection",
+        "min-size": 128,
+        "max-size": 128,
+        "display-patch-size": 128
+    }, 
+    "mode": "dltrain", 
+    "desc": "Training a deep learning classifier to segment slide foreground"
+}

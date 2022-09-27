@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+
+{% block title %}
+Specimen Listing - {{task['name']}}
+{% endblock %}
+
+{% block content %}
+
+<style>
+.zoom {
+  transition: transform .2s; /* Animation */
+  max-width: 200px;
+  height: 75px;
+}
+
+.zoom:hover {
+  transform: scale(2.56) translate(5pt,0pt); /* (150% zoom - Note: if the zoom is too large, it will go outside of the viewport) */
+  position: absolute;
+}
+
+.spanner {
+  height: 75px;
+}
+</style>
+
+
+<a href="{{ url_for('slide.index')}}">Home</a> : 
+<a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
+{{task['name']}}
+<span id="span_specimen_display"></span>
+<span id="span_block_name"></span>
+
+<div class="pure-g">
+  <div class="pure-u-1 pure-u-md-16-24">
+    <h3 align="center">TASK {{task_id}} SLIDE LISTING</h3>
+    <table id="slide" class="compact stripe hover" style="width:100%">
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Specimen</th>
+          <th>Block</th>
+          <th>Stain</th>
+          <th>Section</th>
+          <th>Slice</th>
+          <!--
+          {% if task['mode'] == 'annot' %}
+            <th>#Ann</th>
+          {% elif task['mode'] == 'dltrain' %}
+            <th>#Sam</th>
+          {% endif %}
+          -->
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+  <div class="pure-u-1 pure-u-md-1-24">
+  </div>
+  <div class="pure-u-1 pure-u-md-7-24">
+    <h3 align="center">SLIDE INFO</h3>
+    <div id="thumb_div">
+        <img id="thumb_img" src="" alt="selected slide thumbnail" style="display:none; width:100%;">
+    </div>
+  </div>
+</div>
+
+<!-- DataTable support -->
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.1/css/select.dataTables.min.css">
+<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.1/js/dataTables.select.min.js"></script>
+
+<script type="text/javascript" charset="utf8">
+$(document).ready(function() {
+
+  mode="{{task['mode']}}";
+
+  // AJAX url templates
+  var url_sld="{{url_for('slide.task_slide_listing', task_id=task_id)}}";
+  var url_tmb="{{url_for('slide.get_slide_thumbnail', task_id=task_id, slide_id=999999)}}";
+  var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
+  var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
+
+  // Thumbnail render function
+  var fn_render_thumb = function(data, type, row) {
+    var url = url_tmb.replace('999999',data);
+    return '<div class="spanner"><img class="zoom" src="'+url+'" /></div>';
+  };
+
+  // Render functions with URLs
+  var fn_annot_link = function(data, type, row) {
+    var url = url_ann.replace('999999',data);
+    return '<a class="action" href="'+url+'">Annotate</a>';
+  };
+
+  var fn_dltrain_link = function(data, type, row) {
+    var url = url_dlt.replace('999999',data);
+    return '<a class="action" href="'+url+'">Train</a>';
+  };
+
+  var fn_browse_link = function(data, type, row) {
+    var url = url_dlt.replace('999999',data);
+    return '<a class="action" href="'+url+'">View</a>';
+  };
+
+  // Column descriptions for different tables
+  sld_col_desc = [
+    { data: "id" },
+    { data: "specimen_display" },
+    { data: "block_name" },
+    { data: "stain" },
+    { data: "section" },
+    { data: "slide" }
+  ];
+
+  if(mode === 'annot') {
+    // sld_col_desc.push({ data: "n_annot"});
+    sld_col_desc.push({ data: "id", render: fn_annot_link});
+  }
+  else if(mode === 'dltrain') {
+    // sld_col_desc.push({ data: "n_samples"});
+    sld_col_desc.push({ data: "id", render: fn_dltrain_link});
+  }
+  else if(mode === 'browse') {
+    sld_col_desc.push({ data: "id", render: fn_browse_link});
+  }
+
+  var py2js = function(str) { return str==="None" ? null : str; }
+  var py2int = function(str) { return str==="None" ? null : parseInt(str); }
+
+  var fn_select_row = function(table, col, value) {
+    var indexes = table.rows().eq( 0 ).filter( function (rowIdx) {
+          return table.cell( rowIdx, col ).data() === value;
+    } );
+    if(indexes.length === 1) {
+      table.row(indexes[0]).select();
+    }
+  };
+
+  t_slide = $('#slide').DataTable( {
+    serverSide: true,
+    ajax: { 
+        url: url_sld, 
+        contentType: "application/json",
+        type: "POST",
+        data: function ( d ) { return JSON.stringify( d ); } 
+    },
+    columns: sld_col_desc,
+    select: 'single'
+  } );
+
+
+  t_slide.on('select', function(e,dt,type,indexes) {
+    if(type==='row') {
+      // Set the target url
+      selected_id = t_slide.rows(indexes).data().pluck('id')[0];
+      $('#thumb_img').attr("src", url_tmb.replace('999999', selected_id));
+      $('#thumb_img').css('display','block')
+    }
+  });
+
+} );
+</script>
+
+{% endblock %}

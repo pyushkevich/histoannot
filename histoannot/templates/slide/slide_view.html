@@ -293,6 +293,7 @@
                                 </div>
                             </div>
                         </div>
+                        {% endif %}
 
                         <div id="div_slide_info">
                             <div class="header">
@@ -308,7 +309,10 @@
                                 </fieldset>
                             </form>
                         </div>
-                        {% endif %}
+                        <div align="center" style="padding:5px;">
+                            <button id="button_download" class="pure-button">Download slide ...</button>
+                        </div>
+                        
                     </div>
                 </span>
             </td>
@@ -360,19 +364,40 @@
 
 <!-- A slide download dialog -->
 <div id="dl_dialog_container" title="Download Slide">
-    <form id="dl_dialog_form" style="display: inline; white-space: nowrap;">
-        <div>
-        <input type="radio" id="dl_dialog_cb_raw" name="dl_dialog_radio" value=0>
-        <label for="dl_dialog_cb_raw"> Download raw image</label><br>
-        <input type="radio" id="dl_dialog_cb_downsample" name="dl_dialog_radio" value=1 checked> 
-        <label for="dl_dialog_cb_downsample"> Download downsampled image</label>
-        </div>
-        <div>
-        <label for="dl_dialog_width"> Downsample size (in pixels):</label><br>
-        <input type="number" id="dl_dialog_width" name="dl_dialog_width" value=1000>
-        </div>
-        <input type="button" id="dl_dialog_submit" value="Download">
-    </form>
+    <div >
+        <form id="dl_dialog_form" target="#" class="pure-form pure-form-aligned">
+            <fieldset>
+                <div class="pure-control-group">
+                    <label for="dl_dialog_raw">Image to download:</label>
+                    <select id="dl_dialog_raw" class="pure-input-1-2" required>
+                        <option value="tiff">Downsampled .tiff</option>
+                        <option value="nii">Downsampled .nii.gz</option>
+                        <option value="fullres">Full-resolution .{{slide_ext}}</option>
+                    </select>
+                </div>
+                <div class="pure-control-group">
+                    <label for="dl_dialog_width">Size (in pixels):</label>
+                    <input id="dl_dialog_width" name="dl_dialog_width" class="pure-input-1-2" value=1000>
+                </div>
+                <div class="pure-controls">
+                    <input type="submit" id="dl_dialog_submit" value="Download" class="pure-button pure-button-primary">
+                </div>
+            </fieldset>
+        <!--
+            <div>
+            <input type="radio" id="dl_dialog_cb_raw" name="dl_dialog_radio" value=0>
+            <label for="dl_dialog_cb_raw"> Download raw image</label><br>
+            <input type="radio" id="dl_dialog_cb_downsample" name="dl_dialog_radio" value=1 checked> 
+            <label for="dl_dialog_cb_downsample"> Download downsampled image</label>
+            </div>
+            <div>
+            <label for="dl_dialog_width"> Downsample size (in pixels):</label><br>
+            <input type="number" id="dl_dialog_width" name="dl_dialog_width" value=1000>
+            </div>
+            <input type="button" id="dl_dialog_submit" value="Download">
+        -->
+        </form>
+    </div>
 </div>
 
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
@@ -1523,9 +1548,18 @@ $(document).ready(function()
     };
 
     let fn_download_slide = function() {
-        // Read the downsample factor
-        var ds = $("#dl_dialog_cb_raw").is(':checked') ? 0 : parseInt($("#dl_dialog_width").val(),10)
-        d_link = "{{url_tmpl_download}}".replace("XXXXX", "{{resolution}}").replace("999999", ds.toString());
+        var fmt = $("#dl_dialog_raw").val();
+        var ds = parseInt($("#dl_dialog_width").val(),10)
+
+        var dlink_tmpl = "{{url_tmpl_download_tiff}}"
+        if(fmt == "tiff")
+            dlink_tmpl = "{{url_tmpl_download_tiff}}"
+        else if(fmt == "nii")
+            dlink_tmpl = "{{url_tmpl_download_nii_gz}}"
+        else
+            dlink_tmpl = "{{url_tmpl_download_fullres}}"
+
+        d_link = dlink_tmpl.replace("XXXXX", "{{resolution}}").replace("999999", ds.toString());
         dl_dialog.dialog("close");
         window.open(d_link, "_blank");
     };
@@ -1541,6 +1575,10 @@ $(document).ready(function()
     Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
     Mousetrap.bind('D', function() { fn_raise_dl_dialog() });
     Mousetrap.bind('?', function() { help_dialog.dialog("open"); });
+
+    // Also bind the download function to the download button
+    $("#button_download").button();
+    $("#button_download").on("click", function(event) { fn_raise_dl_dialog(); });
 
     // Bind moving to next/previous slide
     let prev_slide = "{{prev_slide if prev_slide != None else ''}}";

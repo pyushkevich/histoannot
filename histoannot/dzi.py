@@ -48,6 +48,8 @@ bp = Blueprint('dzi', __name__)
 import click
 import numpy
 from flask.cli import with_appcontext
+import nibabel as nib
+import gzip
 
 
 # The function that is enqueued in RQ
@@ -232,11 +234,8 @@ def dzi(mode, project, slide_id, resource):
     return resp
 
 
-# Download the raw data for the slide
-@bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
-@access_project_read
-@forward_to_worker
-def dzi_download(project, slide_id, resource, downsample):
+# Download image data
+def dzi_download(project, slide_id, resource, downsample, extension):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
@@ -246,23 +245,74 @@ def dzi_download(project, slide_id, resource, downsample):
 
     # If no downsample, send raw file
     if downsample == 0:
+        if extension != sr.slide_ext:
+            return "Wrong extension requested", 400
+
+        # MRXS files will require special handling
+        if extension.lower() == ".mrxs":
+            return "Cannot download .mrxs files", 400
+
         return send_file(tiff_file)
+
     else:
         os = OpenSlide(tiff_file)
         thumb = os.get_thumbnail((downsample, downsample))
-        buf = PILBytesIO()
-
-        # Get the spacing
         mpp = sr.get_pixel_spacing(resource)
-        if mpp:
-            dpcm = [10. * thumb.size[0] / (mpp[0] * os.dimensions[0]),
-                    10. * thumb.size[1] / (mpp[1] * os.dimensions[1])]
-            thumb.save(buf, 'TIFF', resolution_unit=3, resolution=dpcm)
-        else:
-            thumb.save(buf, 'TIFF')
-        resp = make_response(buf.getvalue())
-        resp.mimetype = 'application/octet-stream'
-        return resp
+
+        if extension == 'tiff':
+            buf = PILBytesIO()
+
+            # Get the spacing
+            if mpp:
+                dpcm = [10. * thumb.size[0] / (mpp[0] * os.dimensions[0]),
+                        10. * thumb.size[1] / (mpp[1] * os.dimensions[1])]
+                thumb.save(buf, 'TIFF', resolution_unit=3, resolution=dpcm)
+            else:
+                thumb.save(buf, 'TIFF')
+
+            resp = make_response(buf.getvalue())
+            resp.mimetype = 'application/octet-stream'
+            return resp
+
+        elif extension == 'nii.gz':
+            bio = BytesIO()
+            pix = numpy.array(thumb, dtype=np.uint8)
+            pix = numpy.expand_dims(pix, (2,3))
+            spacing = [ os.dimensions[d] * mpp[d] / thumb.size[d] for d in (0,1) ]
+            nii = nib.Nifti1Image(pix, np.diag([spacing[0], spacing[1], 1.0, 1.0]))
+            file_map = nii.make_file_map({'image': bio, 'header': bio})
+            nii.to_file_map(file_map)
+            data = gzip.compress(bio.getvalue())
+            resp = make_response(data)
+            resp.mimetype = 'application/octet-stream'
+            return resp
+            
+
+
+# Download a thumbnail for the slide
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_download_tiff(project, slide_id, resource, downsample):
+    return dzi_download(project, slide_id, resource, downsample, 'tiff')
+
+
+# Download a thumbnail for the slide, in NIFTI format
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.nii.gz', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_download_nii_gz(project, slide_id, resource, downsample):
+    return dzi_download(project, slide_id, resource, downsample, 'nii.gz')
+
+
+# Download a full-resolution slide, in whatever format the slide is in
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_fullres.<extension>', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_download_fullres(project, slide_id, resource, extension):
+    return dzi_download(project, slide_id, resource, 0, extension)
+
+
 
 
 class PILBytesIO(BytesIO):

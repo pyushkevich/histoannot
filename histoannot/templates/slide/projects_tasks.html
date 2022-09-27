@@ -30,9 +30,17 @@ PICSL Histology Annotation Server
   opacity: 1.0;
 }
 
+/*
 .ui-menu {
   display: none;
   width: 200px;
+}
+*/
+
+.ui-menu {
+  font-size: 80%;
+  line-height: $line-height * 0.8;
+  white-space: nowrap;
 }
 
 .menuDialog {
@@ -90,6 +98,7 @@ PICSL Histology Annotation Server
           <th>#Spc</th>
           <th>#Blk</th>
           <th>#Sld</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -98,7 +107,7 @@ PICSL Histology Annotation Server
   </div>
 </div>
 
-<!-- Popup menu -->
+<!-- Popup menus -->
 <div id="dialog-proj-context-menu" class="menuDialog" style="display: none;">
   <ul id="proj-context-menu">
     <li id="mi-about" data-isadmin=0>
@@ -106,6 +115,17 @@ PICSL Histology Annotation Server
     </li>
     <li id="mi-labelset-edt" data-isadmin=1>
       <div><span class="ui-icon ui-icon-lightbulb"></span>Edit Label Sets</div>
+    </li>
+  </ul>
+</div>
+
+<div id="dialog-task-context-menu" class="menuDialog" style="display: none;">
+  <ul id="task-context-menu">
+    <li id="mi-task-about" data-isadmin=0>
+      <div><span class="ui-icon ui-icon-help"></span>About</div>
+    </li>
+    <li id="mi-task-all-slides" data-isadmin=1>
+      <div>View All Slides</div>
     </li>
   </ul>
 </div>
@@ -129,6 +149,7 @@ $(document).ready(function() {
   var url_task="{{url_for('slide.task_listing', project='XXXX')}}";
   var url_action="{{url_for('slide.task_detail', task_id='999999')}}";
   var url_labelset_edt="{{url_for('dltrain.labelset_editor', project='XXXX')}}";
+  var url_task_all_slides="{{url_for('slide.task_all_slides', task_id='999999')}}";
 
   // Rendering of links
   var fn_task_link_render = function(data, type, row) {
@@ -159,7 +180,13 @@ $(document).ready(function() {
     { data: "name", render: fn_task_link_render },
     { data: "nspecimens" },
     { data: "nblocks" },
-    { data: "nslides" }
+    { data: "nslides" },
+    {
+      data: null,
+      className: "dt-center context-menu",
+      defaultContent: '<button class="fa fa-ellipsis-v ellipsis"/>',
+      orderable: false
+    }
   ];
 
   var py2js = function(str) { return str === "None" ? null : str; }
@@ -185,6 +212,24 @@ $(document).ready(function() {
     }
   });
 
+  $("#dialog-task-context-menu").dialog({
+    modal: true,
+    autoOpen: false,
+    closeOnEscape: true,
+    title: false,
+    width: "auto",
+    height: "auto",
+    dialogClass: "menuDialog",
+    resizable: false,
+    draggable: false,
+    open: function (event, ui) {
+        $(this).css('padding', '0px');
+        $(".ui-widget-overlay").on("click", function () {
+            $("#dialog-task-context-menu").dialog("close");
+        });
+    }
+  });
+
   // Set up the actual menu, including actions when the menu items are clicked
   $("#proj-context-menu").menu({
     select: function (event, ui) {
@@ -193,6 +238,20 @@ $(document).ready(function() {
       dialog.dialog("close");
       if(ui.item.context.id === "mi-labelset-edt") {
         url = url_labelset_edt.replace('XXXX', project);
+        window.location.href = url;
+        return false;
+      }
+      return true;
+    }
+  });
+
+  $("#task-context-menu").menu({
+    select: function (event, ui) {
+      var dialog = $("#dialog-task-context-menu");
+      var task_id = dialog.data("task_id");
+      dialog.dialog("close");
+      if(ui.item.context.id === "mi-task-all-slides") {
+        url = url_task_all_slides.replace('999999', task_id);
         window.location.href = url;
         return false;
       }
@@ -273,6 +332,19 @@ $(document).ready(function() {
     select: 'single',
     searching: false
   } );
+
+  // Handle the context menu button click
+  t_task.on('click', 'td.context-menu', function(e) {
+    var pos = { my: "left top", at: "left bottom", of: e };
+    var dialog = $("#dialog-task-context-menu");
+
+    // Set the project field so we know the context
+    var row_data = t_task.row($(this).closest('tr')).data();
+    dialog.data("task_id", row_data.id);
+
+    dialog.dialog("option", "position", pos).dialog("open");
+    return false;
+  });
 
   var selected_prj = null;
 

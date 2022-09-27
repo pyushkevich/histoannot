@@ -33,6 +33,7 @@ from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
 from io import BytesIO, StringIO
+from PIL import Image
 
 import os
 import json
@@ -45,6 +46,7 @@ import math
 import svgwrite
 import sys
 import urllib
+import io
 
 
 bp = Blueprint('slide', __name__)
@@ -190,7 +192,7 @@ def task_specimen_listing(task_id):
 # Slide listing for a task - simple
 @bp.route('/api/task/<int:task_id>/slide_manifest.csv')
 @access_task_read
-def task_slide_listing(task_id):
+def task_slide_listing_csv(task_id):
     db = get_db()
 
     # Get the current task data
@@ -228,6 +230,7 @@ def task_detail(task_id):
                            project=project, project_name=pr.disp_name,
                            task=task, task_id=task_id, specimen=None, block_name=None)
 
+
 # Specimen detail (same template as the task detail, but points to a specimen
 @bp.route('/task/<int:task_id>/specimen/<int:specimen>')
 @access_task_read
@@ -240,6 +243,7 @@ def specimen_detail_by_id(task_id, specimen):
                            project=project, project_name=pr.disp_name, task=task, task_id=task_id,
                            specimen=specimen, block_name=None)
 
+
 # Block detail (same template as the task detail, but points to a block
 @bp.route('/task/<int:task_id>/specimen/<int:specimen>/block/<block_name>')
 @access_task_read
@@ -251,6 +255,21 @@ def block_detail_by_id(task_id, specimen, block_name):
     return render_template('slide/task_detail.html',
                            project=project, project_name=pr.disp_name, task=task, task_id=task_id,
                            specimen=specimen, block_name=block_name)
+
+
+# Complete listing of slides in a task
+@bp.route('/task/<int:task_id>/slides')
+@access_task_read
+def task_all_slides(task_id):
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+    pr = ProjectRef(project)
+    return render_template('slide/task_slide_listing.html',
+                           project=project, project_name=pr.disp_name,
+                           task=task, task_id=task_id)
+
+
 
 # Task detail
 @bp.route('/api/task/<int:task_id>/specimen/<specimen>/blocks')
@@ -405,6 +424,103 @@ def block_slide_listing(task_id, specimen, block_name):
     return json.dumps([dict(row) for row in slides])
 
 
+# Complete task slide listing
+@bp.route('/api/task/<int:task_id>/slides', methods=('POST',))
+@access_task_read
+def task_slide_listing(task_id):
+    db = get_db()
+    db.set_trace_callback(print)
+
+    # Map the request to json
+    r = json.loads(request.get_data().decode('UTF-8'))
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+
+    # Run a query to count the total number of slides to return
+    n_total = db.execute(
+        """SELECT COUNT(S.id) as n 
+           FROM task_slide_info S 
+           WHERE S.task_id=?""", (task_id,)).fetchone()['n']
+
+    # Do we have a global search query
+    if len(r['search']['value']) > 0:
+        # Create search clause for later
+        search_clause = 'AND (S.specimen_display LIKE ? OR S.block_name LIKE ? OR S.stain LIKE ?)'
+        search_pat = '%' + r['search']['value'] + '%'
+        search_items = search_pat,search_pat,search_pat
+
+        # Run search clause to get number of filtered entries
+        n_filtered = db.execute(
+            """SELECT COUNT(S.id) as n 
+               FROM task_slide_info S 
+               WHERE S.task_id=? {}""".format(search_clause), (task_id,) + search_items).fetchone()['n']
+    else:
+        search_clause, search_items = '', ()
+        n_filtered = n_total
+
+    # Field to order by
+    order_column = int(r['order'][0]['column'])
+    order_dir = {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']]
+    paging_start = r['start']
+    paging_length = r['length']
+
+    # Run the main query
+    slides = db.execute(
+        """SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain 
+           FROM task_slide_info S
+           WHERE S.task_id = ? {}
+           ORDER BY {:d} {} LIMIT {:d},{:d}""".format(search_clause,order_column+1,order_dir,paging_start,paging_length), 
+           (task_id,) + search_items).fetchall()
+
+    # Build return json
+    x = {
+        'draw' : r['draw'],
+        'recordsTotal': n_total,
+        'recordsFiltered': n_filtered,
+        'data': [dict(row) for row in slides]
+    }
+
+    db.set_trace_callback(None)
+    return json.dumps(x)
+
+    # List all the blocks that meet requirements for the current task
+    if task['mode'] == 'annot':
+
+        # Join with the annotations table
+        slides = db.execute(
+            """SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain,
+                   IFNULL(SUM(A.n_paths),0) as n_paths,
+                   IFNULL(SUM(A.n_markers),0) as n_markers,
+                   IFNULL(SUM(A.n_paths),0) + IFNULL(SUM(A.n_markers),0) as n_annot
+                FROM task_slide_info S
+                    LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = S.task_id
+                WHERE S.task_id = ? 
+                GROUP BY S.id, S.section, S.slide
+                ORDER BY section, slide""", (task_id,)).fetchall()
+
+    elif task['mode'] == 'dltrain':
+
+        # Join with the training samples table
+        slides = db.execute(
+            """SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain, COUNT(T.id) as n_samples 
+               FROM task_slide_info S
+                   LEFT JOIN training_sample T on T.slide = S.id AND T.task = S.task_id
+               WHERE S.task_id = ? 
+               GROUP BY S.id, S.section, S.slide
+               ORDER BY section, slide""", (task_id,)).fetchall()
+
+    elif task['mode'] == 'browse':
+
+        slides = db.execute(
+            """SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain 
+               FROM task_slide_info S
+               WHERE S.task_id = ? 
+               ORDER BY section, slide""", (task_id,)).fetchall()
+
+    return json.dumps([dict(row) for row in slides])
+
+
 # Get all the data needed for slide view/annotation/training
 def get_slide_info(task_id, slide_id):
     db = get_db()
@@ -537,17 +653,21 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'slide_id':slide_id,
             'mode':affine_mode,
             'resource':'XXXXX',
-            'downsample': 999999
+            'downsample': 999999,
+            'extension': sr.slide_ext
             }
 
     url_tmpl_preload = url_for('dzi.dzi_preload', **url_ctx)
     url_tmpl_dzi = url_for('dzi.dzi', **url_ctx)
-    url_tmpl_download = url_for('dzi.dzi_download', **url_ctx)
+    url_tmpl_download_tiff = url_for('dzi.dzi_download_tiff', **url_ctx)
+    url_tmpl_download_nii_gz = url_for('dzi.dzi_download_nii_gz', **url_ctx)
+    url_tmpl_download_fullres = url_for('dzi.dzi_download_fullres', **url_ctx)
 
     # Build a dictionary to call
     context = {
         'slide_id': slide_id,
         'slide_info': si,
+        'slide_ext': sr.slide_ext,
         'next_slide': next_slide,
         'prev_slide': prev_slide,
         'stain_list': stain_list,
@@ -562,7 +682,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'block_id': si['block_id'],
         'url_tmpl_preload': url_tmpl_preload,
         'url_tmpl_dzi': url_tmpl_dzi,
-        'url_tmpl_download': url_tmpl_download,
+        'url_tmpl_download_tiff': url_tmpl_download_tiff,
+        'url_tmpl_download_nii_gz': url_tmpl_download_nii_gz,
+        'url_tmpl_download_fullres': url_tmpl_download_fullres,
         'task': task,
         'fixed_box_size': get_dltrain_fixed_box_size(task),
         'user_prefs': user_prefs,
@@ -577,7 +699,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     else:
         context['spacing'] = slide_spacing
         sp_mm = tuple(1000. * x for x in slide_spacing)
-        context['spacing_str'] = '{} x {}'.format(sp_mm[0], sp_mm[1])
+        context['spacing_str'] = '{:.4f} x {:.4f}'.format(sp_mm[0], sp_mm[1])
 
     # Add optional fields to context
     if 'slide_view_sample_data' in session:
@@ -942,7 +1064,24 @@ class PILBytesIO(BytesIO):
         raise AttributeError('Not supported')
 
 
-# Serve up thumbnails
+# Serve label image if available
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>_thumbnail.png', methods=('GET',))
+@access_task_read
+def get_slide_thumbnail(task_id, slide_id):
+    sr = get_slide_ref(slide_id)
+    f_local = sr.get_local_copy('thumb')
+    if f_local:
+        im = Image.open(f_local)
+        buf = io.BytesIO()
+        im.save(buf, 'PNG')
+        resp = make_response(buf.getvalue())
+        resp.mimetype = 'image/png'
+        return resp
+    else:
+        abort(404)
+
+
+# Serve up quick, locally cached thumbnails
 # TODO: need API keys!
 @bp.route('/slide/<int:id>/thumb', methods=('GET',))
 def thumb(id):

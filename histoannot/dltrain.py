@@ -98,6 +98,80 @@ def get_labelset_labels_table(task_id, slide_id):
     return render_template('dbtrain/label_table.html', labels = ll_data, task_id=task_id, slide_id=slide_id)
 
 
+# Complete sample listing 
+@bp.route('/api/task/<int:task_id>/samples', methods=('POST',))
+@access_task_read
+def task_sample_listing(task_id):
+    db = get_db()
+    db.set_trace_callback(print)
+
+    # Map the request to json
+    r = json.loads(request.get_data().decode('UTF-8'))
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+
+    # Run a query to count the total number of samples to return
+    n_total = db.execute(
+        """SELECT COUNT(T.id) as n 
+           FROM training_sample_info T 
+           WHERE T.task=?""", (task_id,)).fetchone()['n']
+
+    # Do we have a global search query
+    if len(r['search']['value']) > 0:
+        # Create search clause for later
+        search_clause = 'AND (T.specimen_name LIKE ? OR T.block_name LIKE ? OR T.label_name LIKE ?)'
+        search_pat = '%' + r['search']['value'] + '%'
+        search_items = search_pat,search_pat,search_pat
+
+        # Run search clause to get number of filtered entries
+        n_filtered = db.execute(
+            """SELECT COUNT(T.id) as n 
+               FROM training_sample_info T 
+               WHERE T.task=? {}""".format(search_clause), (task_id,) + search_items).fetchone()['n']
+    else:
+        search_clause, search_items = '', ()
+        n_filtered = n_total
+
+    # Field to order by
+    order_column = int(r['order'][0]['column'])
+    order_dir = {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']]
+    paging_start = r.get('start', 0)
+    paging_length = r.get('length', 1000)
+
+    # Run the main query
+    samples = db.execute(
+        """SELECT * 
+           FROM training_sample_info T
+           WHERE T.task = ? {}
+           ORDER BY {:d} {} LIMIT {:d},{:d}""".format(search_clause,order_column+1,order_dir,paging_start,paging_length), 
+           (task_id,) + search_items).fetchall()
+
+    # Build return json
+    x = {
+        'draw' : r['draw'],
+        'recordsTotal': n_total,
+        'recordsFiltered': n_filtered,
+        'data': [dict(row) for row in samples]
+    }
+
+    db.set_trace_callback(None)
+    return json.dumps(x)
+
+
+# Complete listing of slides in a task
+@bp.route('/task/<int:task_id>/samples')
+@access_task_read
+def task_all_samples(task_id):
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+    pr = ProjectRef(project)
+    return render_template('dbtrain/task_sample_listing.html',
+                           project=project, project_name=pr.disp_name,
+                           task=task, task_id=task_id)
+
+
 # Get a table of recently created annotations
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/label/<int:label_id>/samples/table/json', methods=('POST','GET'))
 @access_task_read

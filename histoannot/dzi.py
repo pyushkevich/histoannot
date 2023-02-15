@@ -276,10 +276,18 @@ def dzi_download(project, slide_id, resource, downsample, extension):
 
         elif extension == 'nii.gz':
             bio = BytesIO()
-            pix = numpy.array(thumb, dtype=np.uint8)
-            pix = numpy.expand_dims(pix, (2,3))
+
+            # This is the code needed to put RGB into NIB
+            pix = numpy.array(thumb, dtype=np.uint8).transpose(1,0,2)
+            pix = numpy.expand_dims(pix, 2)
+            pix = pix.copy().view(dtype=np.dtype([('R', 'u1'), ('G', 'u1'), ('B', 'u1')])).reshape(pix.shape[0:3])
             spacing = [ os.dimensions[d] * mpp[d] / thumb.size[d] for d in (0,1) ]
-            nii = nib.Nifti1Image(pix, np.diag([spacing[0], spacing[1], 1.0, 1.0]))
+            
+            # Start with a diagonal affine matrix and then swap AP and SI axes
+            # because sections are typically coronal
+            affine = np.diag([-spacing[0], -spacing[1], 1.0, 1.0])
+            print("RAS code:", nib.aff2axcodes(affine))
+            nii = nib.Nifti1Image(pix, affine)
             file_map = nii.make_file_map({'image': bio, 'header': bio})
             nii.to_file_map(file_map)
             data = gzip.compress(bio.getvalue())

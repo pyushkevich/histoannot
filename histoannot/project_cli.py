@@ -572,21 +572,25 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                 # Read the relevant keys from the JSON file
                 with open(pj) as fj:
 
-                    # Validate the JSON against the schema
-                    data = json.load(fj)
-                    validate(instance=data, schema=slide_json_schema)
+                    try:
+                        # Validate the JSON against the schema
+                        data = json.load(fj)
+                        validate(instance=data, schema=slide_json_schema)
 
-                    # Create a slideref for this filename
-                    sr = SlideRef(pr, data['specimen'], data['block'], p.stem, p.suffix[1:])
-                    if not sr.resource_exists('raw', False):
-                        print("Raw file does not exist for JSON: %s" % pj)
-                        continue
+                        # Create a slideref for this filename
+                        sr = SlideRef(pr, data['specimen'], data['block'], p.stem, p.suffix[1:])
+                        if not sr.resource_exists('raw', False):
+                            print("Raw file does not exist for JSON: %s" % pj)
+                            continue
 
-                    # Tags should be a set
-                    data['tags'] = set(data.get('tags', []))
+                        # Tags should be a set
+                        data['tags'] = set(data.get('tags', []))
 
-                    # Load the slide
-                    refresh_slide(pr, sr, slide_name=p.stem, check_hash=check_hash, **data)
+                        # Load the slide
+                        refresh_slide(pr, sr, slide_name=p.stem, check_hash=check_hash, **data)
+                    except:
+                        print('Exception importing slide JSON: {}'.format(pj))
+                        pass
 
     else:
 

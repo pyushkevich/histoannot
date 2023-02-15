@@ -11,3 +11,4 @@ conf
 manifest
 deploy_dzi.sh
 env.sh
+private

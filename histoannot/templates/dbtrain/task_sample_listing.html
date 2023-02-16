@@ -63,20 +63,29 @@ Specimen Listing - {{task['name']}}
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
-  <div class="pure-u-1 pure-u-md-4-24">
+  <div class="pure-u-1 pure-u-md-4-24" style="display:none;" id="thumb_panel">
     <h3 align="center">SELECTED SAMPLE</h3>
     <div id="thumb_div" width="100%">
-      <canvas id="thumb_canvas" style="width:100%"></canvas>
+      <canvas id="thumb_canvas" style="width:100%; max-width:512;"></canvas>
+    </div>
+    <div id="thumb_ctl" width="100%">
+      <label for="zoom_slider">Zoom factor:</label>
+      <input type="range" min="0" max="3" value="0" class="slider" id="zoom_slider">
     </div>
   </div>
 </div>
 
 <!-- DataTable support -->
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.1/css/select.dataTables.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.2/css/jquery.dataTables.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.6.0/css/select.dataTables.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.3.4/css/buttons.dataTables.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/keytable/2.8.1/css/keyTable.dataTables.min.css">
+
 <script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.1/js/dataTables.select.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.2/js/jquery.dataTables.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.6.0/js/dataTables.select.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/buttons/2.3.4/js/dataTables.buttons.min.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/keytable/2.8.1/js/dataTables.keyTable.min.js"></script>
 
 <script type="text/javascript" charset="utf8">
 $(document).ready(function() {
@@ -143,7 +152,7 @@ $(document).ready(function() {
     }
   };
 
-  t_samples = $('#samples').DataTable( {
+  let t_sample_opts = {
     serverSide: true,
     ajax: { 
         url: url_sample, 
@@ -152,23 +161,44 @@ $(document).ready(function() {
         data: function ( d ) { return JSON.stringify( d ); } 
     },
     columns: sample_col_desc,
+    ordering: true,
     select: 'single',
-    stateSave: true
-  } );
+    stateSave: true,
+    dom: 'lBfrtip',
+    buttons: [ {
+      text: 'randomize',
+      action: function ( e, dt, node, config ) {
+        t_sample_opts.ordering = !t_sample_opts.ordering;
+        t_samples.destroy();
+        t_samples = $('#samples').DataTable(t_sample_opts);
+      }
+    }],
+    keys: {
+      keys: [ 13 /* ENTER */, 38 /* UP */, 40 /* DOWN */ ]
+    }
+  };
 
+  let t_samples = $('#samples').DataTable(t_sample_opts);
 
-  t_samples.on('select', function(e,dt,type,indexes) {
-    if(type==='row') {
+  /*
+  
+  */
+
+  let fn_update_thumb = function(indexes) {
+    let sel_rows = (indexes != null) ? t_samples.rows(indexes) : t_samples.rows({selected: true});
+    if(sel_rows.count() > 0)
+    {
       // Set the target url
-      let selected_id = t_samples.rows(indexes).data().pluck('id')[0];
-      let x0 = parseInt(t_samples.rows(indexes).data().pluck('x0')[0]);
-      let y0 = parseInt(t_samples.rows(indexes).data().pluck('y0')[0]);
-      let x1 = parseInt(t_samples.rows(indexes).data().pluck('x1')[0]);
-      let y1 = parseInt(t_samples.rows(indexes).data().pluck('y1')[0]);
+      let selected_id = sel_rows.data().pluck('id')[0];
+      let x0 = parseInt(sel_rows.data().pluck('x0')[0]);
+      let y0 = parseInt(sel_rows.data().pluck('y0')[0]);
+      let x1 = parseInt(sel_rows.data().pluck('x1')[0]);
+      let y1 = parseInt(sel_rows.data().pluck('y1')[0]);
       let box_w = x1 - x0;
       let box_h = y1 - y0;
       let canvas = $('#thumb_canvas')[0];
       let ctx = canvas.getContext('2d');
+      let zoom_value = 1 << parseInt($('#zoom_slider').val())
 
       let img = new Image();
       img.onload = () => {
@@ -176,26 +206,63 @@ $(document).ready(function() {
         let ih = img.height;
         canvas.width  = iw;
         canvas.height = ih;
-        ctx.drawImage(img, 0, 0);
+        let sw = iw / zoom_value;
+        let sh = ih / zoom_value;
+        let bw = box_w * zoom_value;
+        let bh = box_h * zoom_value;
+        ctx.drawImage(img, (iw - sw)/2, (ih - sh)/2, sw, sh, 0, 0, iw, ih);
         ctx.beginPath();
         ctx.lineWidth = "2";
         ctx.strokeStyle = "red";
-        ctx.rect(canvas.width/2-box_w/2, canvas.height/2-box_h/2, box_w, box_h);  
+        ctx.rect(canvas.width/2-bw/2, canvas.height/2-bh/2, bw, bh);  
         ctx.stroke();
       }
       img.src = url_tmb.replace('999999', selected_id);
+      $('#thumb_panel').css('display','block');
+    }
+    else
+    {
+      let canvas = $('#thumb_canvas')[0];
+      let ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      $('#thumb_panel').css('display','none');
+    }
+  }
 
-      // $('#thumb_canvas')[0].getContext('2d').drawImage($('#thumb_img')[0], 0, 0);
+  t_samples.on('select', function(e,dt,type,indexes) {
+    if(type==='row') {
+      fn_update_thumb(indexes);
     }
   });
 
   t_samples.on('deselect', function(e,dt,type,indexes) {
     if(type==='row') {
-      let canvas = $('#thumb_canvas')[0];
-      let ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      fn_update_thumb();
     }
   });
+
+    // Handle keyboard navigation
+  // Handle event when cell gains focus
+  $('#samples').on('key-focus.dt', function(e, datatable, cell, orig_event){
+      // Select highlighted row
+      if(orig_event.type == 'keydown') {
+        t_samples.row(cell.index().row).select();
+        return true;
+      }
+  });
+
+  // Handle event when cell looses focus
+  /*
+  $('#samples').on('key-blur.dt', function(e, datatable, cell, orig_event){
+      // Deselect highlighted row
+      // t_samples.row(cell.index().row).deselect();
+      //return true;
+  });
+  */
+
+
+
+  $('#zoom_slider').change(function() { fn_update_thumb(null) });
 
 } );
 </script>

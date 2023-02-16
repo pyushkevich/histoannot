@@ -127,6 +127,9 @@ PICSL Histology Annotation Server
     <li id="mi-task-all-slides" data-isadmin=1>
       <div>View All Slides</div>
     </li>
+    <li id="mi-task-all-samples" data-isadmin=0>
+      <div>View All Samples</div>
+    </li>
   </ul>
 </div>
 
@@ -150,6 +153,7 @@ $(document).ready(function() {
   var url_action="{{url_for('slide.task_detail', task_id='999999')}}";
   var url_labelset_edt="{{url_for('dltrain.labelset_editor', project='XXXX')}}";
   var url_task_all_slides="{{url_for('slide.task_all_slides', task_id='999999')}}";
+  var url_task_all_samples="{{url_for('dltrain.task_all_samples', task_id='999999')}}";
 
   // Rendering of links
   var fn_task_link_render = function(data, type, row) {
@@ -252,6 +256,11 @@ $(document).ready(function() {
       dialog.dialog("close");
       if(ui.item.context.id === "mi-task-all-slides") {
         url = url_task_all_slides.replace('999999', task_id);
+        window.location.href = url;
+        return false;
+      }
+      if(ui.item.context.id === "mi-task-all-samples") {
+        url = url_task_all_samples.replace('999999', task_id);
         window.location.href = url;
         return false;
       }

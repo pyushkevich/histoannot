@@ -134,8 +134,14 @@ def task_sample_listing(task_id):
         n_filtered = n_total
 
     # Field to order by
-    order_column = int(r['order'][0]['column'])
-    order_dir = {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']]
+    if 'order' in r and len(r['order']) > 0:
+        order_clause = "{:d} {}".format(
+            1+int(r['order'][0]['column']),
+            {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']])
+    else:
+        order_clause = 'RANDOM()'
+
+    # Which page to extract
     paging_start = r.get('start', 0)
     paging_length = r.get('length', 1000)
 
@@ -144,7 +150,7 @@ def task_sample_listing(task_id):
         """SELECT * 
            FROM training_sample_info T
            WHERE T.task = ? {}
-           ORDER BY {:d} {} LIMIT {:d},{:d}""".format(search_clause,order_column+1,order_dir,paging_start,paging_length), 
+           ORDER BY {} LIMIT {:d},{:d}""".format(search_clause,order_clause,paging_start,paging_length), 
            (task_id,) + search_items).fetchall()
 
     # Build return json

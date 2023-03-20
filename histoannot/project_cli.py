@@ -671,7 +671,7 @@ def load_raw_slide_to_cache(slide_id, resource):
 @click.argument('project')
 @click.option('-m', '--manifest', default=None, type=click.Path(exists=True),
               help='CSV manifest file for projects that require them')
-@click.option('-s', '--specimen', default=None,
+@click.option('-s', '--specimen', default=None, multiple=True,
               help='Only refresh slides for a single specimen')
 @click.option('-f', '--fast', is_flag=True,
               help='Skip md5 checks for locally cached files')
@@ -680,7 +680,11 @@ def refresh_slides_command(project, manifest, specimen, fast):
     """Refresh the slide database for project PROJECT using manifest
        file MANIFEST that lists specimens and CSV files or GDrive links"""
 
-    refresh_slide_db(project, manifest, specimen, not fast)
+    if len(specimen) > 0:
+        for s in specimen:
+            refresh_slide_db(project, manifest, s, not fast)
+    else:
+        refresh_slide_db(project, manifest, None, not fast)
     click.echo('Scanning complete')
 
 

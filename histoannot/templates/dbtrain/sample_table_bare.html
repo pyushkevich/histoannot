@@ -74,10 +74,10 @@ var create_samples_table_withcontrols_html = function(container, fn_callback) {
 
   // Create controls
   var sel_which = $('<select id="stable_which">').append(
-      $('<option value="slide">').text('this slide'),
-      $('<option value="block">').text('this block'),
-      $('<option value="specimen">').text('this specimen'),
-      $('<option value="all">').text('all specimens')).change(function() {
+      $('<option value="slide">').text('slide'),
+      $('<option value="block">').text('block'),
+      $('<option value="specimen">').text('specimen'),
+      $('<option value="all">').text('all')).change(function() {
         cb_samples_table_control();
         if(fn_callback) 
           fn_callback()
@@ -92,6 +92,10 @@ var create_samples_table_withcontrols_html = function(container, fn_callback) {
           fn_callback()
       });
 
+  var btn_refresh = $('<button id="btn_reload" class="pure-button" style="margin-left: 10px;" type="button">Refresh</button>').click(function() {
+    load_samples_table_ajax(get_current_label_id());
+  });
+
   // Initialize with cookies
   var c_which = Cookies.get('pref_samples_table_which')
   var c_sort = Cookies.get('pref_samples_table_sort')
@@ -101,11 +105,14 @@ var create_samples_table_withcontrols_html = function(container, fn_callback) {
   }
 
   var cdiv = $('<div id="stable_ctl">').append(
-      $('<form id="stable_ctl_frm">').append(
-        $('<label for="stable_which">').text('Examples from: '),
-        sel_which,
-        $('<label for="stable_sort">').text('Sort by: '),
-        sel_sort));
+      $('<form id="stable_ctl_frm" class="pure-form">').append(
+        $('<span>').append(
+          $('<label for="stable_which">').text('Examples: '),
+          sel_which),
+        $('<span>').append(
+          $('<label for="stable_sort">').text('Sort: '),
+          sel_sort),
+        $('<span>').append(btn_refresh)));
 
   cdiv.appendTo(container);
   $('<div id="stable_main" style="overflow-y: auto; display: block; height: 420px;">').append(
@@ -123,6 +130,23 @@ var get_sample_tables_config = function() {
   else return null;
 }
 
+// What are the currently loaded labels?
+var current_samples_table_label_id = -1;
+
+// Update the table when the current label id changes - for efficiency this 
+// clears the table if the label has changed, making the user refresh the
+// table by hand
+var reset_samples_table_on_label_change = function(label_id, callback_fn) {
+  if(label_id != current_samples_table_label_id) {
+    $('#stablebody').empty();
+    current_samples_table_label_id = -1;
+  }
+
+  // Call the callback function
+  if(callback_fn)
+    callback_fn();
+}
+
 // Load the samples for a specific label
 var load_samples_table_ajax = function(label_id, callback_fn) {
   $.ajax({
@@ -138,22 +162,63 @@ var load_samples_table_ajax = function(label_id, callback_fn) {
       $.each(data, function(i, item) {
         var imgurl = "{{url_for('dltrain.get_sample_png', id=9999)}}".replace('9999', item['id']);
 
+        var box_w = Math.round(item['x1'] - item['x0']);
+        var box_h = Math.round(item['y1'] - item['y0']);
+
         // Create a tooltip
         var tt = 
           `Sample ${item['id']}\n` +
           `Specimen ${item['specimen_name']}, block ${item['block_name']}\n` + 
           `Section ${item['section']}, slide ${item['slide']}, stain ${item['stain']}\n` +
           `Created by ${item['creator']} on ${item['dt_create']}\n` + 
-          `Modified by ${item['editor']} on ${item['dt_edit']}`
+          `Modified by ${item['editor']} on ${item['dt_edit']}\n` + 
+          `Dimensions: ${box_w} x ${box_h}`;
 
         // Trick to prevent caching when samples are updated
-          var imgurl_full = (Number(item['have_patch']) > 0) ? 
+        var imgurl_full = (Number(item['have_patch']) > 0) ? 
           imgurl + '?t_edit=' + item['t_edit'] :
           "{{url_for('static', filename='icons/dummy_patch.png')}}";
 
         // var imgurl_full = imgurl + '?t_edit=' + item['t_edit'];
-        var img = $('<img>').attr('src', imgurl_full).attr('width', samples_table_imgwidth).attr('title', tt)
-        var td = $('<td>').append(img).attr('sample-id', item['id']).addClass('valid');
+        var canvas_ctl = $('<canvas style="width:100%; max-width:512;">');
+        var canvas = canvas_ctl[0]; 
+        let ctx = canvas.getContext('2d');
+        let img = new Image();
+        let zoom_value = 1;
+        img.onload = () => {
+          let iw = img.width;
+          let ih = img.height;
+          console.log(`Canvas size: ${canvas.width}, ${canvas.height}, Image size: ${iw}, ${ih}`);
+          canvas.height = canvas.width;
+          // canvas.width  = iw;
+          // canvas.height = ih;
+          let sw = iw / zoom_value;
+          let sh = ih / zoom_value;
+          let sx = (iw - sw) / 2;
+          let sy = (iw - sw) / 2;
+          let bw = box_w * zoom_value;
+          let bh = box_h * zoom_value;
+          // ctx.drawImage(img, (iw - sw)/2, (ih - sh)/2, sw, sh, 0, 0, iw, ih);
+
+          // Draw the image filling the whole canvas
+          // ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+          // Find size of the box in canvas units
+          wbc = canvas.width * box_w / sw;
+          hbc = canvas.height * box_h / sh;
+          ctx.beginPath();
+          ctx.lineWidth = "4";
+          ctx.strokeStyle = get_current_label_color();
+          ctx.rect(canvas.width/2-wbc/2, canvas.height/2-hbc/2, wbc, hbc);  
+          ctx.stroke();
+        }
+        img.src = imgurl_full;
+
+
+        // var img = $('<img>').attr('src', imgurl_full).attr('width', samples_table_imgwidth).attr('title', tt)
+        // var td = $('<td>').append(img).attr('sample-id', item['id']).addClass('valid');
+        var td = $('<td>').append(canvas).attr('sample-id', item['id']).addClass('valid');
         td.attr('center-x', (item['x0'] + item['x1']) / 2.0);
         td.attr('center-y', (item['y0'] + item['y1']) / 2.0);
         td.attr('slide_id', item['slide_id']);
@@ -181,6 +246,13 @@ var load_samples_table_ajax = function(label_id, callback_fn) {
           tr.append($('<td>'))
         tr.appendTo('#stablebody')
       }
+      else {
+        tr.append($('<td>No examples have been created yet</td>'))
+        tr.appendTo('#stablebody')
+      }
+
+      // Store the current label id
+      current_samples_table_label_id = label_id;
 
       // Call the callback function
       if(callback_fn)

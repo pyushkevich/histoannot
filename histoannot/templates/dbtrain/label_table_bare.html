@@ -103,6 +103,7 @@ var load_label_table_ajax = function(cb_success) {
         $tr.appendTo('#ctablebody');
         $tr.attr('data-id', item['id']);
         $tr.attr('data-color', item['color']);
+        $tr.attr('data-name', item['name']);
         if(item['id'] == sel_id) 
           $tr.addClass("selected");
         $tr.click(function(){
@@ -144,6 +145,11 @@ var select_first_label = function() {
 var get_current_label_color = function() {
   return $("#ctablebody tr.selected").attr("data-color");
 }
+
+var get_current_label_name = function() {
+  return $("#ctablebody tr.selected").attr("data-name");
+}
+
 
 // $(document).ready(function() {
 //  load_label_table_ajax()

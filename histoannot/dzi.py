@@ -140,7 +140,8 @@ def dzi_preload(project, slide_id, resource):
 
     # Get a redis queue
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, job_timeout="300s", result_ttl="60s")
+    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, 
+                    job_timeout="300s", result_ttl="60s", ttl="3600s", failure_ttl="48h")
 
     # Stick the properties into the job
     job.meta['args'] = (project, pr.get_dict(), sr.get_dict(), resource)
@@ -436,7 +437,9 @@ def patch_preload(project, slide_id, resource):
     # downloaded again, and we don't want to hold up returning to the user for so long
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, 
-                    (patch_dim, patch_dim), osl_level, job_timeout="120s", result_ttl="60s")
+                    (patch_dim, patch_dim), osl_level, 
+                    job_timeout="20s", result_ttl="60s", ttl="3600s", failure_ttl="48h",
+                    at_front=True)
 
     # Stick the properties into the job
     job.meta['args']=(slide_id, sample_id, rect)
@@ -459,7 +462,9 @@ def patch_preload(project, slide_id, resource):
 
     # Get a redis queue
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, job_timeout="300s", result_ttl="60s")
+    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, 
+                    job_timeout="300s", result_ttl="60s", ttl="3600s", failure_ttl="48h",
+                    at_front=True)
 
     # Stick the properties into the job
     job.meta['args'] = (project, pr.get_dict(), sr.get_dict(), resource)

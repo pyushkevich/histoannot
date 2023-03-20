@@ -942,9 +942,9 @@ $(document).ready(function()
                     box.data.id = data.id;
                     self.boxmap.set(data.id, box);
 
-		    // Add a link to navigate to the sample to clipboard
-		    let navurl = "{{ url_for('dltrain.navigate_to_sample', task_id = task_id, sample_id = 999999, _external=True) }}";
-		    navurl = navurl.replace('999999', data.id);
+                    // Add a link to navigate to the sample to clipboard
+                    let navurl = "{{ url_for('dltrain.navigate_to_sample', task_id = task_id, sample_id = 999999, _external=True) }}";
+                    navurl = navurl.replace('999999', data.id);
                     navigator.clipboard.writeText(navurl);
 
                     if(cb_success)
@@ -1118,7 +1118,7 @@ $(document).ready(function()
                     hit.item.selected = true;
                     if(seg_mode === 'dltrain' && hit.item.data.label_id) {
                         select_label(hit.item.data.label_id);
-                        load_samples_table_ajax(hit.item.data.label_id);
+                        reset_samples_table_on_label_change(hit.item.data.label_id);
                     }
                     fn_update_button_state();
                     paper.view.draw();
@@ -1666,7 +1666,7 @@ $(document).ready(function()
             deselect_all_manipulables();
             items[0].selected = true;
             select_label(items[0].data.label_id);
-            load_samples_table_ajax(items[0].data.label_id);
+            reset_samples_table_on_label_change(items[0].data.label_id);
             fn_update_button_state();
             fn_focus_on_viewer()
         };
@@ -1675,7 +1675,7 @@ $(document).ready(function()
         var reload_label_and_sample_tables = function() {
             load_label_table_ajax(function() {
                 var id = get_current_label_id();
-                load_samples_table_ajax(id, function() {
+                reset_samples_table_on_label_change(id, function() {
                     do_delay(reload_label_and_sample_tables, 10000);
                 });
             });
@@ -1693,16 +1693,18 @@ $(document).ready(function()
         // A callback function for when a label is clicked
         let label_select_callback = function(id) {
             if(curr_mode === 'NAV' && sample_api.get_selected_samples_count() > 0) {
-                sample_api.relabel_selected_samples(id, get_current_label_color(), function() {
-                    reload_label_and_sample_tables();
-                });
-                paper.view.draw();
+                if(window.confirm(`Do you want to relabel selected boxes as ${get_current_label_name()}?`)) {
+                    sample_api.relabel_selected_samples(id, get_current_label_color(), function() {
+                        reload_label_and_sample_tables();
+                    });
+                    paper.view.draw();
+                }
             }
             else {
                 if(curr_mode === 'FIXEDBOX' && curr_box) {
                     sample_api.update_box_label(curr_box, id, get_current_label_color());
                 }
-                load_samples_table_ajax(id);
+                reset_samples_table_on_label_change(id);
             }
             fn_focus_on_viewer();
         };

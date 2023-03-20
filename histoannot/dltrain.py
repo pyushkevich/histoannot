@@ -643,7 +643,9 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0, metadata=
     # downloaded again, and we don't want to hold up returning to the user for so long
     q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
     job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, 
-                    (patch_dim, patch_dim), osl_level, job_timeout="120s", result_ttl="60s")
+                    (patch_dim, patch_dim), osl_level, 
+                    job_timeout="120s", result_ttl="60s", ttl="3600s", failure_ttl="48h",
+                    at_front=True)
 
     # Stick the properties into the job
     job.meta['args']=(slide_id, sample_id, rect)

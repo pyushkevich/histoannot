@@ -1,0 +1,7 @@
+{
+    "restrict-access": false,
+    "mode": "browse",
+    "name": "Browse (dots only)",
+    "desc": "Browse the slides corresponding to ex vivo MRI dots",
+    "tags": { "any" : ["dots"] }
+}

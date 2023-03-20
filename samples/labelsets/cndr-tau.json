@@ -1,0 +1,102 @@
+[
+  {
+    "name": "GM_NFT",
+    "color": "#ca06c9",
+    "description": "pyramidal-shaped neurofibrillary tangle"
+  },
+  {
+    "name": "GM_non_pyramidal_tangle",
+    "color": "#cac906",
+    "description": "non-pyramidal neuronal tangle"
+  },
+  {
+    "name": "GM_Pick_body",
+    "color": "#72181e",
+    "description": "spherical tau inclusion in neurons"
+  },
+  {
+    "name": "GM_pretangle",
+    "color": "#007bff",
+    "description": "Pretangle, granular and irregularly dense neuronal inclusion"
+  },
+  {
+    "name": "GM_Balooned_neuron",
+    "color": "#9d3c9f",
+    "description": "swollen, often pyramidal-shaped neuronal inclusion in deep layers"
+  },
+  {
+    "name": "GM_threads",
+    "color": "#272b27",
+    "description": "area of tau threads in GM"
+  },
+  {
+    "name": "GM_NP",
+    "color": "#55c35d",
+    "description": "neuritic plaque"
+  },
+  {
+    "name": "GM_TANC",
+    "color": "#fdf408",
+    "description": "Tangle associated neuritic cluster"
+  },
+  {
+    "name": "GM_tau_grains",
+    "color": "#42f5ad",
+    "description": "GM punctate, dot-like neuronal or glia tau"
+  },
+  {
+    "name": "WM_axonal_threads",
+    "color": "#3a403b",
+    "description": "threads of tau in WM axons"
+  },
+  {
+    "name": "GM_WM_Astrocytic",
+    "color": "#0079fa",
+    "description": "General astrocyte label"
+  },
+  {
+    "name": "GM_WM_coil_body",
+    "color": "#dd0215",
+    "description": "circular or crescent shaped coiled body, oligodendrocytes more common in white matter"
+  },
+  {
+    "name": "GM_GGT",
+    "color": "#2fa018",
+    "description": "GM clusters of round globules and dots of astroglial tau"
+  },
+  {
+    "name": "Healthy Neuron",
+    "color": "#678fad",
+    "description": "Healthy non-tangle bearing neuron"
+  },
+  {
+    "name": "Non-tissue background",
+    "color": "#0bc027",
+    "description": "Slide background white area"
+  },
+  {
+    "name": "Tissue",
+    "color": "#2816ba",
+    "description": "Normal-appearing tissue"
+  },
+  {
+    "name": "Stain Background",
+    "color": "#7dfca1",
+    "description": "Non specific background stain"
+  },
+  {
+    "name": "Artifact",
+    "color": "#01c12a",
+    "description": "Staining artifact"
+  },
+  {
+    "name": "Dirt",
+    "color": "#f97a8a",
+    "description": "Dirt/unidentifiable floating objects [UFO] over tissue"
+  },
+  {
+    "name": "ask_dave",
+    "color": "#76916b",
+    "description": "Placeholder, replace with actual label later"
+  }
+]

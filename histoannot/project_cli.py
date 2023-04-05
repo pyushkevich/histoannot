@@ -719,7 +719,7 @@ task_schema = {
     "properties": {
         "name": {"type": "string", "minLength": 2, "maxLength": 80},
         "desc": {"type": "string", "maxLength": 1024},
-        "mode": {"type": "string", "enum": ["annot", "dltrain", "browse"]},
+        "mode": {"type": "string", "enum": ["annot", "dltrain", "browse", "sampling"]},
         "dltrain": {
             "type": "object",
             "properties": {
@@ -727,6 +727,13 @@ task_schema = {
                 "min-size": {"type": "integer"},
                 "max-size": {"type": "integer"},
                 "display-patch-size": {"type": "integer"}
+            },
+            "required": ["labelset"]
+        },
+        "sampling": {
+            "type": "object",
+            "properties": {
+                "labelset": {"type": "string"}
             },
             "required": ["labelset"]
         },

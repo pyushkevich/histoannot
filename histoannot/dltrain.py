@@ -48,15 +48,19 @@ from . import slide
 from rq import Queue, Connection, Worker
 from rq.job import Job, JobStatus
 from redis import Redis
+from math import sqrt
 
 import click
 from flask.cli import cli, with_appcontext
+
+from jsonschema import validate
 
 bp = Blueprint('dltrain', __name__)
 
 # Index
 
 # Get a table of labels in a labelset with counts for the current task/slide
+# TODO: labelsets are not exclusive to dltrain, so this should reside in its own py file
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table/json', methods=('GET',))
 @access_task_read
 def get_labelset_labels_table_json(task_id, slide_id):
@@ -64,18 +68,30 @@ def get_labelset_labels_table_json(task_id, slide_id):
 
     project,task = get_task_data(task_id)
 
-    ll = db.execute('SELECT L.*, COUNT(T.id) as n_samples '
-                    'FROM label L LEFT JOIN training_sample T '
-                    '             ON T.label = L.id AND T.task=? AND T.slide=? '
-                    '             LEFT JOIN labelset_info LS on L.labelset = LS.id '
-                    'WHERE LS.name=? AND LS.project=?'
-                    'GROUP BY L.id '
-                    'ORDER BY L.id', 
-                    (task_id, slide_id, task['dltrain']['labelset'], project))
+    if task['mode'] == 'dltrain':
+        ll = db.execute('SELECT L.*, COUNT(T.id) as n_samples '
+                        'FROM label L LEFT JOIN training_sample T '
+                        '             ON T.label = L.id AND T.task=? AND T.slide=? '
+                        '             LEFT JOIN labelset_info LS on L.labelset = LS.id '
+                        'WHERE LS.name=? AND LS.project=?'
+                        'GROUP BY L.id '
+                        'ORDER BY L.id', 
+                        (task_id, slide_id, task['dltrain']['labelset'], project))
+    elif task['mode'] == 'sampling':
+        ll = db.execute('SELECT L.*, COUNT(SR.id) as n_samples '
+                        'FROM label L LEFT JOIN sampling_roi SR '
+                        '             ON SR.label = L.id AND SR.task=? AND SR.slide=? '
+                        '             LEFT JOIN labelset_info LS on L.labelset = LS.id '
+                        'WHERE LS.name=? AND LS.project=?'
+                        'GROUP BY L.id '
+                        'ORDER BY L.id', 
+                        (task_id, slide_id, task['sampling']['labelset'], project))
 
-    ll_data = [dict(row) for row in ll.fetchall()]
-    
-    return json.dumps(ll_data)
+    if ll:
+        ll_data = [dict(row) for row in ll.fetchall()]    
+        return json.dumps(ll_data)
+    else:
+        abort(Response('Incompatible task mode', 401))
 
 
 # Get a table of labels in a labelset with counts for the current task/slide
@@ -442,10 +458,10 @@ def get_samples(task_id, slide_id):
         (slide_id, task_id));
     return json.dumps([dict(row) for row in ll.fetchall()])
 
-# TODO: login_required is insufficient here
-@bp.route('/dltrain/api/sample/delete', methods=('POST',))
-@login_required
-def delete_sample():
+
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/delete', methods=('POST',))
+@access_task_write
+def delete_sample(task_id, slide_id):
     sample_id = int(request.form['id'])
     db = get_db()
 
@@ -470,9 +486,9 @@ def delete_sample():
 
 
 # TODO: login_required is insufficient here
-@bp.route('/dltrain/api/sample/update', methods=('POST',))
-@login_required
-def update_sample():
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sample/update', methods=('POST',))
+@access_task_write
+def update_sample(task_id, slide_id):
     data = json.loads(request.get_data())
     rect = data['geometry']
     sample_id = data['id'];
@@ -503,8 +519,6 @@ def update_sample():
     db.commit()
 
     # Save an image patch around the sample
-    slide_id = db.execute('SELECT slide FROM training_sample WHERE id=?', 
-                          (sample_id,)).fetchone()['slide']
     generate_sample_patch(slide_id, sample_id, rect)
 
     return "success"
@@ -656,6 +670,168 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0, metadata=
 
     # Return the sample id and the patch generation job id
     return json.dumps({ 'id' : sample_id, 'patch_job_id' : job.id })
+
+
+# For safety, any JSON inserted into the database should be validated
+# A schema against which the JSON is validated
+sampling_roi_trapezoid_schema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "type": {"type": "string", "enum": [ "trapezoid" ]},
+        "data": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2, 
+            "items": { 
+                "type": "array", 
+                "minItems": 3,
+                "maxItems": 3, 
+                "items": {"type": "number"} } } },
+    "required": ["type", "data"]
+}
+
+
+# Compute a bounding box for an ROI
+def compute_sampling_roi_bounding_box(geom_data):
+    if geom_data.get('type') == 'trapezoid':
+        # Read the coordinates
+        [ [x0, y0, w0], [x1, y1, w1] ] = geom_data['data']
+
+        # Compute the normal vector
+        nx, ny = y1 - y0, x0 - x1
+        nlen = sqrt(nx * nx + ny * ny)
+        nx, ny = nx/nlen, ny/nlen
+
+        # Compute the corners
+        xmin, ymin = x0 - w0 * nx, y0 - w0 * ny 
+        xmin, ymin = min(xmin, x0 + w0 * nx), min(ymin, y0 + w0 * ny)
+        xmin, ymin = min(xmin, x1 - w1 * nx), min(ymin, y1 - w1 * ny)
+        xmin, ymin = min(xmin, x1 - w1 * nx), min(ymin, y1 - w1 * ny)
+        xmax, ymax = x0 - w0 * nx, y0 - w0 * ny 
+        xmax, ymax = max(xmax, x0 + w0 * nx), max(ymax, y0 + w0 * ny)
+        xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
+        xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
+
+        return [xmin, ymin, xmax, ymax]
+
+
+# Callable function for creating a sampling ROI
+def create_sampling_roi_base(task_id, slide_id, label_id, geom_data, osl_level=0, metadata={}):
+
+    # Validate the JSON
+    if geom_data.get('type') == 'trapezoid':
+        validate(instance=geom_data, schema=sampling_roi_trapezoid_schema)
+    else:
+        raise ValueError('Unknown or missing sampling roi type')
+
+    # Put JSON in the database
+    _,t_data = get_task_data(task_id)
+    db = get_db()
+
+    # Create a meta record
+    meta_id = create_edit_meta(**metadata)
+
+    # Compute the bounding box 
+    [x0, y0, x1, y1] = compute_sampling_roi_bounding_box(geom_data)
+
+    # Create the main record
+    roi_id = db.execute(
+        'INSERT INTO sampling_roi (meta_id,x0,y0,x1,y1,json,label,slide,task) VALUES (?,?,?,?,?,?,?,?,?)',
+        (meta_id, x0, y0, x1, y1, json.dumps(geom_data), label_id, slide_id, task_id)
+    ).lastrowid
+
+    # Commit
+    db.commit()
+
+    # Return the sample id and the patch generation job id
+    return json.dumps({ 'id' : roi_id })
+
+
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sampling_roi/create', methods=('POST',))
+@access_task_write
+def create_sampling_roi(task_id, slide_id):
+
+    data = json.loads(request.get_data())
+    geom_data = data['geometry']
+    label_id = data['label_id']
+    return create_sampling_roi_base(task_id, slide_id, label_id, geom_data)
+
+
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sampling_roi/update', methods=('POST',))
+@access_task_write
+def update_sampling_roi(task_id, slide_id):
+
+    # Validate the JSON
+    data = json.loads(request.get_data())
+    geom_data = data['geometry']
+    if geom_data.get('type') == 'trapezoid':
+        validate(instance=geom_data, schema=sampling_roi_trapezoid_schema)
+    else:
+        raise ValueError('Unknown or missing sampling roi type')
+    
+    # Get the roi id and label id
+    roi_id, label_id = data['id'], data['label_id']
+
+    # Put JSON in the database
+    _,t_data = get_task_data(task_id)
+    db = get_db()
+
+    # Update the metadata for this ROI
+    rc = db.execute('SELECT meta_id FROM sampling_roi WHERE id=?', (roi_id,)).fetchone()
+    update_edit_meta(rc['meta_id'])
+
+    # Update the geometry
+    [x0, y0, x1, y1] = compute_sampling_roi_bounding_box(geom_data)
+
+    # Create the main record
+    db.execute(
+        'UPDATE sampling_roi '
+        'SET x0=?, y0=?, x1=?, y1=?, json=?, label=? ' 
+        'WHERE id=?',
+        (x0, y0, x1, y1, json.dumps(geom_data), label_id, roi_id))
+
+    # Commit
+    db.commit()
+
+    # Return the sample id and the patch generation job id
+    return json.dumps({ 'id' : roi_id })
+
+
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sampling_roi/delete', methods=('POST',))
+@access_task_write
+def delete_sampling_roi(task_id, slide_id):
+
+    # Validate the JSON
+    data = json.loads(request.get_data())
+    roi_id = data['id']
+
+    # Delete the meta record
+    db = get_db()
+    db.execute('DELETE FROM edit_meta WHERE id IN '
+               '(SELECT meta_id FROM sampling_roi WHERE id=?)',
+               (roi_id,))
+
+    # Delete the sample
+    db.execute('DELETE FROM sampling_roi WHERE id=?', (roi_id,))
+
+    # Commit
+    db.commit()
+
+    return "success"
+
+
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/sampling_roi/get', methods=('GET',))
+@access_task_read
+def get_sampling_rois(task_id, slide_id):
+    db = get_db()
+    ll = db.execute(
+        'SELECT SR.*, M.creator, M.editor, M.t_create, M.t_edit, L.color '
+        'FROM sampling_roi SR LEFT JOIN label L on SR.label = L.id '
+        '                     LEFT JOIN edit_meta M on SR.meta_id = M.id '
+        'WHERE SR.slide=? and SR.task=? ORDER BY M.t_edit DESC ',
+        (slide_id, task_id));
+    return json.dumps([dict(row) for row in ll.fetchall()])
 
 
 # --------------------------------

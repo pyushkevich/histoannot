@@ -178,7 +178,7 @@ def task_specimen_listing(task_id):
                GROUP BY specimen
                ORDER BY specimen_display""", (task_id,)).fetchall()
 
-    elif task['mode'] == 'browse':
+    else:
         blocks = db.execute(
             """SELECT specimen_display, specimen, COUNT(DISTINCT block_id) as nblocks, COUNT(S.id) as nslides
                FROM task_slide_info S
@@ -360,7 +360,7 @@ def make_slide_dbview(task_id, view_name):
                 GROUP BY S.id, S.section, S.slide, specimen, block_name
                 ORDER BY specimen_private, block_name, section, slide""" % (view_name, int(task_id)))
 
-    elif task['mode'] == 'browse':
+    else:
 
         db.execute(
             """CREATE TEMP VIEW %s AS
@@ -414,7 +414,7 @@ def block_slide_listing(task_id, specimen, block_name):
                GROUP BY S.id, S.section, S.slide
                ORDER BY section, slide""", (task_id, block_id)).fetchall()
 
-    elif task['mode'] == 'browse':
+    else:
 
         slides = db.execute(
             """SELECT S.* FROM task_slide_info S
@@ -510,7 +510,7 @@ def task_slide_listing(task_id):
                GROUP BY S.id, S.section, S.slide
                ORDER BY section, slide""", (task_id,)).fetchall()
 
-    elif task['mode'] == 'browse':
+    else:
 
         slides = db.execute(
             """SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain 

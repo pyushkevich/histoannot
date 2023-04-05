@@ -1,0 +1,27 @@
+[
+  {
+    "name": "CS",
+    "color": "#ca06c9",
+    "description": "CA1 and Subiculum Region"
+  },
+  {
+    "name": "DG",
+    "color": "#007bff",
+    "description": "Dentate gyrus"
+  },
+  {
+    "name": "ERCh",
+    "color": "#cac906",
+    "description": "Entorhinal cortex, on hippocampus slide"
+  },
+  {
+    "name": "ERCa",
+    "color": "#72181e",
+    "description": "Entorhinal cortex, on amygdala slide"
+  },
+  {
+    "name": "Amygdala",
+    "color": "#9d3c9f",
+    "description": "Amygdala"
+  }
+]

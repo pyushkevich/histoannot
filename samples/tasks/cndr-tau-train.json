@@ -1,0 +1,15 @@
+{
+    "restrict-access": true, 
+    "name": "CNDR Tanglethon 2023", 
+    "stains": [
+        "PHF1"
+    ], 
+    "tags": { "any" : ["thon2023"] },
+    "dltrain": {
+        "labelset": "cndr_tau",
+	"min-size": 32,
+	"max-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Tau pathological inclusion classifier training for CNDR PHF1 slides"
+}

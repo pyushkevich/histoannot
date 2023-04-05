@@ -25,6 +25,10 @@
   {% include 'dbtrain/sample_table_bare.html' %}
 {% endif %}
 
+{% if seg_mode == 'sampling' %}
+  {% include 'dbtrain/label_table_bare.html' %}
+{% endif %}
+
 <style type="text/css">
 
     html {
@@ -190,7 +194,7 @@
 <div class="pure-g">
     {% if seg_mode == 'annot' or seg_mode == 'browse' %}
     <div class="pure-u-5-5">
-    {% elif seg_mode == 'dltrain' %}
+    {% elif seg_mode == 'dltrain' or seg_mode == 'sampling' %}
     <div class="pure-u-4-5">
     {% endif %}
 
@@ -230,7 +234,7 @@
                         </div>
 
                         <!-- affine or raw mode -->
-                        {% if seg_mode != 'dltrain' %}
+                        {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
                         <div>
                             <form id="form_disp_opt" target="#" class="pure-form pure-form-aligned">
                                 <fieldset>
@@ -339,6 +343,15 @@
         </div>
     </div>
     {% endif %}
+
+    {% if seg_mode == 'sampling' %}
+    <div class="pure-u-1-5">
+        <div id="div_dltrain_labels" style="padding-left: 1em">
+        </div>
+    </div>
+    {% endif %}
+
+
 </div>
 
 <!-- A dialog showing slide loading progress -->
@@ -407,9 +420,11 @@
 <button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</button>
 {% elif seg_mode == 'dltrain' %}
 <button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
+{% elif seg_mode == 'sampling' %}
+<button id="trap_button" class="bottom_button enabled">&nbsp Draw Trapezoid (T) &nbsp</button>
 {% endif %}
 
-{% if seg_mode == 'dltrain' or seg_mode == 'annot' %}
+{% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
 <button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
 {% endif %}
 
@@ -595,6 +610,9 @@ $(document).ready(function()
             // If initial sample specified, focus on it
             setTimeout(function() { focus_on_initial_sample() }, 250);
         }
+        else if (seg_mode === 'sampling') {
+            sroi_api.refresh_rois();
+        }
     }
 
     // Paper default settings
@@ -754,6 +772,10 @@ $(document).ready(function()
     var curr_box;
     var curr_box_drag_start;
 
+    // Variables for sampling ROI mode
+    var curr_trapezoid;
+    var curr_trapezoid_drag_start;
+
     // Helper function to get Point corresponding to OSD event
     var ev_point = function(event) {
         if(!paper || !paper.view)
@@ -788,7 +810,6 @@ $(document).ready(function()
         for (var i = 0; i < selected.length; i++) {
             var item = selected[i];
             if (item instanceof paper.Path || item instanceof paper.PointText) {
-                console.log('seleted on ', item)
                 n++;
             }
         }
@@ -853,7 +874,7 @@ $(document).ready(function()
             })
     };
 
-    // A class dealing with keeping track of samples
+    // A class dealing with keeping track of training patches
     function SampleAPI() {
 
         // Create a self variable
@@ -968,7 +989,7 @@ $(document).ready(function()
             }
             else {
                 // Send the completed marker to the server
-                $.post("{{ url_for('dltrain.update_sample') }}",
+                $.post("{{ url_for('dltrain.update_sample', task_id = task_id, slide_id = slide_id) }}",
                     JSON.stringify(box.data),
                     function(response_text) {
                         if(cb_success)
@@ -1046,7 +1067,7 @@ $(document).ready(function()
             if(box.data.id) {
                 box.remove();
                 $.ajax({
-                    url: "{{ url_for('dltrain.delete_sample') }}",
+                    url: "{{ url_for('dltrain.delete_sample', task_id = task_id, slide_id = slide_id) }}",
                     data: { id: box.data.id },
                     type: 'post',
                     success: function(data) {
@@ -1091,10 +1112,381 @@ $(document).ready(function()
         };
     }
 
+    // A cass deaing with sampling ROIs for 
+    function SamplingRegionAPI() {
+
+        // Create a self variable
+        self = this;
+
+        // A map from server id to known ROIs
+        self.roimap = new Map();
+
+        // Get the normal vector from the midline
+        this.get_normal = function(x0, y0, x1, y1) {
+            let nx = y1 - y0;
+            let ny = x0 - x1;
+            let nl = Math.sqrt(nx*nx+ny*ny);
+            nx = nx / nl;
+            ny = ny / nl;
+            return [nx, ny];
+        }
+
+        // Update the polygon vertices given geometry
+        this.recompute_polygon = function(polygon, x0, y0, w0, x1, y1, w1) {
+            let [nx, ny] = this.get_normal(x0, y0, x1, y1);
+            polygon.segments[0].point.x = x0 + nx * w0;
+            polygon.segments[0].point.y = y0 + ny * w0;
+            polygon.segments[1].point.x = x1 + nx * w1;
+            polygon.segments[1].point.y = y1 + ny * w1;
+            polygon.segments[2].point.x = x1 - nx * w1;
+            polygon.segments[2].point.y = y1 - ny * w1;
+            polygon.segments[3].point.x = x0 - nx * w0;
+            polygon.segments[3].point.y = y0 - ny * w0;
+        }
+
+        // A function to update a box with new coordinates
+        this.update_midline = function(T, x0, y0, x1, y1) {
+            let midline = T['midline']
+
+            // Update the midline
+            midline.segments[0].point.x = x0;
+            midline.segments[0].point.y = y0;
+            midline.segments[1].point.x = x1;
+            midline.segments[1].point.y = y1;
+
+            // Update the geometry
+            midline.data.geometry[0][0] = x0;
+            midline.data.geometry[0][1] = y0;
+            midline.data.geometry[1][0] = x1;
+            midline.data.geometry[1][1] = y1;
+
+            // Update the polygon from the geometry
+            this.recompute_polygon(T['polygon'], x0, y0, midline.data.geometry[0][2], x1, y1, midline.data.geometry[1][2]);
+        };
+        
+        // Function to create a trapezoid from given geometry data, label, and color
+        this.update_trapezoid = function(T, geometry, label_id, color, raw_stroke_width = 2) {
+            // Read the geometry
+            [x0, y0, w0] = geometry[0];
+            [x1, y1, w1] = geometry[1];
+
+            // Update the midline geometry and properties
+            T['midline'].segments[0].point.x = x0;
+            T['midline'].segments[0].point.y = y0;
+            T['midline'].segments[1].point.x = x1;
+            T['midline'].segments[1].point.y = y1;
+            T['midline'].strokeColor = color;
+            T['midline'].selectedColor = color;
+
+            // Update the polygon
+            self.recompute_polygon(T['polygon'], x0, y0, w0, x1, y1, w1);
+            T['polygon'].strokeColor = color;
+            T['polygon'].selectedColor = color;
+
+            // Assign the properties
+            T['midline'].data.label_id = label_id;
+            T['midline'].data.label_color = color;
+            T['midline'].data.geometry = [ [ x0, y0, w0 ], [x1, y1, w1 ] ];
+            set_paperjs_item_strokewidth(T['midline'], raw_stroke_width * 2);
+            set_paperjs_item_strokewidth(T['polygon'], raw_stroke_width);
+        }
+        
+        // Function to create a trapezoid from given geometry data, label, and color
+        this.create_trapezoid = function(geometry, label_id, color, raw_stroke_width = 2) {
+            // Read the geometry
+            let [x0, y0, w0] = geometry[0];
+            let [x1, y1, w1] = geometry[1];
+
+            // Create and update the polygon. This is created first so that the handle
+            // of the midline overrides the handle of the polygon
+            let polygon = new paper.Path({
+                segments: [ new paper.Point(x0,y0), new paper.Point(x0,y0), 
+                            new paper.Point(x1,y1), new paper.Point(x1,y1) ],
+                closed: true,
+                strokeColor: color,
+                selectedColor : color});
+
+            // Create the midline
+            let midline = new paper.Path({
+                segments: [ new paper.Point(x0,y0), new paper.Point(x1,y1) ],
+                closed: false,
+                strokeColor: color,
+                selectedColor : color});
+
+            self.recompute_polygon(polygon, x0, y0, w0, x1, y1, w1);
+
+            // Assign the properties
+            midline.data.label_id = label_id;
+            midline.data.label_color = color;
+            midline.data.geometry = [ [ x0, y0, w0 ], [x1, y1, w1 ] ];
+            set_paperjs_item_strokewidth(midline, raw_stroke_width * 2);
+            set_paperjs_item_strokewidth(polygon, raw_stroke_width);
+
+            // Return as dictionary object containing Path objects
+            return { 'midline': midline, 'polygon': polygon};
+        }
+
+        // Update the width/bases of the trapezoid
+        this.update_widths = function(T, x, y) {
+            let midline = T['midline'];
+            let x0 = midline.segments[0].point.x;
+            let y0 = midline.segments[0].point.y;
+            let x1 = midline.segments[1].point.x;
+            let y1 = midline.segments[1].point.y;
+            let [nx, ny] = self.get_normal(x0, y0, x1, y1);
+
+            let w = Math.abs(nx * (x - x0) + ny * (y - y0));
+            self.recompute_polygon(T['polygon'], x0, y0, w, x1, y1, w);
+            midline.data.geometry = [ [ x0, y0, w ], [x1, y1, w ] ];
+        }
+
+        // Upload a trapezoid 
+        this.upload_new_trapezoid = function(T, cb_success) {
+
+            // Create JSON describing this object
+            let midline = T['midline'];
+            ajax_data = {
+                "geometry": {
+                    "type": "trapezoid",
+                    "data": midline.data.geometry
+                },
+                "label_id": midline.data.label_id
+            };
+
+            // Send the completed marker to the server
+            $.ajax({
+                url: "{{ url_for('dltrain.create_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
+                type: 'post',
+                data: JSON.stringify(ajax_data),
+                success: function(response_text) {
+                    data = JSON.parse(response_text);
+                    T['midline'].data.id = data.id;
+                    T['polygon'].data.id = data.id;
+                    self.roimap.set(data.id, T);
+                    if(cb_success)
+                        cb_success();
+                },
+                error: function (xhr, ajaxOptions, thrownError) {
+                    T['midline'].remove();
+                    T['polygon'].remove();
+                    paper.view.draw();
+                    alert(xhr.responseText);
+                }
+            });
+        };
+
+        // Modify an existing sample (e.g., as a result of dragging, resizing)
+        this.modify_roi = function(path_obj, cb_success) {
+
+            // Look up the roi
+            let T = self.roimap.get(path_obj.data.id);
+            let midline = T['midline'];
+
+            // Create JSON describing this object
+            ajax_data = {
+                "geometry": {
+                    "type": "trapezoid",
+                    "data": midline.data.geometry
+                },
+                "label_id": midline.data.label_id,
+                "id": path_obj.data.id
+            };
+
+            console.log('Posting:', JSON.stringify(ajax_data));
+
+            // Send the completed marker to the server
+            $.post("{{ url_for('dltrain.update_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
+                JSON.stringify(ajax_data),
+                function(response_text) {
+                    if(cb_success)
+                        cb_success();
+                }
+            );
+        };
+        
+
+        // Request a list of all ROIs from the server and update the paper.js canvas with
+        this.refresh_rois = function() {
+
+            // If we are in a middle of a movement action, do not perform updates
+            // TODO: this should not be here, but in the calling code
+            if((moving_object && moving_object_moved) || curr_trapezoid) {
+                do_delay(self.refresh_rois, 10000);
+                return;
+            }
+
+            // Make a request for the samples
+            $.ajax({
+                url: "{{ url_for('dltrain.get_sampling_rois', task_id = task_id, slide_id = slide_id) }}",
+                type: 'get',
+                success: function(data) {
+
+                    // Get a list of all the new samples
+                    let samples = JSON.parse(data);
+
+                    // Keep track of samples that need to be removed
+                    let sample_ids = new Map();
+
+                    // Add all the new samples
+                    samples.forEach(function(item, index) {
+
+                        // Get the geometry description
+                        geom_data = JSON.parse(item.json);
+
+                        // For now we only handle trapezoids
+                        if(geom_data.type != 'trapezoid')
+                            return;
+
+                        // Record that we received this id
+                        sample_ids.set(item.id, null);
+
+                        // Does this trapezoid already exist?
+                        var T = self.roimap.get(item.id);
+
+                        // Update or create the box
+                        if(T) {
+                            self.update_trapezoid(T, geom_data.data, item.label, item.color);
+                        } else {
+                            T = self.create_trapezoid(geom_data.data, item.label, item.color);
+                            self.roimap.set(item.id, T);
+                            T['midline'].data.id = item.id;
+                            T['polygon'].data.id = item.id;
+                        }
+                    });
+
+                    // Remove all the items that were not received (deleted elsewhere)
+                    paper.project.activeLayer.children.forEach(function(item,index) {
+                        if(! sample_ids.has(item.data.id) ) {
+                            item.remove();
+                        }
+                    });
+
+                    paper.view.draw();
+                },
+                complete: function(data) {
+                    do_delay(self.refresh_rois, 10000)
+                }
+            });
+        };
+
+        // Select a trapezoid
+        this.on_selection = function(path_obj, sel_state) {
+
+            // Look up the roi
+            let T = self.roimap.get(path_obj.data.id);
+            
+            // Select both parts of it
+            T['midline'].selected = sel_state;
+            T['polygon'].selected = sel_state;
+        }
+
+        // Get the label id of the path object
+        this.get_label_id = function(path_obj) {
+            let T = self.roimap.get(path_obj.data.id);
+            return T['midline'].data.label_id;
+        }
+
+        // Move a trapezoid by a delta amount
+        this.move_roi = function(path_obj, dx, dy) {
+            // Look up the roi
+            let T = self.roimap.get(path_obj.data.id);
+
+            // Read the geometry
+            [x0, y0, w0] = T['midline'].data.geometry[0];
+            [x1, y1, w1] = T['midline'].data.geometry[1];
+
+            // Shift coordinates by the delta
+            self.update_midline(T, x0+dx, y0+dy, x1+dx, y1+dy);
+        }
+
+        // Move a handle in the object
+        this.move_roi_handle = function(path_obj, handle, dx, dy) {
+
+            // Look up the roi
+            let T = self.roimap.get(path_obj.data.id);
+
+            // Read the geometry
+            [x0, y0, w0] = T['midline'].data.geometry[0];
+            [x1, y1, w1] = T['midline'].data.geometry[1];
+
+            // Which handle is being moved?
+            if(path_obj === T['midline']) {
+                if(handle == 0)
+                    self.update_midline(T, x0+dx, y0+dy, x1, y1);
+                else
+                    self.update_midline(T, x0, y0, x1+dx, y1+dy);
+            } 
+            else {
+                let p = T['polygon'].segments[handle].point;
+                self.update_widths(T, p.x + dx, p.y + dy);
+            }
+
+        }
+
+        // Delete a sample (input object may be a polygon or the midline)
+        this.delete_roi = function(path_obj, cb_success) {
+
+            // Look up the roi
+            let T = self.roimap.get(path_obj.data.id);
+
+            // Create JSON describing this object
+            ajax_data = {
+                "id": path_obj.data.id
+            };
+
+            // Send the completed marker to the server
+            T['midline'].remove();
+            T['polygon'].remove();
+            $.post("{{ url_for('dltrain.delete_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
+                JSON.stringify(ajax_data),
+                function(response_text) {
+                    self.roimap.delete(path_obj.data.id);
+                    paper.view.draw();
+                    if(cb_success)
+                        cb_success();
+                }
+            );
+        };
+
+        // Count selected samples
+        this.get_selected_rois_count = function() {
+            let n = 0;
+            self.roimap.forEach(function(item, index) {
+                if(item['midline'].selected) n++;
+            });
+            return n;
+        };
+
+        // Relabel selected samples
+        this.relabel_selected_rois = function(new_label_id, new_label_color, cb_success) {
+            self.roimap.forEach(function(item, index) {
+                let midline = item['midline'];
+                let polygon = item['polygon'];
+                if(midline.selected) {
+                    if(midline.data.label_id != new_label_id) {
+                        midline.data.label_id = new_label_id;
+                        midline.data.label_color = new_label_color;
+                        midline.strokeColor = new_label_color;
+                        midline.selectedColor = new_label_color;
+                        polygon.strokeColor = new_label_color;
+                        polygon.selectedColor = new_label_color;
+                        self.modify_roi(midline, cb_success);
+                    }
+                }
+            });
+        };
+    }
+
     // Instantiate API for getting samples
     var sample_api = undefined;
     if(seg_mode == 'dltrain') {
         sample_api = new SampleAPI();
+    }
+
+    // Instantiate API for sampling regions
+    var sroi_api = undefined;
+    if(seg_mode == 'sampling') {
+        sroi_api = new SamplingRegionAPI();
     }
 
     // This variable stores the current mouse position in the viewer
@@ -1112,6 +1504,7 @@ $(document).ready(function()
             hit = my_hit_test(ev_point(event));
             moving_object=null;
             if(hit) {
+                console.log('Hit:', hit.type, hit.item.segments.length, hit.item.selected)
                 if(!hit.item.selected) {
                     // Hitting an unselected target
                     deselect_all_manipulables();
@@ -1120,19 +1513,30 @@ $(document).ready(function()
                         select_label(hit.item.data.label_id);
                         reset_samples_table_on_label_change(hit.item.data.label_id);
                     }
+                    else if(seg_mode === 'sampling' && hit.item.data.label_id) {
+                        sroi_api.on_selection(hit.item, true);
+                        select_label(sroi_api.get_label_id(hit.item));
+                    }
+
                     fn_update_button_state();
                     paper.view.draw();
                     moving_object = hit.item;
                     moving_object_moved = true;
+                    moving_object_handle = null;
                 }
                 else {
                     moving_object = hit.item;
                     moving_object_moved = false;
-                    if (seg_mode === 'dltrain') {
+
+
+                    if (seg_mode === 'dltrain' || seg_mode === 'sampling') {
                         if(hit.type === 'segment') {
                             moving_object_handle = hit.segment.index;
                         } else {
                             moving_object_handle = null;
+                            if(seg_mode === 'sampling') {
+                                sroi_api.on_selection(hit.item, false);
+                            }
                         }
                     }
                 }
@@ -1154,6 +1558,28 @@ $(document).ready(function()
 
             // Redraw canvas (probably pointless)
             paper.view.draw();
+        }
+        else if (curr_mode === 'TRAPEZOID') {
+            // Record the starting point
+            curr_trapezoid_drag_start = ev_point(event);
+
+            // Create an empty trapezoid at the point
+            curr_trapezoid = sroi_api.create_trapezoid(
+                [ [ curr_trapezoid_drag_start.x, curr_trapezoid_drag_start.y, 0. ],
+                  [ curr_trapezoid_drag_start.x, curr_trapezoid_drag_start.y, 0. ] ],
+                get_current_label_id(), get_current_label_color());
+
+            // Redraw canvas (probably pointless)
+            paper.view.draw();
+        }
+        else if (curr_mode === 'TRAPEZOID_WIDTH') {
+            // Store the trapezoid on the server
+            sroi_api.upload_new_trapezoid(
+                curr_trapezoid, 
+                function() {
+                    do_delay(reload_label_and_sample_tables, 1000)
+                });
+            update_current_mode('NAV');
         }
     };
 
@@ -1189,11 +1615,26 @@ $(document).ready(function()
                         sample_api.move_box(moving_object, delta.x, delta.y);
                     }
                 }
+                else if(seg_mode === 'sampling') {
+                    var delta = ev_delta(event);
+                    if(moving_object_handle != null) {
+                        sroi_api.move_roi_handle(moving_object, moving_object_handle, delta.x, delta.y);
+                    }
+                    else {
+                        sroi_api.move_roi(moving_object, delta.x, delta.y);
+                    }
+                }
 
                 // Mark object as having moved
                 moving_object_moved = true;
                 paper.view.draw();
             }
+        }
+        else if(curr_mode === 'TRAPEZOID') {
+            let p0 = curr_trapezoid_drag_start;
+            let p1 = ev_point(event);
+            sroi_api.update_midline(curr_trapezoid, p0.x, p0.y, p1.x, p1.y);
+            paper.view.draw();
         }
     };
 
@@ -1237,6 +1678,9 @@ $(document).ready(function()
             curr_box = undefined;
             on_interaction_completed();
         }
+        else if(curr_mode === 'TRAPEZOID') {
+            update_current_mode('TRAPEZOID_WIDTH');
+        }
         else if(curr_mode === 'NAV' && moving_object)
         {
             if(moving_object_moved) {
@@ -1245,6 +1689,11 @@ $(document).ready(function()
                 }
                 else if(seg_mode === 'dltrain') {
                     sample_api.modify_sample(moving_object, function() {
+                        do_delay(reload_label_and_sample_tables, 1000)
+                    });
+                }
+                else if(seg_mode === 'sampling') {
+                    sroi_api.modify_roi(moving_object, function() {
                         do_delay(reload_label_and_sample_tables, 1000)
                     });
                 }
@@ -1323,7 +1772,8 @@ $(document).ready(function()
     var my_hit_test = function(point) {
         if(seg_mode === 'annot') {
             return paper.project.hitTest(point);
-        } else if (seg_mode === 'dltrain') {
+        } 
+        else if (seg_mode === 'dltrain' || seg_mode === 'sampling') {
             var hit_test_options = {
                 segments: true,
                 stroke: true,
@@ -1397,6 +1847,11 @@ $(document).ready(function()
         else if(curr_mode === 'FIXEDBOX') {
             update_fixed_box(ev_point(event));
             pointer = "crosshair";
+            paper.view.draw();
+        }
+        else if(curr_mode === 'TRAPEZOID_WIDTH') {
+            let p = ev_point(event);
+            sroi_api.update_widths(curr_trapezoid, p.x, p.y);
             paper.view.draw();
         }
 
@@ -1511,6 +1966,19 @@ $(document).ready(function()
         fn_focus_on_viewer()
     };
 
+    var trapezoid_pressed_handler = function(options) {
+        set_slide_mouse_nav(false);
+        viewer.outerTracker.setTracking(false);
+
+        // The active mode depends on whether this is a fixed-size box
+        // or a draggable box
+        update_current_mode('TRAPEZOID');
+
+        fn_active_button(document.getElementById('trap_button'))
+        document.getElementById("view").style.cursor = "crosshair";
+        fn_focus_on_viewer()
+    };
+
     var del_pressed_handler = function(options) {
         if(document.getElementById("del_button").className.includes(" enabled")) {
             var selected = paper.project.selectedItems;
@@ -1533,6 +2001,15 @@ $(document).ready(function()
                     reload_label_and_sample_tables();
                     fn_update_button_state()
                 });
+            }
+            else if(seg_mode === 'sampling') {
+                 // Iterate over the selected items
+                 paper.project.selectedItems.forEach(function(item, index) {
+                    // This box needs to be deleted
+                    sroi_api.delete_roi(item);
+                    reload_label_and_sample_tables();
+                    fn_update_button_state()
+                });               
             }
 
             fn_focus_on_viewer();
@@ -1594,21 +2071,45 @@ $(document).ready(function()
         Mousetrap.bind('>', function() {$("form#form-next").submit();});
 
     if (seg_mode=='annot') {
-        var drawButton = add_seadragon_button('draw_button', 'Draw line segments on the slide', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, draw_pressed_handler);
+        var drawButton = add_seadragon_button(
+            'draw_button', 
+            'Draw line segments on the slide', 
+            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+            draw_pressed_handler);
         Mousetrap.bind('l', function() { draw_pressed_handler() });
 
-        var markerButton = add_seadragon_button('marker_button', 'Place anatomical marker', OpenSeadragon.ControlAnchor.BOTTOM_LEFT, marker_pressed_handler);
+        var markerButton = add_seadragon_button(
+            'marker_button', 
+            'Place anatomical marker', 
+            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+            marker_pressed_handler);
         Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
     }
 
     else if(seg_mode=='dltrain') {
-        var boxButton = add_seadragon_button('box_button','Draw boxes for training classes',OpenSeadragon.ControlAnchor.BOTTOM_LEFT, box_pressed_handler)
+        var boxButton = add_seadragon_button(
+            'box_button',
+            'Draw boxes for training classes',
+            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+            box_pressed_handler);
         Mousetrap.bind('b', function() { box_pressed_handler(); });
-
     }
 
-    if(seg_mode == 'annot' || seg_mode == 'dltrain') {
-        var delButton = add_seadragon_button('del_button', 'Delete selected line or text', OpenSeadragon.ControlAnchor.BOTTOM_RIGHT, del_pressed_handler);
+    else if(seg_mode=='sampling') {
+        var trapButton = add_seadragon_button(
+            'trap_button',
+            'Draw sampling trapezoid',
+            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+            trapezoid_pressed_handler);
+        Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
+    }
+
+    if(seg_mode == 'annot' || seg_mode == 'dltrain' || seg_mode == 'sampling') {
+        var delButton = add_seadragon_button(
+            'del_button', 
+            'Delete selected line or text', 
+            OpenSeadragon.ControlAnchor.BOTTOM_RIGHT, 
+            del_pressed_handler);
         Mousetrap.bind(['backspace', 'del'], function() { del_pressed_handler() });
     }
 
@@ -1742,6 +2243,41 @@ $(document).ready(function()
         fn_focus_on_viewer();
 
     }
+
+    else if (seg_mode == 'sampling') {
+
+        // Create the labels table
+        create_label_table_html($('#div_dltrain_labels'));
+
+        // TODO: this is quite ugly, basically overloading reload_label_and_sample_tables; 
+        // instead this should go to the corresponding API class
+
+        // Function to reload labels in a loop
+        var reload_label_and_sample_tables = function() {
+            load_label_table_ajax(function() {
+                var id = get_current_label_id();
+                do_delay(reload_label_and_sample_tables, 10000);
+            });
+        };
+
+        // Initial load of the sample tables
+        reload_label_and_sample_tables();
+
+        let label_select_callback = function(id) {
+            if(curr_mode === 'NAV' && sroi_api.get_selected_rois_count() > 0) {
+                if(window.confirm(`Do you want to relabel selected ROIs as ${get_current_label_name()}?`)) {
+                    sroi_api.relabel_selected_rois(id, get_current_label_color(), function() {
+                        reload_label_and_sample_tables();
+                    });
+                    paper.view.draw();
+                }
+            }
+            fn_focus_on_viewer();
+        };
+
+        set_label_table_click_callback(label_select_callback);
+    }
+
     // Initialize parts of UI related to annotation
     else if (seg_mode === 'annot' || seg_mode === 'browse') {
 

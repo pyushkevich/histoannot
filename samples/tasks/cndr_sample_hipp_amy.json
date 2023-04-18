@@ -1,9 +1,6 @@
 {
     "restrict-access": true, 
     "name": "CNDR Sampling ROIs", 
-    "stains": [
-        "HE"
-    ], 
     "sampling": {
         "labelset": "anat_sampling"
     }, 

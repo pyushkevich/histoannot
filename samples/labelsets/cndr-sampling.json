@@ -1,27 +1,77 @@
 [
   {
-    "name": "CS",
-    "color": "#ca06c9",
-    "description": "CA1 and Subiculum Region"
+    "name": "CA1-sup-lat",
+    "color": "#ff3300",
+    "description": "CA1 superior lateral portion (around 2 o'clock)"
   },
   {
-    "name": "DG",
-    "color": "#007bff",
-    "description": "Dentate gyrus"
+    "name": "CA1-inf-lat",
+    "color": "#ff6600",
+    "description": "CA1 inferior lateral portion (around 4 o'clock)"
   },
   {
-    "name": "ERCh",
-    "color": "#cac906",
-    "description": "Entorhinal cortex, on hippocampus slide"
+    "name": "CA1-SUB",
+    "color": "#ff6699",
+    "description": "CA1-subiculum transition area (around 7 o'clock)"
   },
   {
-    "name": "ERCa",
-    "color": "#72181e",
-    "description": "Entorhinal cortex, on amygdala slide"
+    "name": "CA2",
+    "color": "#ffcc66",
+    "description": "CA2"
   },
   {
-    "name": "Amygdala",
-    "color": "#9d3c9f",
-    "description": "Amygdala"
+    "name": "DG-GCL",
+    "color": "#33ccff",
+    "description": "DG granular cell layer"
+  },
+  {
+    "name": "DG-H",
+    "color": "#3399ff",
+    "description": "DG hilus (center of DG)"
+  },
+  {
+    "name": "Sub",
+    "color": "#cc0099",
+    "description": "Subiculum proper (outside of the hippocampus roll)"
+  },
+  {
+    "name": "PrS",
+    "color": "#ff66ff",
+    "description": "Presubiculum"
+  },
+  {
+    "name": "h-EC-med",
+    "color": "#ccff33",
+    "description": "EC on hippocampus slide, medial portion (closer to PrS); on more"
+  },
+  {
+    "name": "h-EC-ctr",
+    "color": "#669900",
+    "description": "EC on hippocampus slide, halfway between medial and lateral extents"
+  },
+  {
+    "name": "h-EC-lat",
+    "color": "#99ff66",
+    "description": "EC on hippocampus slide, lateral portion (closer to BA35)"
+  },
+  {
+    "name": "h-BA35",
+    "color": "#00ffcc",
+    "description": "BA35, lower half of the medial bank of CS"
+  },
+  {
+    "name": "h-BA36",
+    "color": "#000099",
+    "description": "BA35, middle of the lateral bank of the CS"
+  },
+  {
+    "name": "Amy",
+    "color": "#cc0000",
+    "description": "Amygdala (take five samples, center and sides)"
+  },
+  {
+    "name": "a-EC",
+    "color": "#99ff66",
+    "description": "EC on the amygdala side (non-specific)"
   }
 ]

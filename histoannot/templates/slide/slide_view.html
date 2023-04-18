@@ -233,9 +233,33 @@
                             <h3>Display Options</h3>
                         </div>
 
+                        <!-- Main image contrast properties -->
+                        <div id="div_contrast_options">
+                            <div class="header">
+                                <h4>Contrast Adjustment</h4>
+                            </div>
+                            <div>
+                                <div class="display-opts-row">
+                                    <label class="display-opts-left-label">Level:</label>
+                                    <div class="display-opts-right-container">
+                                        <div id="primary_level" class="display-opts-right-slider"></div>
+                                    </div>
+                                </div>
+                                <div class="display-opts-row">
+                                    <label class="display-opts-left-label">Window:</label>
+                                    <div class="display-opts-right-container">
+                                        <div id="primary_window" class="display-opts-right-slider"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- affine or raw mode -->
                         {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
                         <div>
+                            <div class="header">
+                                <h4>Slide Display Options</h4>
+                            </div>
                             <form id="form_disp_opt" target="#" class="pure-form pure-form-aligned">
                                 <fieldset>
                                     <div class="pure-control-group">
@@ -715,21 +739,70 @@ $(document).ready(function()
     // Preload the main image
     preload_dzi("{{resolution}}", init_viewer);
 
+    // Contrast adjustment and overlay settings
+    let display_options = {
+        primary: {
+            level: 0, window: 255
+        },
+        overlay: {
+            colormap: cm_hot,
+            level: 0, window: 255,
+            alpha: [0, 255],
+            enabled: false
+        }
+    };
+
+    // This function does window-level adjustment
+    const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+    
+    let fn_window_level = function(window, level) {
+        return function(context, callback) {
+            var imgData = context.getImageData(
+                0, 0, context.canvas.width, context.canvas.height);
+            var pixels = imgData.data;
+            for (var i = 0; i < pixels.length; i += 4) {
+                pixels[i] = clamp(255 * (pixels[i] - level) / window, 0, 255);
+                pixels[i + 1] = clamp(255 * (pixels[i+1] - level) / window, 0, 255);
+                pixels[i + 2] = clamp(255 * (pixels[i+2] - level) / window, 0, 255);
+            }
+            context.putImageData(imgData, 0, 0);
+            callback();
+        };
+    };
+
+    // This function applies display options to the viewer
+    let apply_display_options = function() {
+        let filters = [];
+        let primary_proc = [];
+        let o = display_options.primary;
+        if(o.level != 0 || o.window != 255) {
+            primary_proc = [ fn_window_level(o.window, o.level) ];
+        }
+        filters.push({
+                    items: viewer.world.getItemAt(0),
+                    processors: primary_proc
+                });
+
+        if(display_options.overlay.enabled) {
+            let o = display_options.overlay;
+            filters.push({
+                items: viewer.world.getItemAt(1),
+                processors: [OpenSeadragon.Filters.COLORMAP4(o.colormap, o.level, o.window, o.alpha[0], o.alpha[1])]
+            });
+        }
+
+        viewer.setFilterOptions({ filters: filters, loadMode: 'sync' });
+    };
+
+
     // A function to update the colormap of the overlay
     let set_overlay_colormap = function (c_map, level, window, a0, a1) {
-        viewer.setFilterOptions({
-            filters: [
-                {
-                    items: viewer.world.getItemAt(0),
-                    processors: []
-                },
-                {
-                    items: viewer.world.getItemAt(1),
-                    processors: [OpenSeadragon.Filters.COLORMAP4(c_map, level, window, a0, a1)]
-                }],
-            loadMode: 'sync'
-        });
-        console.log("Setting colormap: ", level, window, a0, a1);
+        display_options.overlay.colormap = c_map;
+        display_options.overlay.level = level;
+        display_options.overlay.window = window;
+        display_options.overlay.alpha[0] = a0;
+        display_options.overlay.alpha[1] = a1;
+        apply_display_options();
     };
 
     // A function to load an overlay of type 'resource' into the main viewer
@@ -2303,6 +2376,10 @@ $(document).ready(function()
         });
     }
 
+    // Create variables for the contrast sliders
+    let primary_level_slider = $("#primary_level");
+    let primary_window_slider = $("#primary_window");
+
     // Create variables for the overlay sliders
     let overlay_level_slider = $("#overlay_level");
     let overlay_window_slider = $("#overlay_window");
@@ -2310,7 +2387,25 @@ $(document).ready(function()
     let overlay_opacity_slider = $("#overlay_opacity_slider");
 
     // Callback for the level/window sliders
-    let on_level_window_change = function(event, ui) {
+    let on_primary_level_window_change = function(event, ui) {
+
+        // Get the window and level
+        let l = parseFloat(primary_level_slider.slider("value"));
+        let w = parseFloat(primary_window_slider.slider("value"));
+
+        // Use the mapping to map level/window to pixel values
+        let scale = 255.0;
+        let l_uchar = Math.floor(l * scale);
+        let w_uchar = Math.floor(w * scale);
+
+        // Set the display properties
+        display_options.primary.level = l_uchar;
+        display_options.primary.window = w_uchar;
+        apply_display_options();
+    };
+
+    // Callback for the level/window sliders
+    let on_overlay_level_window_change = function(event, ui) {
 
         // Get the window and level
         let l = parseFloat(overlay_level_slider.slider("value"));
@@ -2378,11 +2473,11 @@ $(document).ready(function()
 
                 // Load the level/window values for this overlay
                 let o = overlays[ovl];
-                make_slider_with_handle(overlay_level_slider, o.level, on_level_window_change);
-                make_slider_with_handle(overlay_window_slider, o.window, on_level_window_change);
+                make_slider_with_handle(overlay_level_slider, o.level, on_overlay_level_window_change);
+                make_slider_with_handle(overlay_window_slider, o.window, on_overlay_level_window_change);
 
                 // Initialize
-                on_level_window_change(null, null);
+                on_overlay_level_window_change(null, null);
 
                 $("#div_overlay_options").show();
 
@@ -2397,6 +2492,10 @@ $(document).ready(function()
         if(viewer.world.getItemCount() > 1)
             viewer.world.getItemAt(1).setOpacity(opacity);
     };
+
+    // Create the primary window/level sliders
+    make_slider_with_handle(primary_level_slider, {min:0.0, max:1.0, default:0.0, step: 0.05}, on_primary_level_window_change);
+    make_slider_with_handle(primary_window_slider, {min:0.0, max:1.0, default:1.0, step: 0.05}, on_primary_level_window_change);
 
     // Configure the slider
     overlay_opacity_slider.slider({
@@ -2413,8 +2512,8 @@ $(document).ready(function()
         max: 100,
         step: 10,
         values: [0, 100],
-        slide: function(event, ui) { on_level_window_change(); },
-        stop: function(event, ui) { on_level_window_change(); }
+        slide: function(event, ui) { on_overlay_level_window_change(); },
+        stop: function(event, ui) { on_overlay_level_window_change(); }
     });
 
     // Fill out the list of overlays

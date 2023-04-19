@@ -281,8 +281,8 @@
                                 <div id="slide_rotation" class="display-opts-right-slider"></div>
                             </div>
                             <div class="pure-u-1 pure-u-md-1-2"> <label> Zoom: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> 
-                                <div id="slide_zoom" class="display-opts-right-slider"></div>
+                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                <input id="slide_zoom" step="0.001" type="number">
                             </div>
 
                             <!-- affine or raw mode -->
@@ -598,14 +598,14 @@ $(document).ready(function()
     // Handle display zoom, adjusting the styling of displayed items
     let last_zoom = -1;
     viewer.addHandler("update-viewport", function() {
-        let t = fn_compute_zoom_slider_value();
-        console.log(`Updating slider, t=${t}`);
-        fn_update_slider(slide_zoom_slider, t);
         let viewportZoom = viewer.viewport.getZoom(true);
+        let imageZoom = get_image_zoomlevel();
+        // Update the zoom control
+        slide_zoom_input.val(Math.round(1000.0 / imageZoom) * 0.001);
+        
         if(last_zoom !== viewportZoom) {
-            var paperZoom = get_image_zoomlevel();
             if(paper.project) {
-                adjust_paperjs_scaling(paperZoom)
+                adjust_paperjs_scaling(imageZoom)
             }
         }
         last_zoom = viewportZoom;
@@ -2396,7 +2396,17 @@ $(document).ready(function()
 
     // Create a variable for the rotation slider
     let slide_rotation_slider = $("#slide_rotation");
-    let slide_zoom_slider = $("#slide_zoom");
+    let slide_zoom_input = $("#slide_zoom");
+
+    // Watch for enter pressed in the zoom input 
+    slide_zoom_input.keypress(function(event) {
+        if(event.keyCode === 13) {
+            let iz = 1.0 / slide_zoom_input.val();
+            let image1 = viewer.world.getItemAt(0);
+            let vz = image1.imageToViewportZoom(iz);
+            viewer.viewport.zoomTo(vz, viewer.viewport.getCenter(), true);
+        }
+    });
 
     // Function to update the rotation slider value
     let fn_update_slider = function(obj, value) {
@@ -2458,7 +2468,9 @@ $(document).ready(function()
     };
 
     // Callback for slide zoom slider
-    let on_slide_zoom_change = function(event, ui) {
+    let on_slide_zoom_input_change = function(event, ui) {
+
+        /* TODO: convert from image units and set 
         // Compute the actual zoom level using log scale
         let t = slide_zoom_slider.slider("value") * 0.01;
         let y0 = Math.log2(viewer.viewport.getMinZoom());
@@ -2466,20 +2478,8 @@ $(document).ready(function()
         let y = y1 * t + y0 * (1 - t);
         let zoom = Math.pow(2.0, y);
         console.log(`Calling zoomTo, t=${t}`);
-        viewer.viewport.zoomTo(zoom, viewer.viewport.getCenter(true), true);
+        viewer.viewport.zoomTo(zoom, viewer.viewport.getCenter(true), true); */
     };
-
-    // Compute the zoom slider value from the viewer
-    let fn_compute_zoom_slider_value = function() {
-        let y = Math.log2(viewer.viewport.getZoom(true));
-        let y0 = Math.log2(viewer.viewport.getMinZoom());
-        let y1 = Math.log2(viewer.viewport.getMaxZoom());
-        let t = 100.0 * (y - y0) / (y1 - y0);
-        console.log(`Zoom: ${viewer.viewport.getZoom(true)}, IZ: 1 : ${1.0 / get_image_zoomlevel()}`);
-
-        // Round t to the hundredth to prevent unnecessary updates
-        return Math.floor(t + 0.5);
-    }
 
     // Function to create a decorated slider
     let make_slider_with_handle = function (target, param, callback) {
@@ -2566,7 +2566,6 @@ $(document).ready(function()
 
     // Make a slider for a rotation
     make_slider_with_handle(slide_rotation_slider, {min:0.0, max:360.0, default:init_rotation, step: 1.0}, on_slide_rotation_change);
-    make_slider_with_handle(slide_zoom_slider, {min:0, max:100, default:0, step: 1}, on_slide_zoom_change);
 
     // Configure the slider
     overlay_opacity_slider.slider({

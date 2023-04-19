@@ -26,43 +26,6 @@ td.ellipsis {
   position: relative;
 }
 
-.ellipsis-svg {
-  opacity: 0.5;
-  height: 1.2em;
-  width: 1.2em;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.ellipsis-svg:hover {
-  opacity: 1.0;
-}
-
-.ellipsis-svg2 {
-  opacity: 0.5;
-  height: 1.2em;
-  width: 1.2em;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  fill: rgba(0,0,255,0.2);
-}
-
-.ellipsis-svg2:hover {
-  opacity: 1.0;
-  fill: rgba(0,0,255,0.5);
-}
-
-/*
-.ui-menu {
-  display: none;
-  width: 200px;
-}
-*/
-
 .ui-menu {
   font-size: 80%;
   line-height: $line-height * 0.8;
@@ -159,6 +122,45 @@ td.ellipsis {
   </ul>
 </div>
 
+<style>
+  svg.ellipsis {
+    height: 1.2em;
+    width: 1.2em;
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    transform: translate(-50%, -50%);
+  }
+
+  svg.ellipsis_dots {
+    opacity: 0.5;
+  }
+
+  svg.ellipsis_dots:hover {
+    opacity: 1.0;
+  }      
+
+  svg.ellipsis_circle {
+    height: 1.6em;
+    width: 1.6em;
+    fill: rgba(0,0,255,0.0);
+  }
+
+  svg.ellipsis_circle:hover {
+    fill: rgba(192,192,255,0.25);
+  }      
+</style>
+<div id="ellipsis-button" style="display: none;">
+  <svg viewBox="0 0 20 20" class="ellipsis ellipsis_dots" focusable="false">
+    <ellipse cx="10.5" cy="10.5" rx="2" ry="2"/>
+    <ellipse cx="10.5" cy="5.0" rx="2" ry="2"/>
+    <ellipse cx="10.5" cy="16.0" rx="2" ry="2"/>
+  </svg>
+  <svg viewBox="0 0 20 20" class="ellipsis ellipsis_circle" focusable="false">
+    <ellipse cx="10.5" cy="10.5" rx="8" ry="8"/>
+  </svg>
+</div>
+
 <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='Datatables/datatables.min.css') }}"/>
 <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
 <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='jquery.js') }}"></script>
@@ -182,6 +184,13 @@ $(document).ready(function() {
     return '<a class="action" href="'+url+'">'+row['name']+'</a>';
   };
 
+  // Function to create HTML for a context menu button
+  let fn_make_ellipsis_button = function() {
+    return $("#ellipsis-button").css("display", "block").html();
+  };
+
+  fn_make_ellipsis_button();
+
   // Column descriptions for the project table. Note the last table
   // sets up the context menu
   var prj_col_desc = [
@@ -194,7 +203,7 @@ $(document).ready(function() {
     {
       data: null,
       className: "dt-center context-menu ellipsis",
-      defaultContent: '<svg viewBox="0 0 20 20" class="ellipsis-svg2" focusable="false"><ellipse cx="10.5" cy="10.5" rx="8" ry="8"/></svg><svg viewBox="0 0 20 20" class="ellipsis-svg" focusable="false"  ><ellipse cx="10.5" cy="10.5" rx="2" ry="2"/><ellipse cx="10.5" cy="5.0" rx="2" ry="2"/><ellipse cx="10.5" cy="16.0" rx="2" ry="2"/></svg>',
+      defaultContent: fn_make_ellipsis_button(),
       orderable: false
     }
   ];
@@ -208,8 +217,8 @@ $(document).ready(function() {
     { data: "nslides" },
     {
       data: null,
-      className: "dt-center context-menu",
-      defaultContent: '<button class="fa fa-ellipsis-v ellipsis"/>',
+      className: "dt-center context-menu ellipsis",
+      defaultContent: fn_make_ellipsis_button(),
       orderable: false
     }
   ];

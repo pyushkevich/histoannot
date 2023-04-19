@@ -123,10 +123,8 @@
       background-color: #e8e8e8;
     }
 
-    /* Mega Menu header, if needed */
-    .display-opts-dropdown-content .header {
-      padding: 8px;
-      color: white;
+    .display-opts-dropdown-content h4 {
+        margin: 0px;
     }
 
     /* Show the dropdown menu on hover */
@@ -159,10 +157,40 @@
 
     .display-opts-row {
         width: 100%;
-        padding-top: 1.2em;
+        padding-top: 0.6em;
+        padding-bottom: 0.6em;
+    }
+
+    .display-opts-row:last-child {
         padding-bottom: 1.2em;
     }
 
+    .display-opts-row:first-child {
+        padding-top: 1.2em;
+    }
+    
+    .display-opts-dropdown-content label {
+        font-weight: bold;
+        padding-right: 1em;
+    }
+
+    .display-opts-dropdown-content select {
+        width: 100%;
+        margin-top: 2px;
+        margin-bottom: 2px;
+        padding-top: 1px;
+        padding-bottom: 1px;
+    }
+
+    .display-opts-dropdown-content input {
+        width: 100%;
+        margin-top: 2px;
+        margin-bottom: 2px;
+    }
+
+    
+
+    /*
     .display-opts-left-label {
         width: 50%;
         float: left;
@@ -172,7 +200,7 @@
         font-weight: bold;
         padding-right: 1em;
         height: 1.6em;
-    }
+    } */
 
     .display-opts-right-container {
         width: 50%;
@@ -232,112 +260,92 @@
                         <div class="header">
                             <h3>Display Options</h3>
                         </div>
-
                         <!-- Main image contrast properties -->
-                        <div id="div_contrast_options">
-                            <div class="header">
+                        <div class="pure-g">
+                            <div class="pure-u-1 pure-u-md-1-1"> 
                                 <h4>Contrast Adjustment</h4>
+                            </div> 
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Level: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> 
+                                <div id="primary_level" class="display-opts-right-slider"></div>
                             </div>
-                            <div>
-                                <div class="display-opts-row">
-                                    <label class="display-opts-left-label">Level:</label>
-                                    <div class="display-opts-right-container">
-                                        <div id="primary_level" class="display-opts-right-slider"></div>
-                                    </div>
-                                </div>
-                                <div class="display-opts-row">
-                                    <label class="display-opts-left-label">Window:</label>
-                                    <div class="display-opts-right-container">
-                                        <div id="primary_window" class="display-opts-right-slider"></div>
-                                    </div>
-                                </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Window: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> 
+                                <div id="primary_window" class="display-opts-right-slider"></div>
                             </div>
-                        </div>
-
-                        <!-- affine or raw mode -->
-                        {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
-                        <div>
-                            <div class="header">
+                            <div class="pure-u-1 pure-u-md-1-1"> 
                                 <h4>Slide Display Options</h4>
+                            </div> 
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Rotation: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> 
+                                <div id="slide_rotation" class="display-opts-right-slider"></div>
                             </div>
-                            <form id="form_disp_opt" target="#" class="pure-form pure-form-aligned">
-                                <fieldset>
-                                    <div class="pure-control-group">
-                                        <label for="form_mode_select">Slide transform:</label>
-                                        <select id="form_mode_select" class="pure-input-1-2" required>
-                                            {% if have_affine  %}
-                                            <option value="affine">Aligned to MRI</option>
-                                            {% endif %}
-                                            <option value="raw">Native Space</option>
-                                        </select>
-                                    </div>
-                                    <div class="pure-control-group">
-                                        <label for="form_res_select">Slide resolution:</label>
-                                        <select id="form_res_select" class="pure-input-1-2" required>
-                                            {% if have_x16  %}
-                                            <option value="x16">1:16</option>
-                                            {% endif %}
-                                            <option value="raw">1:1</option>
-                                        </select>
-                                    </div>
-                                    <div class="pure-control-group">
-                                        <label for="form_overlay_select">Slide overlay:</label>
-                                        <select id="form_overlay_select" class="pure-input-1-2" required>
-                                            <option value="none">None</option>
-                                        </select>
-                                    </div>
-                                </fieldset>
-                            </form>
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Zoom: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> 
+                                <div id="slide_zoom" class="display-opts-right-slider"></div>
+                            </div>
+
+                            <!-- affine or raw mode -->
+                            {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
+
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                <select id="form_mode_select" class="pure-input-1-1" required>
+                                    {% if have_affine  %}
+                                    <option value="affine">Aligned to MRI</option>
+                                    {% endif %}
+                                    <option value="raw">Native Space</option>
+                                </select>
+                            </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                <select id="form_res_select" class="pure-input-1-1" required>
+                                    {% if have_x16  %}
+                                    <option value="x16">1:16</option>
+                                    {% endif %}
+                                    <option value="raw">1:1</option>
+                                </select>
+                            </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> <label> Slide overlay: </label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                <select id="form_overlay_select" class="pure-input-1-1" required>
+                                    <option value="none">None</option>
+                                </select>
+                            </div>
+
+                            <div id="div_overlay_options" class="display-opts-hidden-content">
+                                <div class="pure-u-1 pure-u-md-1-1"> 
+                                    <h4>Overlay Properties</h4>
+                                </div> 
+                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Opacity:</label> </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> 
+                                    <div id="overlay_opacity_slider" class="display-opts-right-slider"></div>
+                                </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Level:</label> </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> 
+                                    <div id="overlay_level" class="display-opts-right-slider"></div>
+                                </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Window:</label> </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> 
+                                    <div id="overlay_window" class="display-opts-right-slider"></div>
+                                </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Ramp:</label> </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> 
+                                    <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
+                                </div>
+                            </div>
+
+                            {% endif %}
+                            <div class="pure-u-1 pure-u-md-1-1"> 
+                                <h4>Slide Information</h4>
+                            </div> 
+                            <div class="pure-u-1 pure-u-md-1-2"> <label>Pixel spacing (µm):</label> </div>
+                            <div class="pure-u-1 pure-u-md-1-2"> 
+                                <input id="form_info_spacing" class="pure-input-1-1" value="{{spacing_str}}" readonly>
+                            </div>
                         </div>
 
-                        <div id="div_overlay_options" class="display-opts-hidden-content">
-                            <div class="header">
-                                <h3>Overlay Properties</h3>
-                            </div>
-                            <div>
-                                <div class="display-opts-row">
-                                    <label class="display-opts-left-label">Overlay Opacity:</label>
-                                    <div class="display-opts-right-container">
-                                        <div id="overlay_opacity_slider" class="display-opts-right-slider"></div>
-                                    </div>
-                                </div>
-                                <div class="display-opts-row">
-                                    <label class="display-opts-left-label">Overlay Level:</label>
-                                    <div class="display-opts-right-container">
-                                        <div id="overlay_level" class="display-opts-right-slider"></div>
-                                    </div>
-                                </div>
-                                <div class="display-opts-row">
-                                    <label class="display-opts-left-label">Overlay Window:</label>
-                                    <div class="display-opts-right-container">
-                                        <div id="overlay_window" class="display-opts-right-slider"></div>
-                                    </div>
-                                </div>
-                                <div class="display-opts-row">
-                                    <label class="display-opts-left-label">Opacity Ramp:</label>
-                                    <div class="display-opts-right-container">
-                                        <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        <div id="div_slide_info">
-                            <div class="header">
-                                <h3>Slide Properties</h3>
-                            </div>
-                            <form id="form_slide_info" target="#" class="pure-form pure-form-aligned">
-                                <fieldset>
-                                    <div class="pure-control-group">
-                                        <label for="form_info_spacing">Pixel spacing (µm):</label>
-                                        <input id="form_info_spacing" class="pure-input-1-2" 
-                                               value="{{spacing_str}}" readonly>
-                                    </div>
-                                </fieldset>
-                            </form>
-                        </div>
-                        <div align="center" style="padding:5px;">
+                        <div align="center" style="padding:5px; margin-top: 20px;">
                             <button id="button_download" class="pure-button">Download slide ...</button>
                         </div>
                         
@@ -481,11 +489,11 @@ $(document).ready(function()
         animationTime: 0.5,
         blendTime: 0.1,
         constrainDuringPan: false,
-        maxZoomPixelRatio: 1.1,
+        maxZoomPixelRatio: 2.0,
         minPixelRatio: 1.0,
         minZoomLevel: 1,
         visibilityRatio: 0.25,
-        zoomPerScroll: 2,
+        zoomPerScroll: Math.sqrt(2.0),
         timeout: 120000,
         degrees: init_rotation,
         flipped: init_flip
@@ -505,6 +513,9 @@ $(document).ready(function()
     let fn_update_user_pose = function () {
         // These are the settings we want to send to the server
         let data = {"rotation": viewer.viewport.getRotation(), "flip": viewer.viewport.getFlip()};
+
+        // Update the slider
+        fn_update_slider(slide_rotation_slider, viewer.viewport.getRotation());
 
         // Make the ajax call
         const url = "{{url_for('slide.set_slide_user_preferences', task_id = task_id, slide_id = slide_id)}}";
@@ -587,7 +598,10 @@ $(document).ready(function()
     // Handle display zoom, adjusting the styling of displayed items
     let last_zoom = -1;
     viewer.addHandler("update-viewport", function() {
-        var viewportZoom = viewer.viewport.getZoom(true);
+        let t = fn_compute_zoom_slider_value();
+        console.log(`Updating slider, t=${t}`);
+        fn_update_slider(slide_zoom_slider, t);
+        let viewportZoom = viewer.viewport.getZoom(true);
         if(last_zoom !== viewportZoom) {
             var paperZoom = get_image_zoomlevel();
             if(paper.project) {
@@ -2380,6 +2394,17 @@ $(document).ready(function()
     let primary_level_slider = $("#primary_level");
     let primary_window_slider = $("#primary_window");
 
+    // Create a variable for the rotation slider
+    let slide_rotation_slider = $("#slide_rotation");
+    let slide_zoom_slider = $("#slide_zoom");
+
+    // Function to update the rotation slider value
+    let fn_update_slider = function(obj, value) {
+        // Update the slider
+        if(obj.slider("value") != value)
+            obj.slider("value", value);
+    };
+
     // Create variables for the overlay sliders
     let overlay_level_slider = $("#overlay_level");
     let overlay_window_slider = $("#overlay_window");
@@ -2425,12 +2450,50 @@ $(document).ready(function()
         set_overlay_colormap(cm_hot, l_uchar, w_uchar, a0, a1);
     };
 
+    // Callback for slide rotation slider
+    let on_slide_rotation_change = function(event, ui) {
+        rot = slide_rotation_slider.slider("value");
+        viewer.viewport.setRotation(rot);
+        fn_update_user_pose();
+    };
+
+    // Callback for slide zoom slider
+    let on_slide_zoom_change = function(event, ui) {
+        // Compute the actual zoom level using log scale
+        let t = slide_zoom_slider.slider("value") * 0.01;
+        let y0 = Math.log2(viewer.viewport.getMinZoom());
+        let y1 = Math.log2(viewer.viewport.getMaxZoom());
+        let y = y1 * t + y0 * (1 - t);
+        let zoom = Math.pow(2.0, y);
+        console.log(`Calling zoomTo, t=${t}`);
+        viewer.viewport.zoomTo(zoom, viewer.viewport.getCenter(true), true);
+    };
+
+    // Compute the zoom slider value from the viewer
+    let fn_compute_zoom_slider_value = function() {
+        let y = Math.log2(viewer.viewport.getZoom(true));
+        let y0 = Math.log2(viewer.viewport.getMinZoom());
+        let y1 = Math.log2(viewer.viewport.getMaxZoom());
+        let t = 100.0 * (y - y0) / (y1 - y0);
+        console.log(`Zoom: ${viewer.viewport.getZoom(true)}, IZ: 1 : ${1.0 / get_image_zoomlevel()}`);
+
+        // Round t to the hundredth to prevent unnecessary updates
+        return Math.floor(t + 0.5);
+    }
+
     // Function to create a decorated slider
     let make_slider_with_handle = function (target, param, callback) {
 
         // Add a <div> to the parent div
         let handle_ui = $('<div class="slider-custom-handle ui-slider-handle"></div>');
         target.append(handle_ui);
+
+        // This function adjusts the handle to be nicely inside slider limits
+        let fn_update_handle = function(val) {
+            handle_ui.text(val);
+            let x = (val - param.min) / (param.max - param.min);
+            handle_ui.css("transform", `translateX(${15+(0.-x)*90}%)`);
+        };
 
         // Set up the slider
         target.slider({
@@ -2439,17 +2502,21 @@ $(document).ready(function()
             value: param.default,
             step: param.step,
             create: function () {
-                handle_ui.text($(this).slider("value"));
+                fn_update_handle($(this).slider("value"));
             },
             slide: function (event, ui) {
                 // Update the handle
-                handle_ui.text(ui.value);
+                fn_update_handle(ui.value);
                 callback(event, ui);
             },
             stop: function (event, ui) {
                 // Update the handle
-                handle_ui.text(ui.value);
+                fn_update_handle(ui.value);
                 callback(event, ui);
+            },
+            change: function(event, ui) {
+                // Update the handle
+                fn_update_handle(ui.value);
             }
         });
     };
@@ -2496,6 +2563,10 @@ $(document).ready(function()
     // Create the primary window/level sliders
     make_slider_with_handle(primary_level_slider, {min:0.0, max:1.0, default:0.0, step: 0.05}, on_primary_level_window_change);
     make_slider_with_handle(primary_window_slider, {min:0.0, max:1.0, default:1.0, step: 0.05}, on_primary_level_window_change);
+
+    // Make a slider for a rotation
+    make_slider_with_handle(slide_rotation_slider, {min:0.0, max:360.0, default:init_rotation, step: 1.0}, on_slide_rotation_change);
+    make_slider_with_handle(slide_zoom_slider, {min:0, max:100, default:0, step: 1}, on_slide_zoom_change);
 
     // Configure the slider
     overlay_opacity_slider.slider({

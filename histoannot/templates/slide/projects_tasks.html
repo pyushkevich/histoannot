@@ -22,12 +22,38 @@ PICSL Histology Annotation Server
   height: 75px;
 }
 
-.ellipsis {
-  opacity: 0.5;
+td.ellipsis {
+  position: relative;
 }
 
-.ellipsis:hover {
+.ellipsis-svg {
+  opacity: 0.5;
+  height: 1.2em;
+  width: 1.2em;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ellipsis-svg:hover {
   opacity: 1.0;
+}
+
+.ellipsis-svg2 {
+  opacity: 0.5;
+  height: 1.2em;
+  width: 1.2em;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  fill: rgba(0,0,255,0.2);
+}
+
+.ellipsis-svg2:hover {
+  opacity: 1.0;
+  fill: rgba(0,0,255,0.5);
 }
 
 /*
@@ -133,16 +159,11 @@ PICSL Histology Annotation Server
   </ul>
 </div>
 
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/dt-1.10.25/datatables.min.css"/>
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/select/1.3.3/css/select.dataTables.min.css">
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css">
-<script type="text/javascript" src="{{ url_for('static', filename='jquery.js') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
-<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/v/dt/dt-1.10.25/datatables.min.js"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.3.3/js/dataTables.select.min.js"></script>
-<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/buttons/1.7.1/js/dataTables.buttons.min.js"></script>
-
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='Datatables/datatables.min.css') }}"/>
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='jquery.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='Datatables/datatables.min.js') }}"></script>
 
 <script type="text/javascript" charset="utf8">
 $(document).ready(function() {
@@ -172,8 +193,8 @@ $(document).ready(function() {
     { data: "nslides" },
     {
       data: null,
-      className: "dt-center context-menu",
-      defaultContent: '<button class="fa fa-ellipsis-v ellipsis"/>',
+      className: "dt-center context-menu ellipsis",
+      defaultContent: '<svg viewBox="0 0 20 20" class="ellipsis-svg2" focusable="false"><ellipse cx="10.5" cy="10.5" rx="8" ry="8"/></svg><svg viewBox="0 0 20 20" class="ellipsis-svg" focusable="false"  ><ellipse cx="10.5" cy="10.5" rx="2" ry="2"/><ellipse cx="10.5" cy="5.0" rx="2" ry="2"/><ellipse cx="10.5" cy="16.0" rx="2" ry="2"/></svg>',
       orderable: false
     }
   ];

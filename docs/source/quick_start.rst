@@ -135,7 +135,7 @@ Configuring a project involves two steps:
     2. Coming up with a name for your project (e.g., ``diag``)
     3. Initializing the project in the database, like this::
 
-        flask projects-add diag some/path/project_diag.json
+        flask project-add diag some/path/project_diag.json
 
 
 Connecting to Histology Data
@@ -157,11 +157,16 @@ Adding a User
 -------------
 To create users and invite them by email, issue the command below. This only works if you have configured email on your server.::
 
-    flask users-add -p diag -e testuser@gmail.com -n testuser
+    flask users-add -e testuser@gmail.com -n testuser
 
 Alternatively, add a user without sending an email (without the ``-n`` flag) and you will be provided an invitation link that you can send manually.::
 
-    flask users-add -p diag -e testuser@gmail.com testuser
+    flask users-add -e testuser@gmail.com testuser
+
+To give this user admin permissions, issue the command below. After that, you can create new users through the web interface.
+
+    flask users-set-site-admin testuser
+    flask users-set-access-level -P diag A testuser
 
 Take it for a Spin
 ==================

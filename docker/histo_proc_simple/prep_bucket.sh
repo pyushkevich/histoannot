@@ -160,12 +160,19 @@ function process_image()
     FN_EXT=$(echo $FN_BASE | sed -e "s/.*\.//g")
     FN_NOEXT=$(basename $FN_BASE .${FN_EXT})
 
-    # Download file
     WORKDIR=$(mktemp -d)
     IMG=$WORKDIR/$FN_BASE
     PTIFF=$WORKDIR/${FN_NOEXT}_pyramidal.tiff
     THUMB=$WORKDIR/${FN_NOEXT}_thumb.png
-    gsutil cp "$SOURCE" "$IMG"
+
+    # Download file
+    gsutil -m cp "$SOURCE" "$IMG"
+
+    # If the file is an .mxrs file, also download the directory with the same name
+    if [[ $FN_EXT == "mrxs" ]]; then
+      echo "Also downloading ${SOURCE/.mxrs/}"
+      gsutil -m cp -r "${SOURCE/.mrxs/}" "$WORKDIR/"
+    fi
 
     # Already in pyramid format?
     if [[ $SKIP_PYRAMID ]]; then
@@ -188,7 +195,7 @@ function process_image()
         python os_thumb.py $PTIFF $THUMB $THUMBSIZE $THUMBSIZE
 
         # Upload the result
-        gsutil cp $PTIFF $THUMB $TARGET/
+        gsutil -m cp $PTIFF $THUMB $TARGET/
 
     fi
 

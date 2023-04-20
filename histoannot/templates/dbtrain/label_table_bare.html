@@ -43,6 +43,14 @@
   background-color: red; 
   border:1px solid black;
 }
+
+.ui-tooltip {
+  font-size: 80%;
+  padding: 4px;
+  line-height: 1.0;
+  background-color: lightyellow;
+  color: rgb(96, 96, 96);
+}
 </style>
 
 <!--
@@ -96,7 +104,7 @@ var load_label_table_ajax = function(cb_success) {
       $.each(shcut, function(i, item) { Mousetrap.unbind(item) });
       $.each(data, function(i, item) {
         var $tr = $('<tr>').append(
-          $('<td>').text(item['name']).addClass('expander'),
+          $('<td>').text(item['name']).prop('title', item['description']).addClass('expander').tooltip({show: {delay: 500}}),
           $('<td>').append($('<span>').addClass('colordot').css('background-color', item['color'])),
           $('<td>').text(i < n_shcut ? shcut[i] : ''),
           $('<td>').text(item['n_samples']));

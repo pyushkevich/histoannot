@@ -270,7 +270,7 @@ $(document).ready(function() {
       var dialog = $("#dialog-proj-context-menu");
       var project = dialog.data("project");
       dialog.dialog("close");
-      if(ui.item.context.id === "mi-labelset-edt") {
+      if(ui.item[0].id === "mi-labelset-edt") {
         url = url_labelset_edt.replace('XXXX', project);
         window.location.href = url;
         return false;
@@ -284,12 +284,12 @@ $(document).ready(function() {
       var dialog = $("#dialog-task-context-menu");
       var task_id = dialog.data("task_id");
       dialog.dialog("close");
-      if(ui.item.context.id === "mi-task-all-slides") {
+      if(ui.item[0].id === "mi-task-all-slides") {
         url = url_task_all_slides.replace('999999', task_id);
         window.location.href = url;
         return false;
       }
-      if(ui.item.context.id === "mi-task-all-samples") {
+      if(ui.item[0].id === "mi-task-all-samples") {
         url = url_task_all_samples.replace('999999', task_id);
         window.location.href = url;
         return false;

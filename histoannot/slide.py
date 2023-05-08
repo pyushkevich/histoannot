@@ -178,6 +178,17 @@ def task_specimen_listing(task_id):
                GROUP BY specimen
                ORDER BY specimen_display""", (task_id,)).fetchall()
 
+    elif task['mode'] == 'sampling':
+
+        blocks = db.execute(
+            """SELECT specimen_display, specimen, COUNT(DISTINCT block_id) as nblocks,
+                   COUNT (DISTINCT S.id) as nslides, COUNT(SR.slide) as nsamples
+               FROM task_slide_info S
+               LEFT JOIN sampling_roi SR on SR.slide = S.id AND SR.task = S.task_id
+               WHERE S.task_id = ?
+               GROUP BY specimen
+               ORDER BY specimen_display""", (task_id,)).fetchall()
+        
     else:
         blocks = db.execute(
             """SELECT specimen_display, specimen, COUNT(DISTINCT block_id) as nblocks, COUNT(S.id) as nslides
@@ -306,6 +317,18 @@ def specimen_block_listing(task_id, specimen):
                GROUP BY block_id,block_name,specimen
                ORDER BY block_name""", (task_id, specimen)).fetchall()
 
+    elif task['mode'] == 'sampling':
+
+        # Join with the annotations table
+        blocks = db.execute(
+            """SELECT block_id,block_name,specimen_display,
+                   COUNT (DISTINCT S.id) as nslides, COUNT(SR.slide) as nsamples
+               FROM task_slide_info S
+               LEFT JOIN sampling_roi SR on SR.slide = S.id AND SR.task = S.task_id
+               WHERE S.task_id = ? AND S.specimen = ?
+               GROUP BY block_id,block_name,specimen
+               ORDER BY block_name""", (task_id, specimen)).fetchall()
+
     else:
         # Browse mode
         blocks = db.execute(
@@ -410,6 +433,17 @@ def block_slide_listing(task_id, specimen, block_name):
             """SELECT S.*, COUNT(T.id) as n_samples 
                FROM task_slide_info S
                    LEFT JOIN training_sample T on T.slide = S.id AND T.task = S.task_id
+               WHERE S.task_id = ? AND block_id = ?
+               GROUP BY S.id, S.section, S.slide
+               ORDER BY section, slide""", (task_id, block_id)).fetchall()
+
+    elif task['mode'] == 'sampling':
+
+        # Join with the training samples table
+        slides = db.execute(
+            """SELECT S.*, COUNT(SR.id) as n_samples 
+               FROM task_slide_info S
+                   LEFT JOIN sampling_roi SR on SR.slide = S.id AND SR.task = S.task_id
                WHERE S.task_id = ? AND block_id = ?
                GROUP BY S.id, S.section, S.slide
                ORDER BY section, slide""", (task_id, block_id)).fetchall()

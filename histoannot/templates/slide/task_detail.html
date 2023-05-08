@@ -43,6 +43,8 @@ Specimen Listing - {{task['name']}}
             <th>#Ann</th>
           {% elif task['mode'] == 'dltrain' %}
             <th>#Sam</th>
+          {% elif task['mode'] == 'sampling' %}
+            <th>#Sam</th>
           {% endif %}
         </tr>
       </thead>
@@ -61,6 +63,8 @@ Specimen Listing - {{task['name']}}
           {% if task['mode'] == 'annot' %}
             <th>#Ann</th>
           {% elif task['mode'] == 'dltrain' %}
+            <th>#Sam</th>
+          {% elif task['mode'] == 'sampling' %}
             <th>#Sam</th>
           {% endif %}
         </tr>
@@ -83,6 +87,8 @@ Specimen Listing - {{task['name']}}
           {% if task['mode'] == 'annot' %}
             <th>#Ann</th>
           {% elif task['mode'] == 'dltrain' %}
+            <th>#Sam</th>
+          {% elif task['mode'] == 'sampling' %}
             <th>#Sam</th>
           {% endif %}
           <th></th>
@@ -161,6 +167,12 @@ $(document).ready(function() {
     sld_col_desc.push({ data: "id", render: fn_annot_link});
   }
   else if(mode === 'dltrain') {
+    col_desc.push({ data: "nsamples"});
+    blk_col_desc.push({ data: "nsamples"});
+    sld_col_desc.push({ data: "n_samples"});
+    sld_col_desc.push({ data: "id", render: fn_dltrain_link});
+  }
+  else if(mode === 'sampling') {
     col_desc.push({ data: "nsamples"});
     blk_col_desc.push({ data: "nsamples"});
     sld_col_desc.push({ data: "n_samples"});

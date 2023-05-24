@@ -30,7 +30,10 @@
                       <a href="{{ url_for('admin.user_management') }}" class="pure-menu-link">Manage users</a>
                   </li>
                 {% endif %}
-            </ul>
+                <li class="pure-menu-item">
+                  <a href="{{ url_for('auth.generate_api_key') }}" class="pure-menu-link">Generate API key</a>
+                </li>
+          </ul>
           </li>
           <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Log Out</a>
         {% else %}

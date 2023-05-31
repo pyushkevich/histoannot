@@ -389,7 +389,7 @@ def rebuild_task_slide_index(task_id):
             continue
 
         # Check the specimen selector
-        if len(specimens) and row['specimen'].lower() not in specimens:
+        if len(specimens) and row['specimen_private'] not in specimens:
             continue
 
         # Get the tags for the slide

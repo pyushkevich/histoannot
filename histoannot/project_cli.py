@@ -357,6 +357,12 @@ def rebuild_task_slide_index(task_id):
         for s in task['stains']:
             stains.add(s.strip().lower())
 
+    # Get the list of all specimens that are included, don't touch case
+    specimens = set()
+    if 'specimens' in task:
+        for s in task['specimens']:
+            specimens.add(s.strip())
+
     # Get the list of all, any, and not tags
     tags = {}
     for kind in ('all', 'any', 'not'):
@@ -380,6 +386,10 @@ def rebuild_task_slide_index(task_id):
 
         # Check the stain selector
         if len(stains) and row['stain'].lower() not in stains:
+            continue
+
+        # Check the specimen selector
+        if len(specimens) and row['specimen'].lower() not in specimens:
             continue
 
         # Get the tags for the slide
@@ -751,6 +761,12 @@ task_schema = {
                 "any": {"type": "array", "items": {"type": "string"}},
                 "all": {"type": "array", "items": {"type": "string"}},
                 "not": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "specimens": {
+            "type": "array",
+            "items": {
+                "type": "string"
             }
         }
     },

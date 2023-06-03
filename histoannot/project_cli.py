@@ -1024,6 +1024,13 @@ def update_edit_meta(meta_id):
     db = get_db()
     db.execute('UPDATE edit_meta SET editor=?, t_edit=? WHERE id=?',
                (g.user['id'], time.time(), meta_id))
+    
+
+def update_edit_meta(meta_id, creator=None, editor=None, t_create=None, t_edit=None):
+    db = get_db()
+    db.execute('UPDATE edit_meta SET creator=?, editor=?, t_create=?, t_edit=? WHERE id=?',
+               (creator, editor, t_create, t_edit, meta_id))
+
 
 
 def create_edit_meta(creator=None, editor=None, t_create=None, t_edit=None):

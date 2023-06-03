@@ -1583,6 +1583,43 @@ def export_annot_vtk(task, slide_id, out_file):
             idx = idx + len(q)
 
 
+# Export annotation
+@click.command('annot-copy-to-task')
+@click.argument('source_task', type=click.INT)
+@click.argument('target_task', type=click.INT)
+@click.option('-o', '--overwrite', help='Overwrite existing annotations if they exist', 
+              type=click.BOOL, default=False)
+@with_appcontext
+def annot_copy_to_task_cmd(source_task, target_task, overwrite):
+    db=get_db()
+    p_src,t_src = get_task_data(source_task)
+    p_trg,t_trg = get_task_data(target_task)
+    if t_src['mode'] != 'annot' or t_trg['mode'] != 'annot':
+        print('Both tasks must be annotation tasks')
+        return
+    
+    # Find a list of all slides that have annotations in the source task and 
+    # are also present in the target task
+    rc = db.execute('SELECT SA.*, EM.*, SATARG.n_paths + SATARG.n_markers as ntarg '
+                    'FROM task_slide_info TT '
+                    'LEFT JOIN annot SA on SA.slide_id = TT.id '
+                    'LEFT JOIN edit_meta EM on SA.meta_id = EM.id '
+                    'LEFT JOIN annot SATARG on SATARG.task_id = TT.task_id and SATARG.slide_id = TT.id '
+                    'WHERE TT.task_id=? AND SA.task_id = ?',
+                    (target_task, source_task))
+    for a in rc.fetchall():
+        slide_id = a['slide_id']
+        if not overwrite and a['ntarg'] is not None and a['ntarg'] > 0:
+            print(f'Annot for slide {slide_id} already exists!')
+            continue
+
+        data = json.loads(a['json'])
+        (data, stats) = transform_annot(data, np.eye(3))
+        metadata = {'creator': a['creator'], 'editor': a['editor'], 
+                    't_create': a['t_create'], 't_edit': a['t_edit']}
+        _do_update_annot(target_task, a['id'], data, stats, metadata=metadata)            
+        print(f'Annot for slide {slide_id} Successfully imported!')
+
 
 # List slides
 @click.command('slides-list')
@@ -1640,4 +1677,5 @@ def init_app(app):
     app.cli.add_command(slides_list_cmd)
     app.cli.add_command(export_task_annot_cmd)
     app.cli.add_command(import_task_annot_cmd)
+    app.cli.add_command(annot_copy_to_task_cmd)
 

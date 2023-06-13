@@ -730,6 +730,7 @@ task_schema = {
         "name": {"type": "string", "minLength": 2, "maxLength": 80},
         "desc": {"type": "string", "maxLength": 1024},
         "mode": {"type": "string", "enum": ["annot", "dltrain", "browse", "sampling"]},
+        "reference_task": {"type": "string"},
         "dltrain": {
             "type": "object",
             "properties": {

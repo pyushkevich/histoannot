@@ -869,9 +869,13 @@ def make_dbview_full(view_name):
                       INNER JOIN label L on T.label = L.id""" % (view_name,))
 
 
-def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, header = True):
+def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, list_mpp = False, header = True):
 
     db = get_db()
+
+    # Get the project reference
+    project,_ = get_task_data(task)
+    pr = ProjectRef(project)
 
     # Create the full view
     make_dbview_full('v_full')
@@ -891,10 +895,26 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
         'WHERE task=? ORDER BY id', (task,))
 
     if header:
-        fout.write(','.join(keys) + '\n')
+        hdr_keys = keys
+        if list_mpp:
+            hdr_keys = hdr_keys + ('mpp_x', 'mpp_y', 'dim_x', 'dim_y')
+        fout.write(','.join(hdr_keys) + '\n')
+
+    # Keep track of slide dimensions info
+    mpp_dict = {}
 
     for row in rc.fetchall():
-        vals = map(lambda a: str(row[a]), keys)
+        vals = list(map(lambda a: str(row[a]), keys))
+        if list_mpp:
+            id = row['slide']
+            if id not in mpp_dict:
+                sr = get_slide_ref(id, pr)
+                try:
+                    mpp_dict[id] = (sr.get_pixel_spacing('raw'), sr.get_dims())
+                except:
+                    mpp_dict[id] = ([None, None], [None, None])
+            (mpp, dims) = mpp_dict[id]
+            vals = vals + [str(x) for x in [ mpp[0], mpp[1], dims[0], dims[1] ] ]
         fout.write(','.join(vals) + '\n')
 
 
@@ -902,7 +922,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
 @access_task_read
 def get_sample_manifest_for_task(task_id):
     fout = io.StringIO()
-    samples_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True)
+    samples_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True, list_mpp=True)
     return Response(fout.getvalue(), mimetype='text/csv')
 
 
@@ -913,13 +933,14 @@ def get_sample_manifest_for_task(task_id):
 @click.option('--metadata/--no-metadata', default=False, help='Include metadata in output CSV file')
 @click.option('--specimen/--no-specimen', default=False, help='Include specimen ids in output CSV file')
 @click.option('--ids/--no-ids', default=False, help='Include sample database ids in output CSV file')
+@click.option('--mpp/--no-mpp', default=False, help='Include microns per pixel info in output CSV file')
 @with_appcontext
-def samples_export_csv_command(task, output_file, header, metadata, specimen, ids):
+def samples_export_csv_command(task, output_file, header, metadata, specimen, ids, mpp):
     """Export all training samples in a task to a CSV file"""
     with open(output_file, 'wt') as fout:
         samples_generate_csv(task, fout,
                              list_metadata=metadata, list_ids=ids,
-                             list_block=specimen, header=header)
+                             list_block=specimen, list_mpp=mpp, header=header)
 
 
 @click.command('samples-import-csv')

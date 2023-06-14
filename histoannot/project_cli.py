@@ -1021,7 +1021,7 @@ def labelset_add_new_command(project, name, json_file, description):
 # --------------------------------
 # Editing Metadata
 # --------------------------------
-def update_edit_meta(meta_id):
+def update_edit_meta_to_current(meta_id):
     db = get_db()
     db.execute('UPDATE edit_meta SET editor=?, t_edit=? WHERE id=?',
                (g.user['id'], time.time(), meta_id))

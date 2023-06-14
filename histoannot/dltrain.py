@@ -25,7 +25,7 @@ from histoannot.auth import login_required, \
 from histoannot.db import get_db
 
 # TODO: these should be moved to another module
-from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta
+from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta_to_current
 from histoannot.project_ref import ProjectRef
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_patch
@@ -507,7 +507,9 @@ def update_sample(task_id, slide_id):
     if (sz_old != sz_new):
         check_rect(rc['task'], rect)
 
-    update_edit_meta(rc['meta_id'])
+    print(f'META-ID: {rc["meta_id"]}')
+
+    update_edit_meta_to_current(rc['meta_id'])
 
     # Update the main record
     db.execute(
@@ -779,7 +781,7 @@ def update_sampling_roi(task_id, slide_id):
 
     # Update the metadata for this ROI
     rc = db.execute('SELECT meta_id FROM sampling_roi WHERE id=?', (roi_id,)).fetchone()
-    update_edit_meta(rc['meta_id'])
+    update_edit_meta_to_current(rc['meta_id'])
 
     # Update the geometry
     [x0, y0, x1, y1] = compute_sampling_roi_bounding_box(geom_data)

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}
-Specimen Listing - {{task['name']}}
+Sample Listing - {{task['name']}}
 {% endblock %}
 
 {% block content %}
@@ -66,11 +66,19 @@ Specimen Listing - {{task['name']}}
   <div class="pure-u-1 pure-u-md-4-24" style="display:none;" id="thumb_panel">
     <h3 align="center">SELECTED SAMPLE</h3>
     <div id="thumb_div" width="100%">
-      <canvas id="thumb_canvas" style="width:100%; max-width:512;"></canvas>
+        <canvas id="thumb_canvas" style="width:100%; max-width:512;"></canvas>
     </div>
     <div id="thumb_ctl" width="100%">
       <label for="zoom_slider">Zoom factor:</label>
       <input type="range" min="0" max="3" value="0" class="slider" id="zoom_slider">
+    </div>
+    <div style="margin-top: 1em; text-align: center;">
+      <form id="form_edit_sample" action="" target="_blank" method="post" class="pure-form">
+        <input id="input_sample_id" name="sample_id" type="hidden">
+        <input id="input_sample_cx" name="sample_cx" type="hidden">
+        <input id="input_sample_cy" name="sample_cy" type="hidden">
+        <button type="submit" class="pure-button pure-button-primary">Edit Sample</button>
+      </form>
     </div>
   </div>
 </div>
@@ -95,6 +103,7 @@ $(document).ready(function() {
   // AJAX url templates
   var url_sample="{{url_for('dltrain.task_sample_listing', task_id=task_id)}}";
   var url_tmb="{{url_for('dltrain.get_sample_png', id=999999)}}";
+  var url_sample_link="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
   // var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
   // var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
 
@@ -105,19 +114,22 @@ $(document).ready(function() {
   };
 
   // Render functions with URLs
-  var fn_annot_link = function(data, type, row) {
-    var url = url_ann.replace('999999',data);
-    return '<a class="action" href="'+url+'">Annotate</a>';
-  };
-
-  var fn_dltrain_link = function(data, type, row) {
-    var url = url_dlt.replace('999999',data);
-    return '<a class="action" href="'+url+'">Train</a>';
-  };
-
-  var fn_browse_link = function(data, type, row) {
-    var url = url_dlt.replace('999999',data);
-    return '<a class="action" href="'+url+'">View</a>';
+  var fn_render_id_link = function(data, type, row) {
+    var slide_id = row['slide_id'];
+    var sample_id = row['id']
+    var url = url_sample_link.replace('999999',slide_id);
+    var cx = 0.5 * (parseFloat(row['x0']) + parseFloat(row['x1']));
+    var cy = 0.5 * (parseFloat(row['y0']) + parseFloat(row['y1']));
+    html = $('<a class="action" href="'+url+'">'+sample_id+'</a>');
+    /*
+    html = html.click(function(e) {
+      $('<form>').attr('method','post').attr('action',url).append(
+                        $('<input type="hidden" name="sample_id">').attr("value", sample_id),
+                        $('<input type="hidden" name="sample_cx">').attr("value", cx),
+                        $('<input type="hidden" name="sample_cy">').attr("value", cy)).appendTo('body').submit()
+      });
+      */
+    return html.html();
   };
 
   // Function to render a date
@@ -137,7 +149,12 @@ $(document).ready(function() {
     { data: "creator" },
     { data: "dt_create", render: fn_render_date },
     { data: "editor" },
-    { data: "dt_edit", render: fn_render_date  }
+    { data: "dt_edit", render: fn_render_date  },
+    { data: "slide_id", visible: false },
+    { data: "x0", visible: false },
+    { data: "y0", visible: false },
+    { data: "x1", visible: false },
+    { data: "y1", visible: false }
   ];
 
   var py2js = function(str) { return str==="None" ? null : str; }
@@ -219,6 +236,14 @@ $(document).ready(function() {
       }
       img.src = url_tmb.replace('999999', selected_id);
       $('#thumb_panel').css('display','block');
+
+      var slide_id = sel_rows.data().pluck('slide_id')[0];
+      var cx = 0.5 * (x0+x1);
+      var cy = 0.5 * (y0+y1);
+      $('#form_edit_sample').attr('action', url_sample_link.replace('999999',slide_id));
+      $('#input_sample_cx').attr('value', cx);
+      $('#input_sample_cy').attr('value', cy);
+      $('#input_sample_id').attr('value', selected_id);
     }
     else
     {

@@ -1617,7 +1617,7 @@ def annot_copy_to_task_cmd(source_task, target_task, overwrite):
         (data, stats) = transform_annot(data, np.eye(3))
         metadata = {'creator': a['creator'], 'editor': a['editor'], 
                     't_create': a['t_create'], 't_edit': a['t_edit']}
-        _do_update_annot(target_task, a['id'], data, stats, metadata=metadata)            
+        _do_update_annot(target_task, slide_id, data, stats, metadata=metadata)            
         print(f'Annot for slide {slide_id} Successfully imported!')
 
 

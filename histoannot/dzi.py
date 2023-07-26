@@ -235,6 +235,32 @@ def dzi(mode, project, slide_id, resource):
     return resp
 
 
+# Generate a 2D NIFTI.GZ image from a PIL image
+def pil_to_nifti_gz(image, spacing):
+    bio = BytesIO()
+
+    # This is the code needed to put RGB into NIB
+    pix = numpy.array(image, dtype=np.uint8)
+    if len(pix.shape) == 3:
+        pix = pix.transpose(1,0,2)
+        pix = numpy.expand_dims(pix, 2)
+        pix = pix.copy().view(dtype=np.dtype([('R', 'u1'), ('G', 'u1'), ('B', 'u1')])).reshape(pix.shape[0:3])
+    elif len(pix.shape) == 2:
+        pix = pix.transpose(1,0)
+        pix = numpy.expand_dims(pix, (2,3))
+    else:
+        raise ValueError('Wrong dimension of input image to pil_to_nifti_gz')
+    
+    # Start with a diagonal affine matrix and then swap AP and SI axes
+    # because sections are typically coronal
+    affine = np.diag([-spacing[0], -spacing[1], 1.0, 1.0])
+    print("RAS code:", nib.aff2axcodes(affine))
+    nii = nib.Nifti1Image(pix, affine)
+    file_map = nii.make_file_map({'image': bio, 'header': bio})
+    nii.to_file_map(file_map)
+    return gzip.compress(bio.getvalue())
+
+
 # Download image data
 def dzi_download(project, slide_id, resource, downsample, extension):
 
@@ -276,22 +302,8 @@ def dzi_download(project, slide_id, resource, downsample, extension):
             return resp
 
         elif extension == 'nii.gz':
-            bio = BytesIO()
-
-            # This is the code needed to put RGB into NIB
-            pix = numpy.array(thumb, dtype=np.uint8).transpose(1,0,2)
-            pix = numpy.expand_dims(pix, 2)
-            pix = pix.copy().view(dtype=np.dtype([('R', 'u1'), ('G', 'u1'), ('B', 'u1')])).reshape(pix.shape[0:3])
             spacing = [ os.dimensions[d] * mpp[d] / thumb.size[d] for d in (0,1) ]
-            
-            # Start with a diagonal affine matrix and then swap AP and SI axes
-            # because sections are typically coronal
-            affine = np.diag([-spacing[0], -spacing[1], 1.0, 1.0])
-            print("RAS code:", nib.aff2axcodes(affine))
-            nii = nib.Nifti1Image(pix, affine)
-            file_map = nii.make_file_map({'image': bio, 'header': bio})
-            nii.to_file_map(file_map)
-            data = gzip.compress(bio.getvalue())
+            data = pil_to_nifti_gz(thumb, spacing) 
             resp = make_response(data)
             resp.mimetype = 'application/octet-stream'
             return resp

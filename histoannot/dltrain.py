@@ -28,7 +28,7 @@ from histoannot.db import get_db
 from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta_to_current
 from histoannot.project_ref import ProjectRef
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_patch
+from histoannot.dzi import get_patch, pil_to_nifti_gz
 from histoannot.slide import make_slide_dbview, annot_sample_path_curves
 from histoannot.slideref import get_slide_ref
 
@@ -39,9 +39,11 @@ import os
 import urllib
 import random
 import colorsys
-from PIL import Image
+from PIL import Image, ImageDraw
 import pandas
 import sys
+import math
+import numpy as np
 
 from . import slide
 
@@ -54,6 +56,8 @@ import click
 from flask.cli import cli, with_appcontext
 
 from jsonschema import validate
+from openslide import OpenSlide, OpenSlideError
+
 
 bp = Blueprint('dltrain', __name__)
 
@@ -834,6 +838,65 @@ def get_sampling_rois(task_id, slide_id):
         'WHERE SR.slide=? and SR.task=? ORDER BY M.t_edit DESC ',
         (slide_id, task_id));
     return json.dumps([dict(row) for row in ll.fetchall()])
+
+
+# Define a function to draw a trapezoid on an image
+def draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, label):
+    # Calculate the angle and the distance between the midpoints
+    angle = math.atan2(y2 - y1, x2 - x1)
+
+    # Calculate the base direction
+    u,v = 0.5 * math.cos(angle + math.pi / 2), 0.5 * math.sin(angle + math.pi / 2)
+
+    # Calculate the four corners of the trapezoid
+    x3, y3 = x1 + w1 * u, y1 + w1 * v
+    x4, y4 = x1 - w1 * u, y1 - w1 * v
+    x5, y5 = x2 + w2 * u, y2 + w2 * v
+    x6, y6 = x2 - w2 * u, y2 - w2 * v
+
+    # Draw the trapezoid on the image using the label as the color
+    draw = ImageDraw.Draw(image)
+    draw.polygon([(x3*sx,y3*sy),(x4*sx,y4*sy),(x6*sx,y6*sy),(x5*sx,y5*sy)], fill=label)
+
+
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/sampling_roi/make_image_<int:maxdim>.nii.gz', methods=('GET',))
+@access_task_read
+def make_sampling_roi_image(task_id, slide_id, maxdim):
+    # Get all the sampling ROIs on this slide
+    db = get_db()
+    ll = db.execute(
+        'SELECT * FROM sampling_roi '
+        'WHERE slide=? and task=? ORDER BY id',
+        (slide_id, task_id))
+
+    # Get the slide dimensions from OpenSlide - this is slower than using metadata but
+    # closer to the source and ensures that the image generated matches the thumbnail        
+    sr = get_slide_ref(slide_id)
+    tiff_file = sr.get_local_copy('raw', check_hash=True)
+    os = OpenSlide(tiff_file)
+    thumb = os.get_thumbnail((maxdim, maxdim))
+
+    # Calculate the scale factor to fit the maximum dimension
+    W,H = os.dimensions
+    sx,sy = thumb.size[0] / W, thumb.size[1] / H
+
+    # Create an empty image with the desired output dimensions and mode L (grayscale)
+    image = Image.new('L', (thumb.size[0], thumb.size[1]))
+    for row in ll.fetchall():
+        geom_data, label = json.loads(row['json']), row['label']
+        if geom_data.get('type') == 'trapezoid':
+            # Read the coordinates
+            [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
+            draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, label)
+
+    # Generate a nifti image
+    print('shape: ', np.array(image, dtype=np.uint8).shape)
+    mpp = sr.get_pixel_spacing('raw')
+    spacing = [ os.dimensions[d] * mpp[d] / image.size[d] for d in (0,1) ]
+    data = pil_to_nifti_gz(image, spacing) 
+    resp = make_response(data)
+    resp.mimetype = 'application/octet-stream'
+    return resp
 
 
 # --------------------------------

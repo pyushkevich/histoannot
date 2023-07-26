@@ -288,24 +288,26 @@
                             <!-- affine or raw mode -->
                             {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
 
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                <select id="form_mode_select" class="pure-input-1-1" required>
-                                    {% if have_affine  %}
-                                    <option value="affine">Aligned to MRI</option>
-                                    {% endif %}
-                                    <option value="raw">Native Space</option>
-                                </select>
-                            </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                <select id="form_res_select" class="pure-input-1-1" required>
-                                    {% if have_x16  %}
-                                    <option value="x16">1:16</option>
-                                    {% endif %}
-                                    <option value="raw">1:1</option>
-                                </select>
-                            </div>
+                            <form id="form_server_disp_opt" target="#">
+                                <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
+                                <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                    <select id="form_mode_select" class="pure-input-1-1" required>
+                                        {% if have_affine  %}
+                                        <option value="affine">Aligned to MRI</option>
+                                        {% endif %}
+                                        <option value="raw">Native Space</option>
+                                    </select>
+                                </div>
+                                <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
+                                <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                    <select id="form_res_select" class="pure-input-1-1" required>
+                                        {% if have_x16  %}
+                                        <option value="x16">1:16</option>
+                                        {% endif %}
+                                        <option value="raw">1:1</option>
+                                    </select>
+                                </div>
+                            </form>
                             <div class="pure-u-1 pure-u-md-1-2"> <label> Slide overlay: </label> </div>
                             <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
                                 <select id="form_overlay_select" class="pure-input-1-1" required>
@@ -2376,7 +2378,7 @@ $(document).ready(function()
         s_mode.change(function() {
             const tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode='XXXX', resolution=resolution) }}";
             let url = tmpl.replace('XXXX', s_mode.val());
-            $("#form_disp_opt").attr("method","post").attr("action", url).submit();
+            $("#form_server_disp_opt").attr("method","post").attr("action", url).submit();
         });
 
         // Populate the transform form
@@ -2386,7 +2388,7 @@ $(document).ready(function()
         s_res.change(function() {
             const tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}";
             let url = tmpl.replace('XXXX', $("#form_res_select").val());
-            $("#form_disp_opt").attr("method","post").attr("action", url).submit();
+            $("#form_server_disp_opt").attr("method","post").attr("action", url).submit();
         });
     }
 

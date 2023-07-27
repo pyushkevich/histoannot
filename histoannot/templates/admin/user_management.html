@@ -7,6 +7,7 @@ PICSL Histology Annotation Server User Admin
 {% block content %}
 <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='DataTables/datatables.min.css') }}"/>
 <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-contextMenu/jquery.contextMenu.min.css') }}">
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-3.6.4.min.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
 <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='DataTables/datatables.min.js') }}"></script>
@@ -258,8 +259,8 @@ $(document).ready(function() {
     },
     {
       data: null,
-      className: "dt-center context-menu",
-      defaultContent: '<div class="user-context-menu-trigger"><button class="fa fa-ellipsis-v ellipsis"/></div>',
+      className: "dt-center context-menu-user ellipsis",
+      defaultContent: fn_make_ellipsis_button(),
       orderable: false
     }
   ];
@@ -328,14 +329,16 @@ $(document).ready(function() {
   } );
 
   // Handle context button press on users table
-  t_users.on('click', 'td.context-menu', function(e) {
+  /*
+  t_users.on('click', 'td.context-menu-user', function(e) {
     if (event.which === 1) {
       let row = t_users.row($(this).closest('tr'));
-      $(document).contextmenu("open", e, row);
-      e.stopPropagation();
+      // $(document).contextMenu("open", e, row);
+      e.preventDefault();
     }
     return true;
   });
+  */
 
   // This prevents from clicks on the access selector from activating row selection
   t_users.on('click', 'select', function(e) { e.stopPropagation(); });
@@ -372,35 +375,75 @@ $(document).ready(function() {
   };
 
   // Set up the user context menu, including actions when the menu items are clicked
-  $(document).contextmenu({
-    delegate: ".user-context-menu-trigger",
-    menu: [
-      { title: "Edit profile...", cmd: "edit" },
-      { title: "Reset password...", cmd: "reset" },
-      { title: "---" },
-      { title: "Delete user",
-        children: [
-                { title: "Never mind" },
-                { title: "Really delete user", children: [
-                        { title: "Never mind" },
-                        { title: "---" },
-                        { title: "DELETE USER, REALLY!", cmd: "delete"}
+  $(document).contextMenu({
+    selector: ".context-menu-user",
+    trigger: "left",
+    zIndex: 10,
+    items: [
+      { 
+        name: "Edit profile...", 
+        callback: function(itemKey, opt, e) {
+          let row = t_users.row($(this).closest('tr'));
+          fn_edit_profile(row);
+        }
+      },
+      { 
+        name: "Reset password...",
+        callback: function(itemKey, opt, e) { 
+          let row = t_users.row($(this).closest('tr'));
+          fn_reset_password(row.data());
+        }
+      },
+      "---",
+      { name: "Delete user",
+        items: [
+                { name: "Never mind" },
+                { 
+                  name: "Really delete user", 
+                  items: [
+                        { name: "Never mind" },
+                        { name: "---" },
+                        { 
+                          name: "DELETE USER, REALLY!", 
+                          callback: function(itemKey, opt, e) {
+                            let row = t_users.row($(this).closest('tr'));
+                            fn_delete_user(row.data());
+                          }
+                        }
                   ] }
                 ]
       }
+
     ],
-    autoTrigger: false,
-    select: function (event, ui) {
-      let user = ui.extraData.data();
-      if(ui.cmd === "reset")
-        fn_reset_password(user);
-      if(ui.cmd === "edit")
-        fn_edit_profile(ui.extraData);
-      if(ui.cmd === "delete")
-        fn_delete_user(ui.extraData);
-      return true;
+    events: {
+      preShow: function(options) {
+        row = t_users.row(options.closest('tr'));
+        row.select();
+      }
     }
   });
+
+  /*
+,
+      { 
+        name: "Reset password...",
+        callback: function(itemKey, opt, e) { 
+          let user = opt.$trigger.extraData.data();
+          fn_reset_password(user);
+        }
+      },
+      "---",
+      { name: "Delete user",
+        children: [
+                { name: "Never mind" },
+                { name: "Really delete user", children: [
+                        { name: "Never mind" },
+                        { name: "---" },
+                        { name: "DELETE USER, REALLY!", cmd: "delete"}
+                  ] }
+                ]
+      }
+  */
 
   // Project table column descriptor
   let project_listing_col_desc = [

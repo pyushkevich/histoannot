@@ -1,15 +1,30 @@
 <!doctype html>
 <html>
-  <head>
-    <title>{% block title %}{% endblock %} - PICSL HistoAnnot</title>
-    <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='pure/pure-min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='pure/grids-responsive-min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='pure/layouts/marketing.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-  </head>
+<head>
+  <title>{% block title %}{% endblock %} - PICSL HistoAnnot</title>
+  <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='pure/pure-min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='pure/grids-responsive-min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='pure/layouts/marketing.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='ellipsis_button.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='ellipsis_button.js') }}"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
 <body>
+
+  <!-- Common controls: Ellipsis menu button -->
+  <div id="ellipsis-button" style="display: none;">
+    <svg viewBox="0 0 20 20" class="ellipsis ellipsis_dots" focusable="false">
+      <ellipse cx="10.5" cy="10.5" rx="2" ry="2"/>
+      <ellipse cx="10.5" cy="5.0" rx="2" ry="2"/>
+      <ellipse cx="10.5" cy="16.0" rx="2" ry="2"/>
+    </svg>
+    <svg viewBox="0 0 20 20" class="ellipsis ellipsis_circle" focusable="false">
+      <ellipse cx="10.5" cy="10.5" rx="8" ry="8"/>
+    </svg>
+  </div>
+
   <div class="header">
     <div class="home-menu pure-menu pure-menu-horizontal pure-menu-fixed" style="padding-top:0px; padding-bottom:0px; vertical-align: middle;">
       <a class="pure-menu-heading" href="/" style="padding-left:0px">

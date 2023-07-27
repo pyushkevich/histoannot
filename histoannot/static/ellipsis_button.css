@@ -1,0 +1,31 @@
+svg.ellipsis {
+    height: 1.2em;
+    width: 1.2em;
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    transform: translate(-50%, -50%);
+}
+
+svg.ellipsis_dots {
+    opacity: 0.5;
+}
+
+svg.ellipsis_dots:hover {
+    opacity: 1.0;
+}
+
+svg.ellipsis_circle {
+    height: 1.6em;
+    width: 1.6em;
+    fill: rgba(0, 0, 255, 0.0);
+}
+
+svg.ellipsis_circle:hover {
+    fill: rgba(192, 192, 255, 0.25);
+}
+
+td.ellipsis {
+    position: relative;
+}
+  

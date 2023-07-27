@@ -328,18 +328,6 @@ $(document).ready(function() {
     searching: true
   } );
 
-  // Handle context button press on users table
-  /*
-  t_users.on('click', 'td.context-menu-user', function(e) {
-    if (event.which === 1) {
-      let row = t_users.row($(this).closest('tr'));
-      // $(document).contextMenu("open", e, row);
-      e.preventDefault();
-    }
-    return true;
-  });
-  */
-
   // This prevents from clicks on the access selector from activating row selection
   t_users.on('click', 'select', function(e) { e.stopPropagation(); });
 
@@ -382,6 +370,7 @@ $(document).ready(function() {
     items: [
       { 
         name: "Edit profile...", 
+        icon: "edit",
         callback: function(itemKey, opt, e) {
           let row = t_users.row($(this).closest('tr'));
           fn_edit_profile(row);
@@ -389,6 +378,7 @@ $(document).ready(function() {
       },
       { 
         name: "Reset password...",
+        icon: "password",
         callback: function(itemKey, opt, e) { 
           let row = t_users.row($(this).closest('tr'));
           fn_reset_password(row.data());
@@ -396,15 +386,16 @@ $(document).ready(function() {
       },
       "---",
       { name: "Delete user",
+        icon: "delete",
         items: [
-                { name: "Never mind" },
+                { name: "Never mind", icon: "quit", },
                 { 
-                  name: "Really delete user", 
+                  name: "Really delete user", icon: "delete",
                   items: [
-                        { name: "Never mind" },
+                        { name: "Never mind", icon: "quit", },
                         { name: "---" },
                         { 
-                          name: "DELETE USER, REALLY!", 
+                          name: "DELETE USER, REALLY!", icon: "delete",
                           callback: function(itemKey, opt, e) {
                             let row = t_users.row($(this).closest('tr'));
                             fn_delete_user(row.data());

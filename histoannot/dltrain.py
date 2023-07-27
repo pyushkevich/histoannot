@@ -846,7 +846,7 @@ def draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, label):
     angle = math.atan2(y2 - y1, x2 - x1)
 
     # Calculate the base direction
-    u,v = 0.5 * math.cos(angle + math.pi / 2), 0.5 * math.sin(angle + math.pi / 2)
+    u,v = math.cos(angle + math.pi / 2), math.sin(angle + math.pi / 2)
 
     # Calculate the four corners of the trapezoid
     x3, y3 = x1 + w1 * u, y1 + w1 * v

@@ -758,6 +758,7 @@ def create_sampling_roi_base(task_id, slide_id, label_id, geom_data, osl_level=0
 @access_task_write
 def create_sampling_roi(task_id, slide_id):
 
+    print(request.get_data())
     data = json.loads(request.get_data())
     geom_data = data['geometry']
     label_id = data['label_id']
@@ -824,6 +825,31 @@ def delete_sampling_roi(task_id, slide_id):
     # Commit
     db.commit()
 
+    return "success"
+
+
+# Common command to delete sampling rois on a slide
+def do_delete_sampling_rois_on_slide(task, slide_id):
+    # Delete the meta record
+    db = get_db()
+    db.execute('DELETE FROM edit_meta WHERE id IN '
+               '(SELECT meta_id FROM sampling_roi WHERE task=? AND slide=?)',
+               (task, slide_id))
+
+    # Delete the sample
+    rc = db.execute('DELETE FROM sampling_roi WHERE task=? AND slide=?', (task, slide_id))
+    print(f'Deletion successful, {rc.rowcount} sampling ROIs affected')
+
+    # Commit
+    db.commit()
+
+
+# Command to delete sampling ROIs for a single slide in a task
+@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sampling_roi/delete_all', methods=('GET','POST'))
+@access_task_write
+def sampling_roi_delete_on_slice(task_id, slide_id):
+    """Delete all the sampling ROIs on a selected slide."""
+    do_delete_sampling_rois_on_slide(task_id, slide_id)
     return "success"
 
 
@@ -1328,6 +1354,15 @@ def samples_random_from_annot_cmd(
             print('Created sample %d in slide %d at (%f,%f)' % (s_id, slide_id, p[0], p[1]))
 
 
+# Command to delete sampling ROIs for a single slide in a task
+@click.command('sampling-roi-delete-on-slide')
+@click.argument('task', type=click.INT)
+@click.argument('slide_id', type=click.INT)
+@with_appcontext
+def sampling_roi_delete_on_slice(task, slide_id):
+    """Delete all the sampling ROIs on a selected slide."""
+    do_delete_sampling_rois_on_slide(task, slide_id)
+
         
 def init_app(app):
     app.cli.add_command(samples_import_csv_command)
@@ -1335,3 +1370,4 @@ def init_app(app):
     app.cli.add_command(samples_delete_cmd)
     app.cli.add_command(samples_fix_patches_cmd)
     app.cli.add_command(samples_random_from_annot_cmd)
+    app.cli.add_command(sampling_roi_delete_on_slice)

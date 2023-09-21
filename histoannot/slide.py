@@ -29,7 +29,7 @@ from histoannot.auth import login_required, get_user_id, \
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
-from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta
+from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
 from io import BytesIO, StringIO
@@ -926,7 +926,10 @@ def _do_update_annot(task_id, slide_id, annot, stats, metadata={}):
     if a_row is not None:
 
         # Update the timestamp
-        update_edit_meta(a_row['meta_id'], **metadata)
+        if metadata:
+            update_edit_meta(a_row['meta_id'], **metadata)
+        else:
+            update_edit_meta_to_current(a_row['meta_id'])
         
         # Update the row
         db.execute(

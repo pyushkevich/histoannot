@@ -926,8 +926,13 @@ $(document).ready(function()
         payload = paper.project.exportJSON();
         adjust_paperjs_text_rotation();
 
-        $.post(url , payload,
-            function(response_text) { console.log("AJAX reponse"); console.log(response_text) })
+        $.ajax({
+            type: "POST",
+            url: url,
+            data: payload,
+            success: function(resp) { console.log('Success: ', resp); },
+            error: function(xhr,status,error) { console.log('Error: ', xhr, status, error); }
+            });
     };
 
     // An object that is being moved
@@ -1593,7 +1598,7 @@ $(document).ready(function()
             hit = my_hit_test(ev_point(event));
             moving_object=null;
             if(hit) {
-                console.log('Hit:', hit.type, hit.item.segments.length, hit.item.selected)
+                console.log('Hit:', hit.type, hit.item);
                 if(!hit.item.selected) {
                     // Hitting an unselected target
                     deselect_all_manipulables();

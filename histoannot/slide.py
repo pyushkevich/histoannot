@@ -383,6 +383,19 @@ def make_slide_dbview(task_id, view_name):
                 GROUP BY S.id, S.section, S.slide, specimen, block_name
                 ORDER BY specimen_private, block_name, section, slide""" % (view_name, int(task_id)))
 
+    elif task['mode'] == 'sampling':
+
+        db.execute(
+            """CREATE TEMP VIEW %s AS
+                SELECT S.*,
+                   COUNT(R.id) as n_sampling_rois
+                FROM task_slide_index TSI
+                    LEFT JOIN slide_info S ON TSI.slide = S.id
+                    LEFT JOIN sampling_roi R on R.slide = S.id AND R.task = TSI.task_id
+                WHERE TSI.task_id = %d
+                GROUP BY S.id, S.section, S.slide, specimen, block_name
+                ORDER BY specimen_private, block_name, section, slide""" % (view_name, int(task_id)))
+
     else:
 
         db.execute(
@@ -1634,10 +1647,11 @@ def annot_copy_to_task_cmd(source_task, target_task, overwrite):
 @click.option('--stain',help="List slides matching a stain")
 @click.option('--min-paths', type=click.INT, help="List slides with path annotations only")
 @click.option('--min-markers', type=click.INT, help="List slides with marker annotations only")
+@click.option('--min-sroi', type=click.INT, help="List slides with sampling ROIs only")
 @click.option('-C', '--csv', type=click.File('wt'), help="Write results to CSV file")
 @with_appcontext
 def slides_list_cmd(task, specimen, block, section, slide, stain,
-        min_paths, min_markers, csv):
+        min_paths, min_markers, min_sroi, csv):
     """List slides in a task"""
 
     db=get_db()
@@ -1653,7 +1667,8 @@ def slides_list_cmd(task, specimen, block, section, slide, stain,
              ('slide = ?', slide),
              ('stain = ?', stain),
              ('n_paths >= ?', min_paths), 
-             ('n_markers >= ?', min_markers)]))
+             ('n_markers >= ?', min_markers),
+             ('n_sampling_rois >= ?', min_sroi)]))
 
     if len(w) > 0:
         w_sql,w_prm = zip(*w)

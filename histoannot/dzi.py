@@ -41,7 +41,7 @@ from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.auth import access_project_read
+from histoannot.auth import access_project_read, access_project_admin
 
 bp = Blueprint('dzi', __name__)
 
@@ -211,6 +211,17 @@ def dzi_slide_dimensions(project, slide_id):
     return jsonify(
         {"dimensions": sr.get_dims(),
          "spacing": sr.get_pixel_spacing('raw') })
+
+
+# Get the file path of the slide - this requires admin access
+@bp.route('/dzi/<project>/<int:slide_id>/filepath', methods=('GET', 'POST'))
+@access_project_admin
+@forward_to_worker
+def dzi_slide_filepath(project, slide_id):
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+    return jsonify(
+        {"remote": sr.get_resource_url('raw', False),
+         "local": sr.get_resource_url('raw', True) })
 
 
 # Get the DZI for a slide

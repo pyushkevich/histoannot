@@ -233,6 +233,7 @@
                 <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
                 <a href="{{ url_for('slide.specimen_detail_by_id', task_id = task_id, specimen=slide_info['specimen']) }}">{{ slide_info['specimen_display'] }}</a> :
                 <a href="{{ url_for('slide.block_detail_by_id', task_id = task_id, specimen=slide_info['specimen'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
+                --- {{sample_id}}
             </td>
             <td align="center" style="white-space: nowrap;">
                 <form style="display:inline;" id="form-prev"
@@ -652,6 +653,7 @@ $(document).ready(function()
         }
         else if (seg_mode === 'sampling') {
             sroi_api.refresh_rois();
+            setTimeout(function() { focus_on_initial_sampling_roi() }, 250);
         }
     }
 
@@ -1607,7 +1609,7 @@ $(document).ready(function()
                         select_label(hit.item.data.label_id);
                         reset_samples_table_on_label_change(hit.item.data.label_id);
                     }
-                    else if(seg_mode === 'sampling' && hit.item.data.label_id) {
+                    else if(seg_mode === 'sampling' && sroi_api.get_label_id(hit.item)) {
                         sroi_api.on_selection(hit.item, true);
                         select_label(sroi_api.get_label_id(hit.item));
                     }
@@ -2330,7 +2332,7 @@ $(document).ready(function()
         var focus_on_initial_sample = function() {
             var focus_sample_id='{{sample_id}}';
             if(focus_sample_id && focus_sample_id.length > 0) {
-                focus_on_sample(Number(focus_sample_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));A
+                focus_on_sample(Number(focus_sample_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));
             }
         };
 
@@ -2367,6 +2369,37 @@ $(document).ready(function()
                 }
             }
             fn_focus_on_viewer();
+        };
+
+        // Function to focus on a specific sample
+        var focus_on_sampling_roi = function(id, cx, cy) {
+
+            // Navigate there
+            pt_im = new OpenSeadragon.Point(Number(cx), Number(cy));
+            pt_vp = viewer.world.getItemAt(0).imageToViewportCoordinates(pt_im);
+            zoom_vp = viewer.world.getItemAt(0).imageToViewportZoom(0.05);
+            viewer.viewport.zoomTo(zoom_vp, false);
+            viewer.viewport.panTo(pt_vp, false);
+
+            // Select the sample with this id
+            var items = paper.project.getItems({
+                data: { id: Number(id) }
+            });
+
+            // Select the sample
+            deselect_all_manipulables();
+            items[0].selected = true;
+            select_label(sroi_api.get_label_id(items[0]));
+            fn_update_button_state();
+            fn_focus_on_viewer()
+        };
+
+        // Check if we should be navigating to a specific sample
+        var focus_on_initial_sampling_roi = function() {
+            var focus_sampling_roi_id='{{sample_id}}';
+            if(focus_sampling_roi_id && focus_sampling_roi_id.length > 0) {
+                focus_on_sampling_roi(Number(focus_sampling_roi_id), Number('{{sample_cx}}'), Number('{{sample_cy}}'));
+            }
         };
 
         set_label_table_click_callback(label_select_callback);

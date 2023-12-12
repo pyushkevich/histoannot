@@ -595,6 +595,21 @@ def get_sample_patch_filename(sample_id):
     return os.path.join(patch_dir, patch_fn)
 
 
+# Get the filename where a sample should be saved
+def get_sampling_roi_patch_filename(sampling_roi_id):
+
+    # Create a directory
+    patch_dir = os.path.join(current_app.instance_path, 'dltrain/patches')
+    if not os.path.exists(patch_dir):
+        os.makedirs(patch_dir)
+
+    # Generate the filename
+    patch_fn = "sampling_roi_%08d.png" % (sampling_roi_id,)
+
+    # Get the full path
+    return os.path.join(patch_dir, patch_fn)
+
+
 # Generate an image patch for a sample
 def generate_sample_patch(slide_id, sample_id, rect, dims=(512,512), level=0):
 
@@ -867,7 +882,7 @@ def get_sampling_rois(task_id, slide_id):
 
 
 # Define a function to draw a trapezoid on an image
-def draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, label):
+def draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, fill=None, outline=None):
     # Calculate the angle and the distance between the midpoints
     angle = math.atan2(y2 - y1, x2 - x1)
 
@@ -882,7 +897,7 @@ def draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, label):
 
     # Draw the trapezoid on the image using the label as the color
     draw = ImageDraw.Draw(image)
-    draw.polygon([(x3*sx,y3*sy),(x4*sx,y4*sy),(x6*sx,y6*sy),(x5*sx,y5*sy)], fill=label)
+    draw.polygon([(x3*sx,y3*sy),(x4*sx,y4*sy),(x6*sx,y6*sy),(x5*sx,y5*sy)], fill=fill, outline=outline)
 
 
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/sampling_roi/make_image_<int:maxdim>.nii.gz', methods=('GET',))
@@ -913,7 +928,7 @@ def make_sampling_roi_image(task_id, slide_id, maxdim):
         if geom_data.get('type') == 'trapezoid':
             # Read the coordinates
             [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
-            draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, label)
+            draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, fill=label)
 
     # Generate a nifti image
     print('shape: ', np.array(image, dtype=np.uint8).shape)
@@ -922,6 +937,49 @@ def make_sampling_roi_image(task_id, slide_id, maxdim):
     data = pil_to_nifti_gz(image, spacing) 
     resp = make_response(data)
     resp.mimetype = 'application/octet-stream'
+    return resp
+
+
+@bp.route('/task/<int:task_id>/sampling_roi/<int:sroi_id>/thumb.png', methods=('GET',))
+@access_task_read
+def make_thumbnail_for_sampling_roi(task_id, sroi_id):
+
+    # Get this sampling ROI
+    db = get_db()
+    sroi_row = db.execute('SELECT * FROM sampling_roi WHERE id=? and task=?', (sroi_id, task_id)).fetchone()
+    slide_id = sroi_row['slide']
+
+    # Get the cached thumbnail for the slide
+    sr = get_slide_ref(slide_id)
+    thumb_png = sr.get_local_copy('thumb')
+
+    # Load the thumbnail
+    thumb = Image.open(thumb_png)
+
+    # Calculate the scale factor to fit the maximum dimension
+    W,H = sr.get_dims()
+    sx,sy = thumb.size[0] / W, thumb.size[1] / H
+
+    # Draw the sampling ROI
+    geom_data, label = json.loads(sroi_row['json']), sroi_row['label']
+
+    # Get the color for this label
+    color = db.execute('SELECT color FROM label WHERE id=?', (label,)).fetchone()['color']
+
+    if geom_data.get('type') == 'trapezoid':
+        # Read the coordinates
+        [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
+        draw_trapezoid(thumb, x1, y1, x2, y2, w1, w2, sx, sy, outline=color)
+
+    # Crop the image around the center
+    cx, cy = (x1+x2) / 2, (y1+y2) / 2
+    thumb = thumb.crop((cx*sx-128,cy*sx-128,cx*sx+127,cy*sx+127))
+
+    # Return the image as a PNG
+    buf = io.BytesIO()
+    thumb.save(buf, 'PNG')
+    resp = make_response(buf.getvalue())
+    resp.mimetype = 'image/png'
     return resp
 
 
@@ -958,6 +1016,39 @@ def make_dbview_full(view_name):
                       INNER JOIN user UE on UE.id = EM.editor
                       INNER JOIN task_slide_info S on T.slide = S.id and T.task = S.task_id
                       INNER JOIN label L on T.label = L.id""" % (view_name,))
+    
+
+# Cache slide metadata for CSV operations
+class SlideMetadataCache:
+
+    def __init__(self, project_ref):
+        self._dict = {}
+        self.pr = project_ref
+
+    def get_meta(self, slide_id):
+        slide_meta = self._dict.get(slide_id)
+        if slide_meta is None:
+            sr = get_slide_ref(slide_id, self.pr)
+            slide_meta = {}
+            try:
+                slide_meta = {
+                    'mpp': sr.get_pixel_spacing('raw'),
+                    'dims': sr.get_dims()
+                }
+            except:
+                slide_meta = { 'mpp': None, 'dims': None }
+            self._dict[slide_id] = slide_meta
+        return slide_meta
+
+    def mpp(self, slide_id):
+        slide_meta = self.get_meta(slide_id)
+        slide_mpp = slide_meta['mpp']
+        return slide_mpp if slide_mpp is not None else [None, None]
+
+    def dims(self, slide_id):
+        slide_meta = self.get_meta(slide_id)
+        slide_mpp = slide_meta['dims']
+        return slide_mpp if slide_mpp is not None else [None, None]
 
 
 def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, list_mpp = False, header = True):
@@ -992,19 +1083,12 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
         fout.write(','.join(hdr_keys) + '\n')
 
     # Keep track of slide dimensions info
-    mpp_dict = {}
-
+    mpp_cache = SlideMetadataCache(pr)
     for row in rc.fetchall():
         vals = list(map(lambda a: str(row[a]), keys))
         if list_mpp:
             id = row['slide']
-            if id not in mpp_dict:
-                sr = get_slide_ref(id, pr)
-                try:
-                    mpp_dict[id] = (sr.get_pixel_spacing('raw'), sr.get_dims())
-                except:
-                    mpp_dict[id] = ([None, None], [None, None])
-            (mpp, dims) = mpp_dict[id]
+            (mpp, dims) = (mpp_cache.mpp(id), mpp_cache.dims(id))
             vals = vals + [str(x) for x in [ mpp[0], mpp[1], dims[0], dims[1] ] ]
         fout.write(','.join(vals) + '\n')
 
@@ -1363,7 +1447,143 @@ def sampling_roi_delete_on_slice(task, slide_id):
     """Delete all the sampling ROIs on a selected slide."""
     do_delete_sampling_rois_on_slide(task, slide_id)
 
-        
+
+def sampling_roi_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, list_mpp = False, header = True):
+    db = get_db()
+
+    # Get the project reference
+    project,_ = get_task_data(task)
+    pr = ProjectRef(project)
+
+    # Select keys to export
+    keys = ('slide_name', 'label_name', 'x0', 'x1', 'y0', 'y1')
+    if list_metadata:
+        keys = keys + ('t_create', 'creator', 't_edit', 'editor')
+    if list_block:
+        keys = keys + ('specimen_private', 'block_name', 'stain')
+    if list_ids:
+        keys = ('id',) + keys
+
+    # Run query
+    rc = db.execute(
+        'SELECT SR.*,SI.*,EM.*,L.name AS label_name FROM sampling_roi SR '
+        '   LEFT JOIN slide_info SI ON SR.slide=SI.id '
+        '   LEFT JOIN edit_meta EM ON EM.id=SR.meta_id '
+        '   LEFT JOIN label L ON L.id = SR.label '
+        'WHERE task=? ORDER BY SR.id', (task,))
+
+    if header:
+        hdr_keys = keys
+        if list_mpp:
+            hdr_keys = hdr_keys + ('mpp_x', 'mpp_y', 'dim_x', 'dim_y')
+        fout.write(','.join(hdr_keys) + '\n')
+
+    # Keep track of slide dimensions info
+    mpp_cache = SlideMetadataCache(pr)
+
+    for row in rc.fetchall():
+        vals = list(map(lambda a: str(row[a]), keys))
+        if list_mpp:
+            id = row['slide']
+            (mpp, dims) = (mpp_cache.mpp(id), mpp_cache.dims(id))
+            vals = vals + [str(x) for x in [ mpp[0], mpp[1], dims[0], dims[1] ] ]
+        fout.write(','.join(vals) + '\n')
+
+
+@bp.route('/dltrain/api/task/<int:task_id>/sampling_roi/manifest.csv', methods=('GET',))
+@access_task_read
+def get_sampling_roi_manifest_for_task(task_id):
+    fout = io.StringIO()
+    sampling_roi_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True, list_mpp=True)
+    return Response(fout.getvalue(), mimetype='text/csv')
+
+
+@click.command('samping-roi-export-csv')
+@click.argument('task')
+@click.argument('output_file')
+@click.option('--header/--no-header', default=False, help='Include header in output CSV file')
+@click.option('--metadata/--no-metadata', default=False, help='Include metadata in output CSV file')
+@click.option('--specimen/--no-specimen', default=False, help='Include specimen ids in output CSV file')
+@click.option('--ids/--no-ids', default=False, help='Include sample database ids in output CSV file')
+@click.option('--mpp/--no-mpp', default=False, help='Include microns per pixel info in output CSV file')
+@with_appcontext
+def sampling_roi_export_csv_command(task, output_file, header, metadata, specimen, ids, mpp):
+    """Export all training samples in a task to a CSV file"""
+    with open(output_file, 'wt') as fout:
+        sampling_roi_generate_csv(task, fout,
+                                  list_metadata=metadata, list_ids=ids,
+                                  list_block=specimen, list_mpp=mpp, header=header)
+
+
+
+
+# Complete sample listing 
+@bp.route('/api/task/<int:task_id>/sampling-rois', methods=('POST',))
+@access_task_read
+def task_sampling_roi_listing(task_id):
+    db = get_db()
+    db.set_trace_callback(print)
+
+    # Map the request to json
+    r = json.loads(request.get_data().decode('UTF-8'))
+
+    # Get the current task data
+    project,task = get_task_data(task_id)
+
+    # Run a query to count the total number of samples to return
+    n_total = db.execute(
+        """SELECT COUNT(T.id) as n 
+           FROM sampling_roi_info T 
+           WHERE T.task=?""", (task_id,)).fetchone()['n']
+
+    # Do we have a global search query
+    if len(r['search']['value']) > 0:
+        # Create search clause for later
+        search_clause = 'AND (T.specimen_name LIKE ? OR T.block_name LIKE ? OR T.label_name LIKE ?)'
+        search_pat = '%' + r['search']['value'] + '%'
+        search_items = search_pat,search_pat,search_pat
+
+        # Run search clause to get number of filtered entries
+        n_filtered = db.execute(
+            """SELECT COUNT(T.id) as n 
+               FROM sampling_roi_info T 
+               WHERE T.task=? {}""".format(search_clause), (task_id,) + search_items).fetchone()['n']
+    else:
+        search_clause, search_items = '', ()
+        n_filtered = n_total
+
+    # Field to order by
+    if 'order' in r and len(r['order']) > 0:
+        order_clause = "{:d} {}".format(
+            1+int(r['order'][0]['column']),
+            {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']])
+    else:
+        order_clause = 'RANDOM()'
+
+    # Which page to extract
+    paging_start = r.get('start', 0)
+    paging_length = r.get('length', 1000)
+
+    # Run the main query
+    samples = db.execute(
+        """SELECT * 
+           FROM sampling_roi_info T
+           WHERE T.task = ? {}
+           ORDER BY {} LIMIT {:d},{:d}""".format(search_clause,order_clause,paging_start,paging_length), 
+           (task_id,) + search_items).fetchall()
+
+    # Build return json
+    x = {
+        'draw' : r['draw'],
+        'recordsTotal': n_total,
+        'recordsFiltered': n_filtered,
+        'data': [dict(row) for row in samples]
+    }
+
+    db.set_trace_callback(None)
+    return json.dumps(x)
+
+
 def init_app(app):
     app.cli.add_command(samples_import_csv_command)
     app.cli.add_command(samples_export_csv_command)
@@ -1371,3 +1591,4 @@ def init_app(app):
     app.cli.add_command(samples_fix_patches_cmd)
     app.cli.add_command(samples_random_from_annot_cmd)
     app.cli.add_command(sampling_roi_delete_on_slice)
+    app.cli.add_command(sampling_roi_export_csv_command)

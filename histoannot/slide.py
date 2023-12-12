@@ -133,7 +133,7 @@ def task_listing(project):
 
         # Create a dict
         task = json.loads(row['json'])
-        d = {'id': row['id'], 'name': task['name'], 'desc': task['desc']}
+        d = {'id': row['id'], 'name': task['name'], 'desc': task['desc'], 'mode': task['mode']}
         for key in ('nspecimens', 'nblocks', 'nslides'):
             d[key] = stat[key]
 

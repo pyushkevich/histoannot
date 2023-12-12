@@ -1,7 +1,9 @@
 {% extends 'base.html' %}
 
+{% set itemname = 'Sample' if task['mode'] == 'dltrain' else 'Sampling ROI' %}
+
 {% block title %}
-Sample Listing - {{task['name']}}
+{{itemname}} Listing - {{task['name']}}
 {% endblock %}
 
 {% block content %}
@@ -32,7 +34,7 @@ Sample Listing - {{task['name']}}
 
 <div class="pure-g">
   <div class="pure-u-1 pure-u-md-19-24">
-    <h3 align="center">TASK {{task_id}} SAMPLE LISTING</h3>
+    <h3 align="center">TASK {{task_id}} {{itemname.upper()}} LISTING</h3>
     <table id="samples" class="compact stripe hover" style="width:100%">
       <thead>
         <tr>
@@ -64,7 +66,7 @@ Sample Listing - {{task['name']}}
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
   <div class="pure-u-1 pure-u-md-4-24" style="display:none;" id="thumb_panel">
-    <h3 align="center">SELECTED SAMPLE</h3>
+    <h3 align="center">SELECTED {{itemname.upper()}}</h3>
     <div id="thumb_div" width="100%">
         <canvas id="thumb_canvas" style="width:100%; max-width:512;"></canvas>
     </div>
@@ -77,7 +79,7 @@ Sample Listing - {{task['name']}}
         <input id="input_sample_id" name="sample_id" type="hidden">
         <input id="input_sample_cx" name="sample_cx" type="hidden">
         <input id="input_sample_cy" name="sample_cy" type="hidden">
-        <button type="submit" class="pure-button pure-button-primary">Edit Sample</button>
+        <button type="submit" class="pure-button pure-button-primary">Edit {{itemname}}</button>
       </form>
     </div>
   </div>
@@ -101,8 +103,17 @@ $(document).ready(function() {
   mode="{{task['mode']}}";
 
   // AJAX url templates
-  var url_sample="{{url_for('dltrain.task_sample_listing', task_id=task_id)}}";
-  var url_tmb="{{url_for('dltrain.get_sample_png', id=999999)}}";
+  var url_sample;
+  var url_tmb;
+  if(mode == "dltrain") {
+    url_sample="{{url_for('dltrain.task_sample_listing', task_id=task_id)}}";
+    url_tmb="{{url_for('dltrain.get_sample_png', id=999999)}}";
+  }
+  else if(mode == "sampling") {
+    url_sample="{{url_for('dltrain.task_sampling_roi_listing', task_id=task_id)}}";
+    url_tmb="{{url_for('dltrain.make_thumbnail_for_sampling_roi', sroi_id=999999, task_id=task_id)}}";
+  }
+
   var url_sample_link="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
   // var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
   // var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";

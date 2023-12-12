@@ -79,6 +79,7 @@ PICSL Histology Annotation Server
       <thead>
         <tr>
           <th>Id</th>
+          <th>Mode</th>
           <th>Activity</th>
           <th>#Spc</th>
           <th>#Blk</th>
@@ -114,6 +115,9 @@ PICSL Histology Annotation Server
     </li>
     <li id="mi-task-all-samples" data-isadmin=0>
       <div>View All Samples</div>
+    </li>
+    <li id="mi-task-all-sroi" data-isadmin=0>
+      <div>View All Sampling ROIs</div>
     </li>
   </ul>
 </div>
@@ -164,6 +168,7 @@ $(document).ready(function() {
   // Column descriptions for the task table
   var task_col_desc = [
     { data: "id", visible: false },
+    { data: "mode", visible: false },
     { data: "name", render: fn_task_link_render },
     { data: "nspecimens" },
     { data: "nblocks" },
@@ -242,7 +247,7 @@ $(document).ready(function() {
         window.location.href = url;
         return false;
       }
-      if(ui.item[0].id === "mi-task-all-samples") {
+      if(ui.item[0].id === "mi-task-all-samples" || ui.item[0].id === "mi-task-all-sroi") {
         url = url_task_all_samples.replace('999999', task_id);
         window.location.href = url;
         return false;
@@ -334,6 +339,19 @@ $(document).ready(function() {
     var row_data = t_task.row($(this).closest('tr')).data();
     dialog.data("task_id", row_data.id);
 
+    // Toggle the visibility of different menu items
+    if(row_data.mode == 'dltrain')
+      $("#mi-task-all-samples").removeClass('ui-state-disabled');
+    else
+      $("#mi-task-all-samples").addClass('ui-state-disabled');
+
+    // Toggle the visibility of different menu items
+    if(row_data.mode == 'sampling')
+      $("#mi-task-all-sroi").removeClass('ui-state-disabled');
+    else
+      $("#mi-task-all-sroi").addClass('ui-state-disabled');
+
+    // Show dialog
     dialog.dialog("option", "position", pos).dialog("open");
     return false;
   });

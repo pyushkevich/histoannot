@@ -38,6 +38,7 @@
     <table id="samples" class="compact stripe hover" style="width:100%">
       <thead>
         <tr>
+          <th>RandomOrder</th>
           <th>Id</th>
           <th>Specimen</th>
           <th>Block</th>
@@ -118,6 +119,9 @@ $(document).ready(function() {
   // var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
   // var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
 
+  // Random key for ordering the table
+  var random_key = Math.floor(Math.random() * 1000000);
+
   // Thumbnail render function
   var fn_render_thumb = function(data, type, row) {
     var url = url_tmb.replace('999999',data);
@@ -150,6 +154,7 @@ $(document).ready(function() {
 
   // Column descriptions for different tables
   sample_col_desc = [
+    { data: "random_index", visible: false},
     { data: "id" },
     { data: "specimen_name" },
     { data: "block_name" },
@@ -186,7 +191,8 @@ $(document).ready(function() {
         url: url_sample, 
         contentType: "application/json",
         type: "POST",
-        data: function ( d ) { return JSON.stringify( d ); } 
+        data: function(d) { d.random_key = random_key; return JSON.stringify(d); }
+        // data: function ( d ) { return JSON.stringify( d ); } 
     },
     columns: sample_col_desc,
     ordering: true,
@@ -196,9 +202,12 @@ $(document).ready(function() {
     buttons: [ {
       text: 'randomize',
       action: function ( e, dt, node, config ) {
-        t_sample_opts.ordering = !t_sample_opts.ordering;
-        t_samples.destroy();
-        t_samples = $('#samples').DataTable(t_sample_opts);
+        dt.order([[0, 'desc']]);
+        dt.ajax.reload();
+        random_key = Math.floor(Math.random() * 1000000);
+        // t_sample_opts.ordering = !t_sample_opts.ordering;
+        // t_samples.destroy();
+        // t_samples = $('#samples').DataTable(t_sample_opts);
       }
     }],
     keys: {
@@ -206,7 +215,11 @@ $(document).ready(function() {
     }
   };
 
+  // Create table
   let t_samples = $('#samples').DataTable(t_sample_opts);
+
+  // Initially order the table in reverse edit order
+  t_samples.order([[11, 'desc']]);
 
   /*
   

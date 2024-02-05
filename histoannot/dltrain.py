@@ -118,15 +118,10 @@ def get_labelset_labels_table(task_id, slide_id):
     return render_template('dbtrain/label_table.html', labels = ll_data, task_id=task_id, slide_id=slide_id)
 
 
-# Complete sample listing 
-@bp.route('/api/task/<int:task_id>/samples', methods=('POST',))
-@access_task_read
-def task_sample_listing(task_id):
+# Shared function to perform sample/sampling ROI listing
+def server_side_object_listing(task_id, db_view, r):
     db = get_db()
     db.set_trace_callback(print)
-
-    # Map the request to json
-    r = json.loads(request.get_data().decode('UTF-8'))
 
     # Get the current task data
     project,task = get_task_data(task_id)
@@ -134,32 +129,37 @@ def task_sample_listing(task_id):
     # Run a query to count the total number of samples to return
     n_total = db.execute(
         """SELECT COUNT(T.id) as n 
-           FROM training_sample_info T 
-           WHERE T.task=?""", (task_id,)).fetchone()['n']
+           FROM {} T 
+           WHERE T.task=?""".format(db_view), (task_id,)).fetchone()['n']
 
     # Do we have a global search query
     if len(r['search']['value']) > 0:
         # Create search clause for later
-        search_clause = 'AND (T.specimen_name LIKE ? OR T.block_name LIKE ? OR T.label_name LIKE ?)'
+        search_fields = ['id','specimen_name','block_name','stain','label_name','creator','editor']
+        search_inner = ' OR '.join([f'T.{k} LIKE ?' for k in search_fields])
+        search_clause = f'AND ({search_inner})'
         search_pat = '%' + r['search']['value'] + '%'
-        search_items = search_pat,search_pat,search_pat
+        search_items = tuple(search_pat for k in search_fields)
 
         # Run search clause to get number of filtered entries
         n_filtered = db.execute(
             """SELECT COUNT(T.id) as n 
-               FROM training_sample_info T 
-               WHERE T.task=? {}""".format(search_clause), (task_id,) + search_items).fetchone()['n']
+               FROM {} T 
+               WHERE T.task=? {}""".format(db_view, search_clause), 
+               (task_id,) + search_items).fetchone()['n']
     else:
         search_clause, search_items = '', ()
         n_filtered = n_total
 
     # Field to order by
     if 'order' in r and len(r['order']) > 0:
-        order_clause = "{:d} {}".format(
-            1+int(r['order'][0]['column']),
+        order_column = r['order'][0]['column']
+        order_column_name = r['columns'][order_column]['data']
+        order_clause = "{} {}".format(
+            order_column_name,
             {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']])
     else:
-        order_clause = 'RANDOM()'
+        order_clause = 'SIN({:d}+id)'.format(r['random_key'])
 
     # Which page to extract
     paging_start = r.get('start', 0)
@@ -167,11 +167,11 @@ def task_sample_listing(task_id):
 
     # Run the main query
     samples = db.execute(
-        """SELECT * 
-           FROM training_sample_info T
+        """SELECT *, SIN(? + id) as random_index
+           FROM {} T
            WHERE T.task = ? {}
-           ORDER BY {} LIMIT {:d},{:d}""".format(search_clause,order_clause,paging_start,paging_length), 
-           (task_id,) + search_items).fetchall()
+           ORDER BY {} LIMIT {:d},{:d}""".format(db_view,search_clause,order_clause,paging_start,paging_length), 
+           (int(r['random_key']), task_id) + search_items).fetchall()
 
     # Build return json
     x = {
@@ -183,6 +183,19 @@ def task_sample_listing(task_id):
 
     db.set_trace_callback(None)
     return json.dumps(x)
+
+
+# Complete sample listing 
+@bp.route('/api/task/<int:task_id>/samples', methods=('POST',))
+@access_task_read
+def task_sample_listing(task_id):
+
+    # Map the request to json
+    r = json.loads(request.get_data().decode('UTF-8'))
+
+    # Call helper function
+    return server_side_object_listing(task_id, 'training_sample_info', r)
+
 
 
 # Complete listing of slides in a task
@@ -1521,67 +1534,12 @@ def sampling_roi_export_csv_command(task, output_file, header, metadata, specime
 @bp.route('/api/task/<int:task_id>/sampling-rois', methods=('POST',))
 @access_task_read
 def task_sampling_roi_listing(task_id):
-    db = get_db()
-    db.set_trace_callback(print)
 
     # Map the request to json
     r = json.loads(request.get_data().decode('UTF-8'))
 
-    # Get the current task data
-    project,task = get_task_data(task_id)
-
-    # Run a query to count the total number of samples to return
-    n_total = db.execute(
-        """SELECT COUNT(T.id) as n 
-           FROM sampling_roi_info T 
-           WHERE T.task=?""", (task_id,)).fetchone()['n']
-
-    # Do we have a global search query
-    if len(r['search']['value']) > 0:
-        # Create search clause for later
-        search_clause = 'AND (T.specimen_name LIKE ? OR T.block_name LIKE ? OR T.label_name LIKE ?)'
-        search_pat = '%' + r['search']['value'] + '%'
-        search_items = search_pat,search_pat,search_pat
-
-        # Run search clause to get number of filtered entries
-        n_filtered = db.execute(
-            """SELECT COUNT(T.id) as n 
-               FROM sampling_roi_info T 
-               WHERE T.task=? {}""".format(search_clause), (task_id,) + search_items).fetchone()['n']
-    else:
-        search_clause, search_items = '', ()
-        n_filtered = n_total
-
-    # Field to order by
-    if 'order' in r and len(r['order']) > 0:
-        order_clause = "{:d} {}".format(
-            1+int(r['order'][0]['column']),
-            {'asc':'ASC','desc':'DESC'}[r['order'][0]['dir']])
-    else:
-        order_clause = 'RANDOM()'
-
-    # Which page to extract
-    paging_start = r.get('start', 0)
-    paging_length = r.get('length', 1000)
-
-    # Run the main query
-    samples = db.execute(
-        """SELECT * 
-           FROM sampling_roi_info T
-           WHERE T.task = ? {}
-           ORDER BY {} LIMIT {:d},{:d}""".format(search_clause,order_clause,paging_start,paging_length), 
-           (task_id,) + search_items).fetchall()
-
-    # Build return json
-    x = {
-        'draw' : r['draw'],
-        'recordsTotal': n_total,
-        'recordsFiltered': n_filtered,
-        'data': [dict(row) for row in samples]
-    }
-
-    db.set_trace_callback(None)
-    return json.dumps(x)
+    # Call helper function
+    return server_side_object_listing(task_id, 'sampling_roi_info', r)
 
 
 def init_app(app):

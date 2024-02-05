@@ -749,15 +749,15 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         context['spacing_str'] = '{:.4f} x {:.4f}'.format(sp_mm[0], sp_mm[1])
 
     # Add optional fields to context
+    sample_data = {}
     if 'slide_view_sample_data' in session:
         sample_data = session.get('slide_view_sample_data')
         session.pop('slide_view_sample_data')
-    else:
-        sample_data = request.form
 
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
-        if field in sample_data:
-            context[field] = sample_data[field]
+        for source in request.args, request.form, sample_data:
+            if field in source:
+                context[field] = source[field]
 
     # Render the template
     return render_template('slide/slide_view.html', **context)

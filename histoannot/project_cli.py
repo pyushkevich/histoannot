@@ -446,7 +446,8 @@ slide_json_schema = {
 
 # Imports a single slide into the database
 def refresh_slide(pr, sr, slide_name, specimen, stain, block,
-                  section=0, slide_number=0, cert="", tags=[], check_hash = True):
+                  section=0, slide_number=0, cert="", tags=[], check_hash = True,
+                  **kwargs):
 
     # Database cursor
     db = get_db()
@@ -589,6 +590,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
 
                         # Create a slideref for this filename
                         sr = SlideRef(pr, data['specimen'], data['block'], p.stem, p.suffix[1:])
+                        print(data['specimen'], data['block'], p.stem, p.suffix[1:])
                         if not sr.resource_exists('raw', False):
                             print("Raw file does not exist for JSON: %s" % pj)
                             continue
@@ -600,6 +602,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                         refresh_slide(pr, sr, slide_name=p.stem, check_hash=check_hash, **data)
                     except:
                         print('Exception importing slide JSON: {}'.format(pj))
+                        print(traceback.format_exc())
                         pass
 
     else:

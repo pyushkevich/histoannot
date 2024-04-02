@@ -178,7 +178,6 @@ def _task_access_required(view, min_access_level):
     def wrapped_view(**kwargs):
 
         # The project keyword must exist
-        print('*** TASK_ACCESS_CHECK %s ***' % (min_access_level,))
         if 'task_id' not in kwargs:
             abort(404, "Task ID not specified")
 

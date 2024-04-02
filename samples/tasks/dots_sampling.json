@@ -1,0 +1,10 @@
+{
+    "restrict-access": true, 
+    "name": "Dots Sampling ROIs", 
+    "sampling": {
+        "labelset": "dots_sampling"
+    }, 
+    "mode": "sampling", 
+    "tags": { "any" : ["dots"] }, 
+    "desc": "MRI-guided histology sampling"
+}

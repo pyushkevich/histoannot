@@ -29,7 +29,7 @@ from histoannot.auth import login_required, get_user_id, \
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
-from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current
+from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
 from io import BytesIO, StringIO
@@ -133,7 +133,7 @@ def task_listing(project):
 
         # Create a dict
         task = json.loads(row['json'])
-        d = {'id': row['id'], 'name': task['name'], 'desc': task['desc']}
+        d = {'id': row['id'], 'name': task['name'], 'desc': task['desc'], 'mode': task['mode']}
         for key in ('nspecimens', 'nblocks', 'nslides'):
             d[key] = stat[key]
 
@@ -379,6 +379,19 @@ def make_slide_dbview(task_id, view_name):
                 FROM task_slide_index TSI
                     LEFT JOIN slide_info S ON TSI.slide = S.id
                     LEFT JOIN training_sample T on T.slide = S.id AND T.task = TSI.task_id
+                WHERE TSI.task_id = %d
+                GROUP BY S.id, S.section, S.slide, specimen, block_name
+                ORDER BY specimen_private, block_name, section, slide""" % (view_name, int(task_id)))
+
+    elif task['mode'] == 'sampling':
+
+        db.execute(
+            """CREATE TEMP VIEW %s AS
+                SELECT S.*,
+                   COUNT(R.id) as n_sampling_rois
+                FROM task_slide_index TSI
+                    LEFT JOIN slide_info S ON TSI.slide = S.id
+                    LEFT JOIN sampling_roi R on R.slide = S.id AND R.task = TSI.task_id
                 WHERE TSI.task_id = %d
                 GROUP BY S.id, S.section, S.slide, specimen, block_name
                 ORDER BY specimen_private, block_name, section, slide""" % (view_name, int(task_id)))
@@ -696,6 +709,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     url_tmpl_download_tiff = url_for('dzi.dzi_download_tiff', **url_ctx)
     url_tmpl_download_nii_gz = url_for('dzi.dzi_download_nii_gz', **url_ctx)
     url_tmpl_download_fullres = url_for('dzi.dzi_download_fullres', **url_ctx)
+    url_tmpl_download_label = url_for('dzi.dzi_download_label_image', **url_ctx)
+    url_tmpl_download_macro = url_for('dzi.dzi_download_macro_image', **url_ctx)
+    url_tmpl_download_header = url_for('dzi.dzi_download_header', **url_ctx)
 
     # Build a dictionary to call
     context = {
@@ -719,6 +735,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'url_tmpl_download_tiff': url_tmpl_download_tiff,
         'url_tmpl_download_nii_gz': url_tmpl_download_nii_gz,
         'url_tmpl_download_fullres': url_tmpl_download_fullres,
+        'url_tmpl_download_label': url_tmpl_download_label,
+        'url_tmpl_download_macro': url_tmpl_download_macro,
+        'url_tmpl_download_header': url_tmpl_download_header,
         'task': task,
         'fixed_box_size': get_dltrain_fixed_box_size(task),
         'user_prefs': user_prefs,
@@ -735,16 +754,21 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         sp_mm = tuple(1000. * x for x in slide_spacing)
         context['spacing_str'] = '{:.4f} x {:.4f}'.format(sp_mm[0], sp_mm[1])
 
+    # Get slide dimensions
+    dims = sr.get_dims()
+    context['dims'] = dims
+    context['dims_str'] = f'{dims[0]} x {dims[1]}'
+
     # Add optional fields to context
+    sample_data = {}
     if 'slide_view_sample_data' in session:
         sample_data = session.get('slide_view_sample_data')
         session.pop('slide_view_sample_data')
-    else:
-        sample_data = request.form
 
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
-        if field in sample_data:
-            context[field] = sample_data[field]
+        for source in request.args, request.form, sample_data:
+            if field in source:
+                context[field] = source[field]
 
     # Render the template
     return render_template('slide/slide_view.html', **context)
@@ -1225,6 +1249,12 @@ def api_slide_job_status(task_id, slide_id, jobid):
     #    return urllib.request.urlopen(url, post_data).read()
 
 
+@bp.route('/api/project/<project>/specimen/<specimen>/refresh_slides', methods=('GET','POST'))
+@access_project_admin
+def api_project_refresh_slides_for_specimen(project, specimen):
+    refresh_slide_db(project, None, single_specimen=specimen, check_hash=False)
+    return "", 200, {'ContentType':'application/json'} 
+
 # Export all annotations for a task as a single JSON file
 @click.command('annot-export-task')
 @click.argument('task', type=click.INT)
@@ -1634,10 +1664,11 @@ def annot_copy_to_task_cmd(source_task, target_task, overwrite):
 @click.option('--stain',help="List slides matching a stain")
 @click.option('--min-paths', type=click.INT, help="List slides with path annotations only")
 @click.option('--min-markers', type=click.INT, help="List slides with marker annotations only")
+@click.option('--min-sroi', type=click.INT, help="List slides with sampling ROIs only")
 @click.option('-C', '--csv', type=click.File('wt'), help="Write results to CSV file")
 @with_appcontext
 def slides_list_cmd(task, specimen, block, section, slide, stain,
-        min_paths, min_markers, csv):
+        min_paths, min_markers, min_sroi, csv):
     """List slides in a task"""
 
     db=get_db()
@@ -1653,7 +1684,8 @@ def slides_list_cmd(task, specimen, block, section, slide, stain,
              ('slide = ?', slide),
              ('stain = ?', stain),
              ('n_paths >= ?', min_paths), 
-             ('n_markers >= ?', min_markers)]))
+             ('n_markers >= ?', min_markers),
+             ('n_sampling_rois >= ?', min_sroi)]))
 
     if len(w) > 0:
         w_sql,w_prm = zip(*w)

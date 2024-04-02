@@ -7,6 +7,8 @@
     "pattern": {
       "raw": "{specimen}/histo_raw/{slide_name}.{slide_ext}",
       "thumb": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
+      "macro": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_macro.tiff",
+      "label": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_label.tiff",
       "dims": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
       "metadata": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_metadata.json"
     },

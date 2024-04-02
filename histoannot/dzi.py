@@ -50,6 +50,7 @@ import numpy
 from flask.cli import with_appcontext
 import nibabel as nib
 import gzip
+from PIL import Image
 
 
 # The function that is enqueued in RQ
@@ -280,10 +281,13 @@ def dzi_download(project, slide_id, resource, downsample, extension):
 
     # Get the resource
     tiff_file = sr.get_local_copy(resource, check_hash=True)
+    print(f'Fetching {sr.get_resource_url(resource, False)}')
+    if tiff_file is None:
+        return f'Resource {resource} not available for slide {slide_id}', 400
 
     # If no downsample, send raw file
     if downsample == 0:
-        if extension != sr.slide_ext:
+        if not tiff_file.lower().endswith(extension.lower()):
             return "Wrong extension requested", 400
 
         # MRXS files will require special handling
@@ -343,8 +347,6 @@ def dzi_download_nii_gz(project, slide_id, resource, downsample):
 @forward_to_worker
 def dzi_download_fullres(project, slide_id, resource, extension):
     return dzi_download(project, slide_id, resource, 0, extension)
-
-
 
 
 class PILBytesIO(BytesIO):
@@ -515,6 +517,63 @@ def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, for
 @forward_to_worker
 def get_random_patch_endpoint(project, slide_id, resource, level, width, format):
     return get_random_patch(project, slide_id, resource, level, width, format)
+
+
+def dzi_download_thumblike_image(project, slide_id, resource, extension):
+
+    # Get a project reference, using either local database or remotely supplied dict
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+
+    # Get the resource
+    local_file = sr.get_local_copy(resource, check_hash=True)
+    if local_file is None:
+        return f'Resource {resource} not available for slide {slide_id}', 400
+    
+    # Load the file as an image
+    image = Image.open(local_file)
+
+    # Save in requested format to a buffer
+    buf = PILBytesIO()
+    image.save(buf, extension)
+    resp = make_response(buf.getvalue())
+    resp.mimetype = 'image/%s' % format
+    return resp
+
+
+# Download a label image for a slide 
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_label.png', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_download_label_image(project, slide_id):
+    return dzi_download_thumblike_image(project, slide_id, 'label', 'png')
+
+
+# Download a label image for a slide 
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_macro.png', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_download_macro_image(project, slide_id):
+    return dzi_download_thumblike_image(project, slide_id, 'macro', 'png')
+
+
+# Download a label image for a slide 
+@bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_header.json', methods=('GET', 'POST'))
+@access_project_read
+@forward_to_worker
+def dzi_download_header(project, slide_id, resource):
+
+    # Get a project reference, using either local database or remotely supplied dict
+    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+
+    # Get the resource
+    tiff_file = sr.get_local_copy(resource, check_hash=True)
+    print(f'Fetching {sr.get_resource_url(resource, False)}')
+    if tiff_file is None:
+        return f'Resource {resource} not available for slide {slide_id}', 400
+
+    os = OpenSlide(tiff_file)
+    prop_dict = { k:v for k,v in os.properties.items() }
+    return json.dumps(prop_dict), 200, {'ContentType':'application/json'}
 
 
 # Command to run preload worker

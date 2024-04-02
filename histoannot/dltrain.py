@@ -1461,7 +1461,9 @@ def sampling_roi_delete_on_slice(task, slide_id):
     do_delete_sampling_rois_on_slide(task, slide_id)
 
 
-def sampling_roi_generate_csv(task, fout, list_metadata = False, list_ids = False, list_block = False, list_mpp = False, header = True):
+def sampling_roi_generate_csv(task, fout, 
+        list_metadata = False, list_ids = False, list_block = False, 
+        list_mpp = False, header = True, list_url = False):
     db = get_db()
 
     # Get the project reference
@@ -1489,6 +1491,8 @@ def sampling_roi_generate_csv(task, fout, list_metadata = False, list_ids = Fals
         hdr_keys = keys
         if list_mpp:
             hdr_keys = hdr_keys + ('mpp_x', 'mpp_y', 'dim_x', 'dim_y')
+        if list_url:
+            hdr_keys = hdr_keys + ('url',)
         fout.write(','.join(hdr_keys) + '\n')
 
     # Keep track of slide dimensions info
@@ -1496,10 +1500,20 @@ def sampling_roi_generate_csv(task, fout, list_metadata = False, list_ids = Fals
 
     for row in rc.fetchall():
         vals = list(map(lambda a: str(row[a]), keys))
+        id = row['slide']
         if list_mpp:
-            id = row['slide']
             (mpp, dims) = (mpp_cache.mpp(id), mpp_cache.dims(id))
             vals = vals + [str(x) for x in [ mpp[0], mpp[1], dims[0], dims[1] ] ]
+        if list_url:
+            # This code does not work, not sure why, hacked for an hour
+            # url = current_app.url_for('slide.slide_view',
+            #         task_id=task, slide_id=row['slide'], resolution='raw', affine_mode='raw')
+            server = current_app.config['HISTOANNOT_PUBLIC_URL']
+            url = f'{server}/task/{task}/slide/{row["slide"]}/view/raw/raw'
+            cx = int((float(row['x0']) + float(row['x1'])) // 2)
+            cy = int((float(row['y0']) + float(row['y1'])) // 2)
+            url = f'{url}?sample_id={row["id"]}&sample_cx={cx}&sample_cy={cy}'
+            vals.append(url)
         fout.write(','.join(vals) + '\n')
 
 
@@ -1507,6 +1521,7 @@ def sampling_roi_generate_csv(task, fout, list_metadata = False, list_ids = Fals
 @access_task_read
 def get_sampling_roi_manifest_for_task(task_id):
     fout = io.StringIO()
+    current_app.config['SERVER_NAME'] = current_app.config['HISTOANNOT_PUBLIC_URL']
     sampling_roi_generate_csv(task_id, fout, list_metadata=True, list_ids=True, list_block=True, list_mpp=True)
     return Response(fout.getvalue(), mimetype='text/csv')
 
@@ -1519,13 +1534,14 @@ def get_sampling_roi_manifest_for_task(task_id):
 @click.option('--specimen/--no-specimen', default=False, help='Include specimen ids in output CSV file')
 @click.option('--ids/--no-ids', default=False, help='Include sample database ids in output CSV file')
 @click.option('--mpp/--no-mpp', default=False, help='Include microns per pixel info in output CSV file')
+@click.option('--url/--no-url', default=False, help='Include box URL in output CSV file')
 @with_appcontext
-def sampling_roi_export_csv_command(task, output_file, header, metadata, specimen, ids, mpp):
+def sampling_roi_export_csv_command(task, output_file, header, metadata, specimen, ids, mpp, url):
     """Export all training samples in a task to a CSV file"""
     with open(output_file, 'wt') as fout:
         sampling_roi_generate_csv(task, fout,
                                   list_metadata=metadata, list_ids=ids,
-                                  list_block=specimen, list_mpp=mpp, header=header)
+                                  list_block=specimen, list_mpp=mpp, header=header, list_url=url)
 
 
 

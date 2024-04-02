@@ -9,6 +9,7 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='DataTables/datatables.min.css') }}"/>
 <script type="text/javascript" src="{{ url_for('static', filename='openseadragon-bin-2.4.0/openseadragon.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-3.6.4.min.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
@@ -19,6 +20,8 @@
 <script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='js.cookie.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='colormaps.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='DataTables/datatables.min.js') }}"></script>
+
 
 {% if seg_mode == 'dltrain' %}
   {% include 'dbtrain/label_table_bare.html' %}
@@ -258,93 +261,128 @@
                 <span class="display-opts-dropdown">
                     <button class="dropbtn">Display <i class="fa fa-caret-down"></i></button>
                     <div class="display-opts-dropdown-content" style="font-size: 75%;">
-                        <div class="header">
-                            <h3>Display Options</h3>
-                        </div>
-                        <!-- Main image contrast properties -->
-                        <div class="pure-g">
-                            <div class="pure-u-1 pure-u-md-1-1"> 
-                                <h4>Contrast Adjustment</h4>
-                            </div> 
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Level: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> 
-                                <div id="primary_level" class="display-opts-right-slider"></div>
-                            </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Window: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> 
-                                <div id="primary_window" class="display-opts-right-slider"></div>
-                            </div>
-                            <div class="pure-u-1 pure-u-md-1-1"> 
-                                <h4>Slide Display Options</h4>
-                            </div> 
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Rotation: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> 
-                                <div id="slide_rotation" class="display-opts-right-slider"></div>
-                            </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Zoom: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                <input id="slide_zoom" step="0.001" type="number">
-                            </div>
+                        <div id="display-opts-dropdown-tabs">
+                            <ul>
+                                <li><a href="#tabs-opts">Display Options</a></li>
+                                <li><a href="#tabs-label">Slide Label</a></li>
+                                <li><a href="#tabs-macro">Macro Image</a></li>
+                                <li><a href="#tabs-header">Image Header</a></li>
+                            </ul>
+                            <div id="tabs-opts">
+                                <!-- Main image contrast properties -->
+                                <div class="pure-g">
+                                    <div class="pure-u-1 pure-u-md-1-1"> 
+                                        <h4>Contrast Adjustment</h4>
+                                    </div> 
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Level: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <div id="primary_level" class="display-opts-right-slider"></div>
+                                    </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Window: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <div id="primary_window" class="display-opts-right-slider"></div>
+                                    </div>
+                                    <div class="pure-u-1 pure-u-md-1-1"> 
+                                        <h4>Slide Display Options</h4>
+                                    </div> 
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Rotation: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <div id="slide_rotation" class="display-opts-right-slider"></div>
+                                    </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Zoom: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                        <input id="slide_zoom" step="0.001" type="number">
+                                    </div>
 
-                            <!-- affine or raw mode -->
-                            {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
+                                    <!-- affine or raw mode -->
+                                    {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
 
-                            <form id="form_server_disp_opt" target="#">
-                                <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
-                                <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                    <select id="form_mode_select" class="pure-input-1-1" required>
-                                        {% if have_affine  %}
-                                        <option value="affine">Aligned to MRI</option>
-                                        {% endif %}
-                                        <option value="raw">Native Space</option>
-                                    </select>
+                                    <form id="form_server_disp_opt" target="#">
+                                        <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
+                                        <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                            <select id="form_mode_select" class="pure-input-1-1" required>
+                                                {% if have_affine  %}
+                                                <option value="affine">Aligned to MRI</option>
+                                                {% endif %}
+                                                <option value="raw">Native Space</option>
+                                            </select>
+                                        </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
+                                        <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                            <select id="form_res_select" class="pure-input-1-1" required>
+                                                {% if have_x16  %}
+                                                <option value="x16">1:16</option>
+                                                {% endif %}
+                                                <option value="raw">1:1</option>
+                                            </select>
+                                        </div>
+                                    </form>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Slide overlay: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                        <select id="form_overlay_select" class="pure-input-1-1" required>
+                                            <option value="none">None</option>
+                                        </select>
+                                    </div>
+
+                                    <div id="div_overlay_options" class="display-opts-hidden-content">
+                                        <div class="pure-u-1 pure-u-md-1-1"> 
+                                            <h4>Overlay Properties</h4>
+                                        </div> 
+                                        <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Opacity:</label> </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> 
+                                            <div id="overlay_opacity_slider" class="display-opts-right-slider"></div>
+                                        </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Level:</label> </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> 
+                                            <div id="overlay_level" class="display-opts-right-slider"></div>
+                                        </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Window:</label> </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> 
+                                            <div id="overlay_window" class="display-opts-right-slider"></div>
+                                        </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Ramp:</label> </div>
+                                        <div class="pure-u-1 pure-u-md-1-2"> 
+                                            <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
+                                        </div>
+                                    </div>
+
+                                    {% endif %}
+                                    <div class="pure-u-1 pure-u-md-1-1"> 
+                                        <h4>Slide Information</h4>
+                                    </div> 
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Slide dimensions (pixels):</label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <input id="form_info_dims" class="pure-input-1-1" value="{{dims_str}}" readonly>
+                                    </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Pixel spacing (µm):</label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <input id="form_info_spacing" class="pure-input-1-1" value="{{spacing_str}}" readonly>
+                                    </div>
                                 </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
-                                <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                    <select id="form_res_select" class="pure-input-1-1" required>
-                                        {% if have_x16  %}
-                                        <option value="x16">1:16</option>
-                                        {% endif %}
-                                        <option value="raw">1:1</option>
-                                    </select>
-                                </div>
-                            </form>
-                            <div class="pure-u-1 pure-u-md-1-2"> <label> Slide overlay: </label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                <select id="form_overlay_select" class="pure-input-1-1" required>
-                                    <option value="none">None</option>
-                                </select>
                             </div>
-
-                            <div id="div_overlay_options" class="display-opts-hidden-content">
+                            <div id="tabs-label">
                                 <div class="pure-u-1 pure-u-md-1-1"> 
-                                    <h4>Overlay Properties</h4>
+                                    <img src="{{url_tmpl_download_label}}" alt="Slide label image" style="display: block; margin-left: auto; margin-right: auto;">
                                 </div> 
-                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Opacity:</label> </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> 
-                                    <div id="overlay_opacity_slider" class="display-opts-right-slider"></div>
-                                </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Level:</label> </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> 
-                                    <div id="overlay_level" class="display-opts-right-slider"></div>
-                                </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Window:</label> </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> 
-                                    <div id="overlay_window" class="display-opts-right-slider"></div>
-                                </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> <label>Overlay Ramp:</label> </div>
-                                <div class="pure-u-1 pure-u-md-1-2"> 
-                                    <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
-                                </div>
                             </div>
-
-                            {% endif %}
-                            <div class="pure-u-1 pure-u-md-1-1"> 
-                                <h4>Slide Information</h4>
-                            </div> 
-                            <div class="pure-u-1 pure-u-md-1-2"> <label>Pixel spacing (µm):</label> </div>
-                            <div class="pure-u-1 pure-u-md-1-2"> 
-                                <input id="form_info_spacing" class="pure-input-1-1" value="{{spacing_str}}" readonly>
+                            <div id="tabs-macro">
+                                <div class="pure-u-1 pure-u-md-1-1"> 
+                                    <img src="{{url_tmpl_download_macro}}" alt="Slide macro image" style="display: block; margin-left: auto; margin-right: auto;">
+                                </div> 
+                            </div>
+                            <div id="tabs-header">
+                                <div class="pure-u-1 pure-u-md-1-1"> 
+                                    <table id="slide_header" class="compact stripe hover" style="width:100%">
+                                        <thead>
+                                          <tr>
+                                            <th>Property</th>
+                                            <th>Value</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                        </tbody>
+                                      </table>                                
+                                </div> 
                             </div>
                         </div>
 
@@ -421,6 +459,8 @@
                         <option value="tiff">Downsampled .tiff</option>
                         <option value="nii">Downsampled .nii.gz</option>
                         <option value="fullres">Full-resolution .{{slide_ext}}</option>
+                        <option value="label">Label image</option>
+                        <option value="macro">Macro image</option>
                     </select>
                 </div>
                 <div class="pure-control-group">
@@ -704,6 +744,52 @@ $(document).ready(function()
         width: "auto",
         modal: true
     });
+
+    // Tabs on the display options dropdown
+    let tabs_display_opts = $("#display-opts-dropdown-tabs").tabs();
+
+    // This function reformats the header json into something I can display in a table
+    let parseJSONDictionary = function(jsonDict) {
+        const jsonArray = [];
+        // Iterate over the keys of the JSON object
+        for (const key in jsonDict) {
+            if (jsonDict.hasOwnProperty(key)) {
+                // Create a dictionary with 'key' and 'value' entries
+                const dictEntry = {
+                    "key": key,
+                    "value": jsonDict[key]
+                };
+                // Push the dictionary to the array
+                jsonArray.push(dictEntry);
+            }
+        }
+        return jsonArray;
+    }
+
+    // Slide header table
+    let slide_header_table = $("#slide_header").DataTable( {
+        ajax: function(data, callback, settings) {
+            $.ajax({
+                url: "{{url_tmpl_download_header}}".replace("XXXXX", "{{resolution}}"),
+                success: function(resp_text) {
+                    callback({data: parseJSONDictionary(JSON.parse(resp_text))});
+                }
+            });
+        },
+        columns: [
+            { data: "key" },
+            { 
+                data: "value", 
+                render: function (data, type, row, meta) {
+                    return data.replaceAll('\n','<br>');
+                }
+            }
+        ],
+        paging: false,
+        select: 'none',
+        searching: false,
+        scrollY: '400px'
+      } );
                                             
     // Get the progress of loading the current slide
     var check_preload_progress = function(job_id, cb_complete) {
@@ -2129,8 +2215,12 @@ $(document).ready(function()
             dlink_tmpl = "{{url_tmpl_download_tiff}}"
         else if(fmt == "nii")
             dlink_tmpl = "{{url_tmpl_download_nii_gz}}"
-        else
+        else if(fmt == "fullres")
             dlink_tmpl = "{{url_tmpl_download_fullres}}"
+        else if(fmt == "label")
+            dlink_tmpl = "{{url_tmpl_download_label}}"
+        else if(fmt == "macro")
+            dlink_tmpl = "{{url_tmpl_download_macro}}"
 
         d_link = dlink_tmpl.replace("XXXXX", "{{resolution}}").replace("999999", ds.toString());
         dl_dialog.dialog("close");

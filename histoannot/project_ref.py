@@ -21,6 +21,8 @@ _default_histo_url_schema = {
         "x16": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_x16_pyramid.tiff",
         "affine": "{specimen}/histo_proc/{slide_name}/recon/{slide_name}_recon_iter10_affine.mat",
         "thumb": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_thumbnail.tiff",
+        "label": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_label.tiff",
+        "macro": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_macro.tiff",
         "dims": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_resolution.txt",
         "metadata": "{specimen}/histo_proc/{slide_name}/preproc/{slide_name}_metadata.json",
         "d_tangles": "{specimen}/histo_proc/{slide_name}/density/{slide_name}_Tau_tangles_densitymap.tiff"
@@ -165,6 +167,7 @@ class ProjectRef:
         :param d: Dictionary used to check the resource against the schema
         :return: Relative path of the file corresponding to the resource
         """
+        print(self.get_url_schema())
         pattern = self.get_url_schema()["pattern"].get(resource, None)
         return pattern.format(**d) if pattern is not None else None
 

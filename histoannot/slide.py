@@ -29,7 +29,7 @@ from histoannot.auth import login_required, get_user_id, \
 from histoannot.db import get_db
 from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
-from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current
+from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
 from io import BytesIO, StringIO
@@ -709,6 +709,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     url_tmpl_download_tiff = url_for('dzi.dzi_download_tiff', **url_ctx)
     url_tmpl_download_nii_gz = url_for('dzi.dzi_download_nii_gz', **url_ctx)
     url_tmpl_download_fullres = url_for('dzi.dzi_download_fullres', **url_ctx)
+    url_tmpl_download_label = url_for('dzi.dzi_download_label_image', **url_ctx)
+    url_tmpl_download_macro = url_for('dzi.dzi_download_macro_image', **url_ctx)
+    url_tmpl_download_header = url_for('dzi.dzi_download_header', **url_ctx)
 
     # Build a dictionary to call
     context = {
@@ -732,6 +735,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'url_tmpl_download_tiff': url_tmpl_download_tiff,
         'url_tmpl_download_nii_gz': url_tmpl_download_nii_gz,
         'url_tmpl_download_fullres': url_tmpl_download_fullres,
+        'url_tmpl_download_label': url_tmpl_download_label,
+        'url_tmpl_download_macro': url_tmpl_download_macro,
+        'url_tmpl_download_header': url_tmpl_download_header,
         'task': task,
         'fixed_box_size': get_dltrain_fixed_box_size(task),
         'user_prefs': user_prefs,
@@ -747,6 +753,11 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         context['spacing'] = slide_spacing
         sp_mm = tuple(1000. * x for x in slide_spacing)
         context['spacing_str'] = '{:.4f} x {:.4f}'.format(sp_mm[0], sp_mm[1])
+
+    # Get slide dimensions
+    dims = sr.get_dims()
+    context['dims'] = dims
+    context['dims_str'] = f'{dims[0]} x {dims[1]}'
 
     # Add optional fields to context
     sample_data = {}
@@ -1237,6 +1248,12 @@ def api_slide_job_status(task_id, slide_id, jobid):
     #    post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
     #    return urllib.request.urlopen(url, post_data).read()
 
+
+@bp.route('/api/project/<project>/specimen/<specimen>/refresh_slides', methods=('GET','POST'))
+@access_project_admin
+def api_project_refresh_slides_for_specimen(project, specimen):
+    refresh_slide_db(project, None, single_specimen=specimen, check_hash=False)
+    return "", 200, {'ContentType':'application/json'} 
 
 # Export all annotations for a task as a single JSON file
 @click.command('annot-export-task')

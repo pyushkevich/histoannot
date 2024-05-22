@@ -119,6 +119,9 @@ PICSL Histology Annotation Server
     <li id="mi-task-all-sroi" data-isadmin=0>
       <div>View All Sampling ROIs</div>
     </li>
+    <li id="mi-task-slide-manifest" data-isadmin=1>
+      <div>Download Slide Manifest</div>
+    </li>
   </ul>
 </div>
 
@@ -138,6 +141,7 @@ $(document).ready(function() {
   var url_labelset_edt="{{url_for('dltrain.labelset_editor', project='XXXX')}}";
   var url_task_all_slides="{{url_for('slide.task_all_slides', task_id='999999')}}";
   var url_task_all_samples="{{url_for('dltrain.task_all_samples', task_id='999999')}}";
+  var url_task_slide_manifest="{{url_for('slide.api_task_list_all_slides', task_id='999999')}}";
 
   // Rendering of links
   var fn_task_link_render = function(data, type, row) {
@@ -247,7 +251,12 @@ $(document).ready(function() {
         window.location.href = url;
         return false;
       }
-      if(ui.item[0].id === "mi-task-all-samples" || ui.item[0].id === "mi-task-all-sroi") {
+      else if(ui.item[0].id === "mi-task-slide-manifest") {
+        url = url_task_slide_manifest.replace('999999', task_id);
+        window.location.href = url;
+        return false;
+      }
+      else if(ui.item[0].id === "mi-task-all-samples" || ui.item[0].id === "mi-task-all-sroi") {
         url = url_task_all_samples.replace('999999', task_id);
         window.location.href = url;
         return false;

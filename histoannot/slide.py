@@ -1255,6 +1255,17 @@ def api_project_refresh_slides_for_specimen(project, specimen):
     refresh_slide_db(project, None, single_specimen=specimen, check_hash=False)
     return "", 200, {'ContentType':'application/json'} 
 
+
+@bp.route('/api/task/task_<int:task_id>_slides.csv', methods=('GET','POST'))
+@access_task_admin
+def api_task_list_all_slides(task_id):
+    db=get_db()
+    make_slide_dbview(task_id, 'v_full')
+    df = pandas.read_sql_query( "SELECT * FROM v_full", db)
+    csv = df.to_csv()
+    return Response(csv, 200, mimetype="text/csv", headers={"Content-disposition": "attachment"})
+
+
 # Export all annotations for a task as a single JSON file
 @click.command('annot-export-task')
 @click.argument('task', type=click.INT)

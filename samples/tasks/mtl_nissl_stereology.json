@@ -1,0 +1,15 @@
+{
+    "restrict-access": true, 
+    "name": "Stereology: Nissl",
+    "stains": [
+        "nissl"
+    ], 
+    "dltrain": {
+        "labelset": "mtl_stereology",
+        "min-size": 256,
+        "max-size": 25600,
+        "display-patch-size": 512
+    }, 
+    "mode": "dltrain", 
+    "desc": "Stereology for validation of quantitative Nissl metrics"
+}

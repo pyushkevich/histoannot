@@ -315,7 +315,7 @@ def update_slide_derived_data(slide_id, check_hash=True):
     if f_thumb is not None:
         x = Image.open(f_thumb)
         m = max(x.size[0] / 256., x.size[1] / 192.)
-        x = x.resize(map(int, (x.size[0] / m, x.size[1] / m)))
+        x = x.resize([int(x.size[0] / m), int(x.size[1] / m)])
 
         if not os.path.exists(thumb_dir):
             os.makedirs(thumb_dir)

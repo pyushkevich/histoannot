@@ -1020,6 +1020,9 @@ $(document).ready(function()
             if($(this).val() >= 0) {
                 download_other_task_annot($(this).val());
             }
+            else {
+                unload_other_task_annot($(this).val());
+            }
         });
     }
     populate_annot_overlays_select();
@@ -1145,6 +1148,7 @@ $(document).ready(function()
                         overlay_layer = new paper.Layer();
                         overlay_layer.name = 'annot_overlay';
                         overlay_layer.locked = true;
+                        overlay_layer.opacity = 0.5;
                         paper.project.addLayer(overlay_layer);
                     }
                     else {
@@ -1162,6 +1166,13 @@ $(document).ready(function()
                 }
             })
     };
+
+    var unload_other_task_annot = function() {
+        let overlay_list = paper.project.layers.filter(l => l.name === 'annot_overlay');
+        overlay_list.forEach(l => {
+            l.remove();
+        });
+    }
 
     // A class dealing with keeping track of training patches
     function SampleAPI() {

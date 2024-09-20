@@ -167,7 +167,6 @@ class ProjectRef:
         :param d: Dictionary used to check the resource against the schema
         :return: Relative path of the file corresponding to the resource
         """
-        print(self.get_url_schema())
         pattern = self.get_url_schema()["pattern"].get(resource, None)
         return pattern.format(**d) if pattern is not None else None
 

@@ -2,186 +2,260 @@
 PICSL Histology Annotation Service Quick Start
 **********************************************
 
-This quick start shows you how to set up a PHAS server in a Docker container. 
+This quick start shows you how to get started with the PHAS server using a sample dataset. 
 
 Requirements
 ============
-* A Linux/Unix/MacOS machine with Docker installed
-* An open port on this machine. We will assume port number **5555**.
-* A directory containing large histology images in pyramid format. We will assume that the path to this directory on your Linux machine is ``/home/phas/hdata``.
-* An empty directory where the database and other data for the running instance of your PHAS server will be stored. We assume that the path to this directory is ``/home/phas/instance``.
+* A Linux/Unix/MacOS machine with Python3
+* An open port on this machine. We will assume port number **8888**.
+
+Installation
+============
+
+Install OpenSlide
+-----------------
+The `OpenSlide library <https://openslide.org/>`_ is required and must be installed sepately from the Python dependencies.
+
+* On Debian/Ubuntu::
+
+    apt-get install -y libopenslide-dev
+
+* On MacOS::
+
+    brew install openslide
+
+Install Redis
+-------------
+The `Redis library <https://redis.io/docs/latest/>`_ is used to for coordination between the server and worker processes. 
+
+* On Linux see `the instructions on redis.io <https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/install-redis-on-linux/>`_
+
+* On MacOS::
+
+    brew install redis
+    brew services start redis
 
 
-Preparing your Histology Data
-=============================
+Checkout The Code Repository
+----------------------------
+Checkout the code from Github with this command. Then enter the directory where to code was checked out::
 
-Histology data can be accessed by PHAS in two ways:
+    git clone https://github.com/pyushkevich/histoannot.git phas
+    cd phas
 
-* In a local directory on the server
-* In a Google Cloud Storage bucket
 
-  * In this case, the data will be copied and locally cached on the server
+Create Python Virtual Environment
+---------------------------------
+This step is highly recommended, creating a virtual environment specifically for PHAS::
 
-For every histology slide, a minimum of two files are required:
+    python3 -m venv .venv
+    source .venv/bin/activate
 
-* A pyramidal TIFF file (in ``.svs`` or ``.tiff`` format)
-* A thumbnail (about 1000 pixels in width, in ``.png`` or ``.jpeg`` format)
 
-Please see :ref:`DataOrg` for a tutorial on how to organize your data
+Install Python Dependencies
+---------------------------
+This command will install all the dependencies into the virtual environment::
 
-Projects
-========
-A single PHAS server can serve multiple projects. Each project represents a separate collection of histology data, e.g., different set of scanned slides. Each project can have its own root directory, and its own manifest files.
+    pip install -r histoannot/requirements.txt
 
-Starting PHAS in a Docker Container
-===================================
 
-Before launching the container, we will populate the instance directory with a simple config file. In an editor create a file `/home/phas/instance/config.py` and include the following lines::
+Environment Variables
+---------------------
+Create a shell script ``env.sh`` in the ``phas`` that will contain system commands to execute before running the web application. Here are the recommended contents of this file::
 
+    #!/bin/bash
+    source .venv/bin/activate
+
+    # Name of the FLASK application
+    export FLASK_APP=histoannot
+
+    # On Mac, if using homebrew to install openslide, set this to the location of the openslide library
+    export DYLD_LIBRARY_PATH=DYLD_LIBRARY_PATH:/opt/homebrew/lib
+
+Before executing the “flask” commands below, run once per terminal session::
+
+    source env.sh
+
+Configuration and Launching
+===========================
+
+Main Configuration File
+-----------------------
+Create a directory called ``instance`` in the ``phas`` directory. This will contain your database, configuration files, and application cache::
+
+    mkdir -p instance
+
+Create a file ``instance/config.py`` and add the lines below, replacing the secret code with your own. Also you can change 8888 to your preferred port number::
+
+    SECRET_KEY="lfkwelkjrwleklmasndikfbsqr"
     HISTOANNOT_SERVER_MODE="master"
-    SECRET_KEY="92340wjdflksn2839our"
+    HISTOANNOT_PUBLIC_NAME="My Test PHAS Server"
+    HISTOANNOT_PUBLIC_URL="http://127.0.0.1:8888"
 
-Replace the secret key string with your own string. It is used for encrypting cookies and should be unique to your server.
 
-We also need to create at least one project. In this example, we are using only a single project. Projects are described by ``.json`` files located in the ``projects`` directory. The internal name of each project matches the name of the ``.json`` file. Create a file ``projects/default.json`` in the ``instance`` directory and populate it as follows::
+Database Creation
+-----------------
+Run this command to create the sqlite3 database structure for the first time::
+
+    flask init-db
+
+Use the commands below to to verify that the database tables have been created. You should see the names of about 20 tables listed::
+
+    sqlite3 instance/histoannot.sqlite
+    .tables
+    .exit
+
+Start the Web Application
+-------------------------
+When debugging you can use the command below to start the web application. When in production, you should use UWSGI to launch your application instead::
+
+    flask run --port 8888
+
+You will see this output::
+
+    * Serving Flask app 'histoannot'
+    * Debug mode: off
+    WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+    * Running on http://127.0.0.1:8888
+    Press CTRL+C to quit
+
+Navigate to the URL provided (http://127.0.0.1:8888) and you should see the login page.
+
+Start a Worker Process
+----------------------
+In addition to running the main server, you need to run one or more worker processes. These processes perform asynchronous tasks, such as extracting patches from histology images during classifier training. The worker process will need to run in a **separate terminal window**.
+
+Open a new terminal window and navigate to the ``phas`` directory::
+
+    source env.sh
+    flask preload-worker-run
+
+
+Creating Users, Projects and Tasks
+==================================
+
+Open a third terminal window or tab so that you can interact with the server while it is running. In the terminal go to your phas directory and run, as before::
+
+    source env.sh
+
+
+Create Admin User Account
+-------------------------
+Create a user (replace ``testuser`` with your own id) and provide them administrator privileges::
+
+    flask users-add -e testuser@gmail.com testuser
+    flask users-set-site-admin test user
+
+This will print a URL. Navigate to this URL and set up the password for your account. Now you should see the landing page with the message that you have not been added to any projects yet.
+
+* You can click on your username on the top right of the web application to change your profile and manage other users on the server. 
+
+Download Sample Dataset
+-----------------------
+The easiest way to get started with PHAS is to download a sample dataset. It contains some blockface images of brain tissue prior to cryosectioning. Download the dataset ``histoannot_sample_data.zip`` from `<https://upenn.box.com/v/phas-sample-data>`_ and unpack it into a folder separate from your main PHAS install. Let’s suppose you called this folder ``/mydata/histoannot_sample_data``.
+
+Create a directory where you will keep the json descriptor files used to configure projects and tasks::
+
+    mkdir instance/json
+
+Create a json descriptor file for the project you downloaded, called ``instance/json/example_project.json``, with the contents below::
 
     {
-        "base_url": "/home/phas/hdata",
-        "disp_name": "Default Project",
-        "desc" : "This is an example project"
-    }
-
-Furthermore, if you organized your files in a manner different than the default, you need to include a **schema** element in your project JSON file. This describes where the raw images and thumbnails (and other relevant information) will be found.
-
-Here is an example of a project ``.json`` file with a schema element::
-
-    {
-        "base_url": "gs://mybucket",
-        "disp_name": "Custom project",
-        "desc" : "This is a custom project",
-        "pattern": {
-            "raw": "raw_data/{specimen}/{slide_name}.{slide_ext}",
-            "x16": "derived_data/{specimen}/{slide_name}_x16_pyramid.tiff",
-            "thumb": "derived_data/{specimen}/{slide_name}_thumb.png"
+        "base_url": "/mydata/histoannot_sample_data",
+        "disp_name": "Example Project",
+        "desc": "Example project with some blockface images",
+        "manifest_mode": "individual_json",
+        "url_schema": {
+            "pattern": {
+                "raw": "{specimen}/raw/{slide_name}.{slide_ext}",
+                "thumb": "{specimen}/proc/{slide_name}_thumb.png",
+                "metadata": "{specimen}/proc/{slide_name}_metadata.json"
+            },
+            "raw_slide_ext": [ "tiff" ]
         }
     }
 
+The commands below configure the project and add your username to it as administrator::
 
-We are now ready to run the container as a background service. Execute the following commands::
+    flask project-add example instance/json/example_project.json
+    flask users-set-access-level -p example admin testuser
 
-    docker pull pyushkevich/histoannot-master:latest
-    docker run -d -p 5555:5000 \
-        -v /home/phas/hdata/:/home/phas/hdata \
-        -v /home/phas/instance:/tk/node_dzi/instance \
-        pyushkevich/histoannot-master:latest
+The commands below import slides from the sample project into the database. You should run this command every time that new slides are added to your data folder::
 
-To verify that the container is running, run `docker ps`. The output should look like this::
-
-    CONTAINER ID        IMAGE               COMMAND                   CREATED             STATUS       PORTS                    NAMES
-    de19b4ece187        phas_master         "/bin/sh -c \"supervi…"   4 minutes ago       Up 4 minutes       0.0.0.0:5555->5000/tcp   sweet_bhaskar
-
-To test that the actual service is running, navigate your browser to `http://localhost:5555/hello`. The browser should display the string `HISTOANNOT MASTER`
-
-To stop the service, type `docker stop sweet_bhaskar` (replace 'sweet_bhaskar' with the actual name in `docker ps` output)
+    flask refresh-slides example
 
 
-Configure the PHAS Instance
-===========================
-The service is running but it has no data. We need to run a few commands inside of the docker container to make it work. 
+Configure Browse and Annotation Tasks
+-------------------------------------
+If you browse to your PHAS URL, you will see that there is a project with one specimen and four slides. However, you cannot view these slides yet because we have not yet set up any tasks. Tasks are specific ways of interacting with histology images, and they include browsing, annotation, placing boxes for training classifiers, and placing sampling regions. 
 
-Configure a Task
-----------------
-Tasks in PHAS are separate projects that allow annotation to be performed in parallel without interference between different workflows. You need to set up at least one task. Tasks are set up using `.json` files. There are two types of tasks: annotation (drawing curves and text on slides) and deep learning training (placing boxes over objects in histology slides). For now let's configure an annotation task.
+Each task is specified by creating a json configuration file.
 
-Create the directory `/home/phas/instance/tasks` and open file `/home/phas/instance/tasks/task1.json` in an editor. Paste the following content::
+Create file ``instance/json/example_browse.json`` for the browsing task with contents::
 
-	{
-		"mode": "annot",
-		"name": "Anatomical Labeling",
-		"desc": "This is my first task",
-		"restrict_access": false
-	}
+    {
+        "restrict-access": false,
+        "mode": "browse",
+        "name": "Browse",
+        "desc": "Browse the slide collection"
+    }
 
-Open a Shell to the Container
------------------------------
-To configure the server, we need to open a shell in the running container. Run `docker ps` and copy the name of the container. In our case, the container is called `sweet_bhaskar`, yours will have a similar random name.
+And create file ``instance/json/example_annot.json`` for the annotation task with contents::
 
-To open a shell to the container, enter::
+    {
+        "restrict-access": true,
+        "mode": "annot",
+        "name": "Anatomical Labeling",
+        "desc": "Labeling anatomical boundaries and regions"
+    }
 
-	docker exec -it sweet_bhaskar /bin/bash
+The commands below will intialize these tasks and rebuild the slide index for the tasks::
 
-You will now be logged in as user `root` inside the container. Run the following commands::
+    flask tasks-add example instance/json/example_browse.json
+    flask tasks-add example instance/json/example_annot.json
+    flask rebuild-task-slide-index example
 
-	flask --help
-
-This will give you a listing of all available configuration commands. 
-
-
-Configuring Access and Database
--------------------------------
-To initialize the database for the first time, run::
-
-	flask init-db
-
-This will create a file  `histoannot.sqlite` in your `/home/phas/instance` folder. Take good care of this file and back it up often! It contains your database!
-
-**WARNING**: Running ``flask init-db`` will delete all the data in your database. Do not run this command after initial installation unless you are sure you have a backup.
-
-Configuring a Project
----------------------
-Configuring a project involves two steps:
-
-    1. Creating a ``.json`` file (see above)
-    2. Coming up with a name for your project (e.g., ``diag``)
-    3. Initializing the project in the database, like this::
-
-        flask project-add diag some/path/project_diag.json
+You will be able to see the Browse task immediately. To see the Annotation task, go to the “manage users” menu option under your username and give yourself write access to the task. Alternatively, you can use the ``flask users-set-access-level`` command with -t flag to give yourself write access to the newly created task.
 
 
-Connecting to Histology Data
-----------------------------
-Run the following command to tell the PHAS server where the histology data are located. The server will scan the `hdata` directory and make the slides in your manifest files available to users.::
+Configure a Classification Training Task
+----------------------------------------
 
-	flask refresh-slides /home/phas/hdata/master_manifest.txt
+To create a classifier training task, we first need to create a set of classification labels. Create the file ``instance/json/blockface_labels.json`` with contents::
 
-Run this command whenever you add new slides to your `/home/phas/hdata` directory (after updating the manifest files).
+    [
+        { "name" : "gray matter", "color" : "#18b497", "description" : "Gray Matter" },
+        { "name" : "white matter", "color" : "#2816ba", "description" : "White Matter" },
+        { "name" : "background", "color" : "#f97a8a", "description" : "Ice/Background" }
+    ]
 
-Creating a Task
----------------
-Next, we need to create a task. We already edited a JSON file, and now we need to tell the server to create a task based on it. Run::
+Then add this labelset to the server::
 
-	flask task-add --json some/path/task1.json
+    flask labelset-add example blockface_tissue_types instance/json/blockface_labels.json
 
+The labelset should be available for editing under the dropdown menus on the project menu in the web interface.
 
-Adding a User
--------------
-To create users and invite them by email, issue the command below. This only works if you have configured email on your server.::
+Then create a task descriptor for generating training patches in file ``instance/json/example_training.json`` with contents::
 
-    flask users-add -e testuser@gmail.com -n testuser
+    {
+        "restrict-access": false,
+        "name": "Tissue Class Training",
+        "stains": [
+            "blockface"
+        ],
+        "dltrain": {
+            "labelset": "blockface_tissue_types",
+            "min-size": 128,
+            "max-size": 128,
+            "display-patch-size": 128
+        },
+        "mode": "dltrain",
+        "desc": "Training a deep learning classifier to segment blockface images"
+    }
 
-Alternatively, add a user without sending an email (without the ``-n`` flag) and you will be provided an invitation link that you can send manually.::
+Then add the task to the server::
 
-    flask users-add -e testuser@gmail.com testuser
+    flask tasks-add example instance/json/example_training.json
+    flask rebuild-task-slide-index example
 
-To give this user admin permissions, issue the command below. After that, you can create new users through the web interface.
-
-    flask users-set-site-admin testuser
-    flask users-set-access-level -P diag A testuser
-
-Take it for a Spin
-==================
-The moment of truth... Point your browser to `http://localhost:5555`. You should be able to:
-
-* See the login page
-* Click on the register page and register as a new user with the invitation code created above
-* Login with your new credentials and see a listing of available tasks
-* Be able to navigate down to a slide and perform annotation
-
-
-
-
-
-
-
-
- 
+Now the task will be available in the web interface. 

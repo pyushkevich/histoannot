@@ -6,6 +6,7 @@ libs/os_affine/build
 instance
 docs/build
 venv
+.venv
 .idea
 conf
 manifest

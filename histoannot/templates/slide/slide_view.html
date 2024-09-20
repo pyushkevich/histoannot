@@ -119,7 +119,7 @@
       display: none;
       position: absolute;
       right: 0;
-      width: min(500px, max(160px, 25%));
+      width: min(500px, 80%);
       padding-right: 20px;
       box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
       z-index: 1;
@@ -229,7 +229,7 @@
     <div class="pure-u-4-5">
     {% endif %}
 
-        <div><table style="width:100%"><tr>
+        <div><table style="width:100%; position: relative;"><tr>
             <td>
                 <a href="{{ url_for('slide.index')}}">Home</a> :
                 <a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
@@ -238,7 +238,7 @@
                 <a href="{{ url_for('slide.block_detail_by_id', task_id = task_id, specimen=slide_info['specimen'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
                 --- {{sample_id}}
             </td>
-            <td align="center" style="white-space: nowrap;">
+            <td style="text-align: center; white-space: nowrap;">
                 <form style="display:inline;" id="form-prev"
                       action="{{url_for('slide.slide_view', task_id=task_id, slide_id=prev_slide['id'] if prev_slide != None else slide_id, affine_mode=affine_mode, resolution=resolution)}}" action="get">
                     <input class="button_link" id="prev_slide_button" type="submit" value="❮" />
@@ -249,7 +249,7 @@
                     <input class="button_link" id="next_slide_button" type="submit" value="❯" />
                 </form>
             </td>
-            <td align="right">
+            <td style="text-align: right">
                 <form id="form_stain" target="#" style="display: inline; white-space: nowrap;">
                     <label for="form_stain_select">Stain:</label>
                     <select id="form_stain_select" style="font-size: 80%; color: black;">

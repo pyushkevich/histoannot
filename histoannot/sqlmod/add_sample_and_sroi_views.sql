@@ -17,7 +17,7 @@ CREATE VIEW training_sample_info AS
 
 
 /* Create a view for listing sampling ROIs quickly */
-DROP VIEW IF EXISTS training_sampling_roi_info;
+DROP VIEW IF EXISTS sampling_roi_info;
 CREATE VIEW sampling_roi_info AS
    SELECT T.id,T.task,T.label as label_id,x0,y0,x1,y1,
       UC.username as creator, t_create,

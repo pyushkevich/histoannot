@@ -1,0 +1,9 @@
+{
+    "restrict-access": true, 
+    "name": "NISSL stereology sampling ROIs", 
+    "sampling": {
+        "labelset": "mtl_stereology"
+    }, 
+    "mode": "sampling", 
+    "desc": "ROIs for stereology validation"
+}

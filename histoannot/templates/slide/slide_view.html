@@ -497,6 +497,7 @@
 <button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
 {% elif seg_mode == 'sampling' %}
 <button id="trap_button" class="bottom_button enabled">&nbsp Draw Trapezoid (T) &nbsp</button>
+<button id="poly_button" class="bottom_button enabled">&nbsp Draw Polygon (P) &nbsp</button>
 {% endif %}
 
 {% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
@@ -674,6 +675,14 @@ $(document).ready(function()
 	stayInsideImage: false
     });
 
+    // Something to do about overlapping timers
+    var timer_map = {};
+    var do_delay = function(fn, t_wait) {
+        if(timer_map[fn.name])
+            clearTimeout(timer_map[fn.name])
+        timer_map[fn.name] = setTimeout( () => { fn() }, t_wait);
+    };
+
     // Initialization for paper_js
     var overlay;
     function init_paperjs() {
@@ -692,6 +701,13 @@ $(document).ready(function()
             setTimeout(function() { focus_on_initial_sample() }, 250);
         }
         else if (seg_mode === 'sampling') {
+            // let f_refresh = function(f) { sroi_api.refresh_rois(f); }
+            // let f_refresh_del = function(f) { do_delay(f_refresh(f), 10000) } }
+            // f_refresh(function() { do_delay(f_refresh, 10000) });
+            // sroi_api.refresh_rois(function() {
+            //    setTimeout( () => { f_refresh(f_refresh) }, 10000);
+            //    // do_delay(sroi_api.refresh_rois, 10000) 
+            // });
             sroi_api.refresh_rois();
             setTimeout(function() { focus_on_initial_sampling_roi() }, 250);
         }
@@ -948,10 +964,6 @@ $(document).ready(function()
     var curr_path;
     var curr_box;
     var curr_box_drag_start;
-
-    // Variables for sampling ROI mode
-    var curr_trapezoid;
-    var curr_trapezoid_drag_start;
 
     // Helper function to get Point corresponding to OSD event
     var ev_point = function(event) {
@@ -1294,17 +1306,25 @@ $(document).ready(function()
         };
     }
 
-    // A cass deaing with sampling ROIs for 
-    function SamplingRegionAPI() {
+    let brighten_color = function(color, f=0.2) {
+        c = new paper.Color(color);
+        let [r,g,b] = c.components;
+        let delta = (1.0 - Math.max(r,g,b)) * f;
+        c.setRed(Math.min(r + delta, 1.0));
+        c.setGreen(Math.min(g + delta, 1.0));
+        c.setBlue(Math.min(b + delta, 1.0));
+        return c;
+    }
 
-        // Create a self variable
-        self = this;
+    class SamplingObject {
 
-        // A map from server id to known ROIs
-        self.roimap = new Map();
+    }
 
-        // Get the normal vector from the midline
-        this.get_normal = function(x0, y0, x1, y1) {
+    class SamplingTrapezoid extends SamplingObject {
+        midline = null;
+        polygon = null;
+
+        static get_normal(x0, y0, x1, y1) {
             let nx = y1 - y0;
             let ny = x0 - x1;
             let nl = Math.sqrt(nx*nx+ny*ny);
@@ -1313,75 +1333,82 @@ $(document).ready(function()
             return [nx, ny];
         }
 
-        // Update the polygon vertices given geometry
-        this.recompute_polygon = function(polygon, x0, y0, w0, x1, y1, w1) {
-            let [nx, ny] = this.get_normal(x0, y0, x1, y1);
-            polygon.segments[0].point.x = x0 + nx * w0;
-            polygon.segments[0].point.y = y0 + ny * w0;
-            polygon.segments[1].point.x = x1 + nx * w1;
-            polygon.segments[1].point.y = y1 + ny * w1;
-            polygon.segments[2].point.x = x1 - nx * w1;
-            polygon.segments[2].point.y = y1 - ny * w1;
-            polygon.segments[3].point.x = x0 - nx * w0;
-            polygon.segments[3].point.y = y0 - ny * w0;
+        recompute_polygon(x0, y0, w0, x1, y1, w1) {
+            let [nx, ny] = SamplingTrapezoid.get_normal(x0, y0, x1, y1);
+            this.polygon.segments[0].point.x = x0 + nx * w0;
+            this.polygon.segments[0].point.y = y0 + ny * w0;
+            this.polygon.segments[1].point.x = x1 + nx * w1;
+            this.polygon.segments[1].point.y = y1 + ny * w1;
+            this.polygon.segments[2].point.x = x1 - nx * w1;
+            this.polygon.segments[2].point.y = y1 - ny * w1;
+            this.polygon.segments[3].point.x = x0 - nx * w0;
+            this.polygon.segments[3].point.y = y0 - ny * w0;
         }
 
         // A function to update a box with new coordinates
-        this.update_midline = function(T, x0, y0, x1, y1) {
-            let midline = T['midline']
+        update_midline(x0, y0, x1, y1) {
 
             // Update the midline
-            midline.segments[0].point.x = x0;
-            midline.segments[0].point.y = y0;
-            midline.segments[1].point.x = x1;
-            midline.segments[1].point.y = y1;
+            this.midline.segments[0].point.x = x0;
+            this.midline.segments[0].point.y = y0;
+            this.midline.segments[1].point.x = x1;
+            this.midline.segments[1].point.y = y1;
 
             // Update the geometry
-            midline.data.geometry[0][0] = x0;
-            midline.data.geometry[0][1] = y0;
-            midline.data.geometry[1][0] = x1;
-            midline.data.geometry[1][1] = y1;
+            this.midline.data.geometry[0][0] = x0;
+            this.midline.data.geometry[0][1] = y0;
+            this.midline.data.geometry[1][0] = x1;
+            this.midline.data.geometry[1][1] = y1;
 
             // Update the polygon from the geometry
-            this.recompute_polygon(T['polygon'], x0, y0, midline.data.geometry[0][2], x1, y1, midline.data.geometry[1][2]);
-        };
-        
-        // Function to create a trapezoid from given geometry data, label, and color
-        this.update_trapezoid = function(T, geometry, label_id, color, raw_stroke_width = 2) {
+            this.recompute_polygon(
+                x0, y0, this.midline.data.geometry[0][2], 
+                x1, y1, this.midline.data.geometry[1][2]);
+        }
+
+        update_label(label_id, color) {
+            this.midline.strokeColor = color;
+            this.midline.selectedColor = color;
+            this.polygon.strokeColor = color;
+            this.polygon.selectedColor = color;
+            this.midline.data.label_id = label_id;
+            this.midline.data.label_color = color;
+        }
+
+        update(geometry, label_id, color, raw_stroke_width = 2) {
             // Read the geometry
-            [x0, y0, w0] = geometry[0];
-            [x1, y1, w1] = geometry[1];
+            let [x0, y0, w0] = geometry[0];
+            let [x1, y1, w1] = geometry[1];
 
             // Update the midline geometry and properties
-            T['midline'].segments[0].point.x = x0;
-            T['midline'].segments[0].point.y = y0;
-            T['midline'].segments[1].point.x = x1;
-            T['midline'].segments[1].point.y = y1;
-            T['midline'].strokeColor = color;
-            T['midline'].selectedColor = color;
+            this.midline.segments[0].point.x = x0;
+            this.midline.segments[0].point.y = y0;
+            this.midline.segments[1].point.x = x1;
+            this.midline.segments[1].point.y = y1;
 
             // Update the polygon
-            self.recompute_polygon(T['polygon'], x0, y0, w0, x1, y1, w1);
-            T['polygon'].strokeColor = color;
-            T['polygon'].selectedColor = color;
+            this.recompute_polygon(x0, y0, w0, x1, y1, w1);
 
             // Assign the properties
-            T['midline'].data.label_id = label_id;
-            T['midline'].data.label_color = color;
-            T['midline'].data.geometry = [ [ x0, y0, w0 ], [x1, y1, w1 ] ];
-            set_paperjs_item_strokewidth(T['midline'], raw_stroke_width * 2);
-            set_paperjs_item_strokewidth(T['polygon'], raw_stroke_width);
+            this.midline.data.geometry = [ [ x0, y0, w0 ], [x1, y1, w1 ] ];
+
+            // Update the metadata
+            this.update_label(label_id, color);
+            set_paperjs_item_strokewidth(this.midline, raw_stroke_width * 2);
+            set_paperjs_item_strokewidth(this.polygon, raw_stroke_width);
         }
-        
+
         // Function to create a trapezoid from given geometry data, label, and color
-        this.create_trapezoid = function(geometry, label_id, color, raw_stroke_width = 2) {
+        constructor(geometry, label_id, color, raw_stroke_width = 2) {
+            super();
+
             // Read the geometry
             let [x0, y0, w0] = geometry[0];
             let [x1, y1, w1] = geometry[1];
 
             // Create and update the polygon. This is created first so that the handle
             // of the midline overrides the handle of the polygon
-            let polygon = new paper.Path({
+            this.polygon = new paper.Path({
                 segments: [ new paper.Point(x0,y0), new paper.Point(x0,y0), 
                             new paper.Point(x1,y1), new paper.Point(x1,y1) ],
                 closed: true,
@@ -1389,68 +1416,244 @@ $(document).ready(function()
                 selectedColor : color});
 
             // Create the midline
-            let midline = new paper.Path({
+            this.midline = new paper.Path({
                 segments: [ new paper.Point(x0,y0), new paper.Point(x1,y1) ],
                 closed: false,
                 strokeColor: color,
                 selectedColor : color});
 
-            self.recompute_polygon(polygon, x0, y0, w0, x1, y1, w1);
+            this.recompute_polygon(x0, y0, w0, x1, y1, w1);
 
             // Assign the properties
-            midline.data.label_id = label_id;
-            midline.data.label_color = color;
-            midline.data.geometry = [ [ x0, y0, w0 ], [x1, y1, w1 ] ];
-            set_paperjs_item_strokewidth(midline, raw_stroke_width * 2);
-            set_paperjs_item_strokewidth(polygon, raw_stroke_width);
-
-            // Return as dictionary object containing Path objects
-            return { 'midline': midline, 'polygon': polygon};
+            this.midline.data.label_id = label_id;
+            this.midline.data.label_color = color;
+            this.midline.data.geometry = [ [ x0, y0, w0 ], [x1, y1, w1 ] ];
+            set_paperjs_item_strokewidth(this.midline, raw_stroke_width * 2);
+            set_paperjs_item_strokewidth(this.polygon, raw_stroke_width);
         }
 
         // Update the width/bases of the trapezoid
-        this.update_widths = function(T, x, y) {
-            let midline = T['midline'];
-            let x0 = midline.segments[0].point.x;
-            let y0 = midline.segments[0].point.y;
-            let x1 = midline.segments[1].point.x;
-            let y1 = midline.segments[1].point.y;
-            let [nx, ny] = self.get_normal(x0, y0, x1, y1);
+        update_widths(x, y) {
+            let x0 = this.midline.segments[0].point.x;
+            let y0 = this.midline.segments[0].point.y;
+            let x1 = this.midline.segments[1].point.x;
+            let y1 = this.midline.segments[1].point.y;
+            let [nx, ny] = SamplingTrapezoid.get_normal(x0, y0, x1, y1);
 
             let w = Math.abs(nx * (x - x0) + ny * (y - y0));
-            self.recompute_polygon(T['polygon'], x0, y0, w, x1, y1, w);
-            midline.data.geometry = [ [ x0, y0, w ], [x1, y1, w ] ];
+            this.recompute_polygon(x0, y0, w, x1, y1, w);
+            this.midline.data.geometry = [ [ x0, y0, w ], [x1, y1, w ] ];
         }
 
-        // Upload a trapezoid 
-        this.upload_new_trapezoid = function(T, cb_success) {
-
+        // JSONinfy this object for AJAX
+        todict() {
             // Create JSON describing this object
-            let midline = T['midline'];
-            ajax_data = {
+            return {
                 "geometry": {
                     "type": "trapezoid",
-                    "data": midline.data.geometry
+                    "data": this.midline.data.geometry
                 },
-                "label_id": midline.data.label_id
+                "label_id": this.midline.data.label_id
             };
+        }
+
+        get label_id() {
+            return this.midline.data.label_id;
+        }
+
+        get selected() {
+            return this.midline.selected;
+        }
+
+        get id() {
+            return this.midline.data.id;
+        }
+
+        // Update the object with server ids
+        set_id(id) {
+            this.midline.data.id = id;
+            this.polygon.data.id = id;
+        }
+
+        // Shift the shape by an amount
+        shift(dx, dy) {
+            let [x0, y0, w0] = this.midline.data.geometry[0];
+            let [x1, y1, w1] = this.midline.data.geometry[1];
+
+            // Shift coordinates by the delta
+            this.update_midline(x0+dx, y0+dy, x1+dx, y1+dy);
+        }
+
+        // Respond to movement of a "handle"
+        move_handle(path_obj, handle, dx, dy) {
+            // Which handle is being moved?
+            if(path_obj === this.midline) {
+                let [x0, y0, w0] = this.midline.data.geometry[0];
+                let [x1, y1, w1] = this.midline.data.geometry[1];
+                if(handle == 0)
+                    this.update_midline(x0+dx, y0+dy, x1, y1);
+                else
+                    this.update_midline(x0, y0, x1+dx, y1+dy);
+            } 
+            else {
+                let p = this.polygon.segments[handle].point;
+                this.update_widths(p.x + dx, p.y + dy);
+            }
+        }
+
+        // Remove the object from paper
+        remove() {
+            this.midline.remove();
+            this.polygon.remove();
+        }
+
+        select(sel_state) {
+            this.midline.selected = sel_state;
+            this.polygon.selected = sel_state;
+        }
+
+        set_highlighted(state) {
+            let true_color = new paper.Color(this.midline.data.label_color);
+            let visible_color = this.midline.strokeColor;
+            let bright_color = brighten_color(true_color, 0.5);
+            if(state && visible_color != bright_color) {
+                this.midline.strokeColor = bright_color;
+                this.polygon.strokeColor = bright_color;
+                return true;
+            }
+            else if(!state && visible_color != true_color) {
+                this.midline.strokeColor = true_color;
+                this.polygon.strokeColor = true_color;
+                return true;
+            }
+            else return false;
+        }
+    }
+
+    class SamplingPolygon extends SamplingObject {
+        polygon = null;
+
+        update_label(label_id, color) {
+            this.polygon.data.label_id = label_id;
+            this.polygon.data.label_color = color;
+            this.polygon.strokeColor = color;
+            this.polygon.selectedColor = color;
+        }
+
+        // Update the object with data from the server 
+        update(geometry, label_id, color, raw_stroke_width = 2) {
+            // Replace the points in the polygon
+            let pp = this.polygon; 
+            pp.removeSegments();
+            geometry.forEach(function(p) { pp.add(new paper.Point(p[0], p[1])); } );
+            pp.closePath();
+
+            // Update the metadata
+            this.update_label(label_id, color);
+            set_paperjs_item_strokewidth(this.polygon, raw_stroke_width);
+        }
+
+        // Constructor
+        constructor(label_id, color, raw_stroke_width = 2) {
+            super();
+            this.polygon = new paper.Path();
+            this.update_label(label_id, color);
+            set_paperjs_item_strokewidth(this.polygon, raw_stroke_width);
+        }
+
+        // JSONinfy this object for AJAX
+        todict() {
+            // Create JSON describing this object
+            return {
+                "geometry": {
+                    "type": "polygon",
+                    "data": this.polygon.segments.map((p) => [p.point.x,p.point.y])
+                },
+                "label_id": this.polygon.data.label_id
+            };
+        }
+
+        get label_id() {
+            return this.polygon.data.label_id;
+        }
+
+        get selected() {
+            return this.polygon.selected;
+        }
+
+        get id() {
+            return this.polygon.data.id;
+        }
+
+        set_id(id) {
+            this.polygon.data.id = id;
+        }
+
+        // Shift the shape by an amount
+        shift(dx, dy) {
+            let dp = new paper.Point(dx,dy)
+            this.polygon.translate(dp);
+        }
+
+        remove() {
+            this.polygon.remove();
+        }
+
+        select(sel_state) {
+            this.polygon.selected = sel_state;
+        }
+
+        // Respond to movement of a "handle"
+        move_handle(path_obj, handle, dx, dy) {
+            if(path_obj == this.polygon) {
+                this.polygon.segments[handle].point.x += dx;
+                this.polygon.segments[handle].point.y += dy;
+            }
+        }
+
+        set_highlighted(state) {
+            let true_color = new paper.Color(this.polygon.data.label_color);
+            let visible_color = this.polygon.strokeColor;
+            let bright_color = brighten_color(true_color, 0.5);
+            if(state && visible_color != bright_color) {
+                this.polygon.strokeColor = bright_color;
+                return true;
+            }
+            else if(!state && visible_color != true_color) {
+                this.polygon.strokeColor = true_color;
+                return true;
+            }
+            else return false;
+        }
+    }
+
+    // A cass deaing with sampling ROIs for 
+    class SamplingRegionAPI {
+
+        // A map from server id to known ROIs
+        roimap = new Map();
+
+        // Upload a newly created ROI 
+        upload_new_roi(roi, cb_success) {
+
+            // Create JSON describing this object
+            let ajax_data = roi.todict();
 
             // Send the completed marker to the server
+            let roimap = this.roimap;
             $.ajax({
                 url: "{{ url_for('dltrain.create_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
                 type: 'post',
                 data: JSON.stringify(ajax_data),
                 success: function(response_text) {
                     data = JSON.parse(response_text);
-                    T['midline'].data.id = data.id;
-                    T['polygon'].data.id = data.id;
-                    self.roimap.set(data.id, T);
+                    roi.set_id(data.id)
+                    roimap.set(data.id, roi);
                     if(cb_success)
                         cb_success();
                 },
                 error: function (xhr, ajaxOptions, thrownError) {
-                    T['midline'].remove();
-                    T['polygon'].remove();
+                    roi.remove();
                     paper.view.draw();
                     alert(xhr.responseText);
                 }
@@ -1458,23 +1661,14 @@ $(document).ready(function()
         };
 
         // Modify an existing sample (e.g., as a result of dragging, resizing)
-        this.modify_roi = function(path_obj, cb_success) {
+        modify_roi(path_obj, cb_success) {
 
             // Look up the roi
-            let T = self.roimap.get(path_obj.data.id);
-            let midline = T['midline'];
+            let roi = this.roimap.get(path_obj.data.id);
 
             // Create JSON describing this object
-            ajax_data = {
-                "geometry": {
-                    "type": "trapezoid",
-                    "data": midline.data.geometry
-                },
-                "label_id": midline.data.label_id,
-                "id": path_obj.data.id
-            };
-
-            console.log('Posting:', JSON.stringify(ajax_data));
+            let ajax_data = roi.todict();
+            ajax_data["id"] = path_obj.data.id;
 
             // Send the completed marker to the server
             $.post("{{ url_for('dltrain.update_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
@@ -1482,22 +1676,15 @@ $(document).ready(function()
                 function(response_text) {
                     if(cb_success)
                         cb_success();
-                }
-            );
-        };
-        
+            });
+        }
 
         // Request a list of all ROIs from the server and update the paper.js canvas with
-        this.refresh_rois = function() {
-
-            // If we are in a middle of a movement action, do not perform updates
-            // TODO: this should not be here, but in the calling code
-            if((moving_object && moving_object_moved) || curr_trapezoid) {
-                do_delay(self.refresh_rois, 10000);
-                return;
-            }
+        refresh_rois() {
 
             // Make a request for the samples
+            let roimap = this.roimap;
+            let self = this;
             $.ajax({
                 url: "{{ url_for('dltrain.get_sampling_rois', task_id = task_id, slide_id = slide_id) }}",
                 type: 'get',
@@ -1513,32 +1700,33 @@ $(document).ready(function()
                     samples.forEach(function(item, index) {
 
                         // Get the geometry description
-                        geom_data = JSON.parse(item.json);
-
-                        // For now we only handle trapezoids
-                        if(geom_data.type != 'trapezoid')
-                            return;
+                        let geom_data = JSON.parse(item.json);
 
                         // Record that we received this id
                         sample_ids.set(item.id, null);
 
-                        // Does this trapezoid already exist?
-                        var T = self.roimap.get(item.id);
-
-                        // Update or create the box
+                        // Does this object already exist?
+                        var T = roimap.get(item.id);
                         if(T) {
-                            self.update_trapezoid(T, geom_data.data, item.label, item.color);
+                            // If the object exists, update it
+                            T.update(geom_data.data, item.label, item.color);
                         } else {
-                            T = self.create_trapezoid(geom_data.data, item.label, item.color);
-                            self.roimap.set(item.id, T);
-                            T['midline'].data.id = item.id;
-                            T['polygon'].data.id = item.id;
+                            // Otherwise, create the object 
+                            if(geom_data.type === "trapezoid") {
+                                T = new SamplingTrapezoid(geom_data.data, item.label, item.color);
+                            } else if(geom_data.type === "polygon") {
+                                T = new SamplingPolygon(geom_data.data, item.label, item.color);
+                            } 
+                            if(T) {
+                                roimap.set(item.id, T);
+                                T.set_id(item.id);
+                            }
                         }
                     });
 
                     // Remove all the items that were not received (deleted elsewhere)
                     paper.project.activeLayer.children.forEach(function(item,index) {
-                        if(! sample_ids.has(item.data.id) ) {
+                        if(item.data.id && !sample_ids.has(item.data.id) ) {
                             item.remove();
                         }
                     });
@@ -1546,79 +1734,62 @@ $(document).ready(function()
                     paper.view.draw();
                 },
                 complete: function(data) {
-                    do_delay(self.refresh_rois, 10000)
+                    setTimeout(() => self.refresh_rois(), 10000);
                 }
             });
         };
+        
+        // Select a trapezoid
+        on_selection(path_obj, sel_state) {
+            let T = this.roimap.get(path_obj.data.id);
+            T.select(sel_state);
+        }
 
         // Select a trapezoid
-        this.on_selection = function(path_obj, sel_state) {
-
-            // Look up the roi
-            let T = self.roimap.get(path_obj.data.id);
-            
-            // Select both parts of it
-            T['midline'].selected = sel_state;
-            T['polygon'].selected = sel_state;
+        on_hover(path_obj) {
+            let hover_id = path_obj ? path_obj.data.id : undefined;
+            let changes_made = false;
+            this.roimap.forEach((T, key, map) => {
+                if(T.id === hover_id) 
+                    changes_made |= T.set_highlighted(true);
+                else
+                    changes_made |= T.set_highlighted(false);
+            });
+            return changes_made;
         }
 
         // Get the label id of the path object
-        this.get_label_id = function(path_obj) {
-            let T = self.roimap.get(path_obj.data.id);
-            return T['midline'].data.label_id;
+        get_label_id(path_obj) {
+            let T = this.roimap.get(path_obj.data.id);
+            return T.label_id;
         }
 
         // Move a trapezoid by a delta amount
-        this.move_roi = function(path_obj, dx, dy) {
-            // Look up the roi
-            let T = self.roimap.get(path_obj.data.id);
-
-            // Read the geometry
-            [x0, y0, w0] = T['midline'].data.geometry[0];
-            [x1, y1, w1] = T['midline'].data.geometry[1];
-
-            // Shift coordinates by the delta
-            self.update_midline(T, x0+dx, y0+dy, x1+dx, y1+dy);
+        move_roi(path_obj, dx, dy) {
+            let T = this.roimap.get(path_obj.data.id);
+            T.shift(dx, dy);
         }
 
         // Move a handle in the object
-        this.move_roi_handle = function(path_obj, handle, dx, dy) {
-
-            // Look up the roi
-            let T = self.roimap.get(path_obj.data.id);
-
-            // Read the geometry
-            [x0, y0, w0] = T['midline'].data.geometry[0];
-            [x1, y1, w1] = T['midline'].data.geometry[1];
-
-            // Which handle is being moved?
-            if(path_obj === T['midline']) {
-                if(handle == 0)
-                    self.update_midline(T, x0+dx, y0+dy, x1, y1);
-                else
-                    self.update_midline(T, x0, y0, x1+dx, y1+dy);
-            } 
-            else {
-                let p = T['polygon'].segments[handle].point;
-                self.update_widths(T, p.x + dx, p.y + dy);
-            }
-
+        move_roi_handle(path_obj, handle, dx, dy) {
+            let T = this.roimap.get(path_obj.data.id);
+            T.move_handle(path_obj, handle, dx, dy);
         }
 
         // Delete a sample (input object may be a polygon or the midline)
-        this.delete_roi = function(path_obj, cb_success) {
+        delete_roi(path_obj, cb_success) {
 
             // Look up the roi
-            let T = self.roimap.get(path_obj.data.id);
+            let T = this.roimap.get(path_obj.data.id);
 
             // Create JSON describing this object
-            ajax_data = {
+            let ajax_data = {
                 "id": path_obj.data.id
             };
 
             // Send the completed marker to the server
-            T['midline'].remove();
-            T['polygon'].remove();
+            T.remove();
+            let self = this;
             $.post("{{ url_for('dltrain.delete_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
                 JSON.stringify(ajax_data),
                 function(response_text) {
@@ -1631,32 +1802,173 @@ $(document).ready(function()
         };
 
         // Count selected samples
-        this.get_selected_rois_count = function() {
+        get_selected_rois_count() {
             let n = 0;
-            self.roimap.forEach(function(item, index) {
-                if(item['midline'].selected) n++;
+            this.roimap.forEach(function(T, index) {
+                if(T.selected) n++;
             });
             return n;
         };
 
         // Relabel selected samples
-        this.relabel_selected_rois = function(new_label_id, new_label_color, cb_success) {
-            self.roimap.forEach(function(item, index) {
-                let midline = item['midline'];
-                let polygon = item['polygon'];
-                if(midline.selected) {
-                    if(midline.data.label_id != new_label_id) {
-                        midline.data.label_id = new_label_id;
-                        midline.data.label_color = new_label_color;
-                        midline.strokeColor = new_label_color;
-                        midline.selectedColor = new_label_color;
-                        polygon.strokeColor = new_label_color;
-                        polygon.selectedColor = new_label_color;
-                        self.modify_roi(midline, cb_success);
+        relabel_selected_rois(new_label_id, new_label_color, cb_success) {
+            this.roimap.forEach(function(T, index) {
+                if(T.selected) {
+                    if(T.label_id != new_label_id) {
+                        T.update_label(new_label_id, new_label_color);
+                        this.modify_roi(midline, cb_success);
                     }
                 }
             });
         };
+    }
+
+    // A class for drawing sampling trapezoids
+    class SamplingTrapezoidDrawingAPI {
+        curr_trapezoid = null;
+        drag_start = null;
+        width_mode = false;
+
+        constructor(sroi_api) {
+            this.sroi_api = sroi_api;
+        }
+
+        // Press event handler
+        press_handler(event) {
+            let x = ev_point(event);
+            if(!this.width_mode) {
+                this.drag_start = x;
+                this.curr_trapezoid = new SamplingTrapezoid(
+                    [[ x.x, x.y, 0.], [ x.x, x.y, 0.]],
+                    get_current_label_id(), get_current_label_color());
+                paper.view.draw();
+            }
+            else {
+                this.sroi_api.upload_new_roi(
+                    this.curr_trapezoid, function() {
+                        do_delay(reload_label_and_sample_tables, 1000)
+                    });
+                this.curr_trapezoid = null;
+                this.drag_start = null;
+                this.width_mode = false;
+
+                // Reset mode to zoom/pan
+                update_current_mode('NAV');
+            }
+        }
+
+        // Drag event handler
+        drag_handler(event) {
+            let p0 = this.drag_start;
+            let p1 = ev_point(event);
+            this.curr_trapezoid.update_midline(p0.x, p0.y, p1.x, p1.y);
+            paper.view.draw();
+        }
+
+        dragEnd_handler(event) {
+            this.width_mode = true;
+            this.drag_start = null;
+        }
+
+        move_handler(event) {
+            if(this.width_mode) {
+                let p = ev_point(event);
+                this.curr_trapezoid.update_widths(p.x, p.y);
+                paper.view.draw();
+            }
+        }
+    }
+
+    // A class for drawing sampling polygons
+    class SamplingPolygonDrawingAPI {
+
+        // A paper path object representing the currently committed part of the polygon
+        curr_polygon = null;
+
+        // A paper path object representing the line from the last vertex to the mouse cursor
+        moving_edge = null;
+
+        // The API that handles server communication, etc
+        constructor(sroi_api) {
+            this.sroi_api = sroi_api;
+        }
+
+        is_drawing() {
+            return this.curr_polygon != null;
+        }
+
+        // Check if a point is close enough to the starting handle
+        check_snap_to_closing(x, dist_screen) {
+            let x_start = this.curr_polygon.polygon.firstSegment.point;
+            let d = x_start.getDistance(x);
+            let d_max = zoom_paperjs_scaling_fn(dist_screen, 0, get_image_zoomlevel());
+            return (d <= d_max);
+        }
+
+        // Press event handler
+        press_handler(event) {
+            let x = ev_point(event);
+            if(!this.curr_polygon) {
+                // If there is no current polygon, we create one
+                this.curr_polygon = new SamplingPolygon(get_current_label_id(), get_current_label_color());
+                this.curr_polygon.polygon.add(x);
+
+                // Also create the moving edge
+                this.moving_edge = new paper.Path();
+                this.moving_edge.add(x);
+                this.moving_edge.add(x);
+                this.moving_edge.strokeColor = get_current_label_color();
+                let dspc = zoom_paperjs_scaling_fn(5, 0, get_image_zoomlevel());
+                this.moving_edge.dashArray = [dspc, dspc];
+                set_paperjs_item_strokewidth(this.moving_edge, 2);
+            } 
+            else {
+                let p = this.curr_polygon.polygon;
+                if(p.segments.length > 2 && this.check_snap_to_closing(x, 10)) {
+                    // Path is completed
+                    p.add(p.firstSegment.point);
+
+                    // Send path to server
+                    this.sroi_api.upload_new_roi(this.curr_polygon, function() {
+                        do_delay(reload_label_and_sample_tables, 1000);
+                    });
+
+                    // Reset to initial state
+                    this.moving_edge.remove(); 
+                    this.moving_edge = null;
+                    this.curr_polygon = null;
+
+                    // Reset mode to zoom/pan
+                    update_current_mode('NAV');
+                } else {
+                    p.add(x);
+                    this.moving_edge.segments[0].point = x;
+                    this.moving_edge.segments[1].point = x;
+                }                
+            }
+
+            // Redraw canvas (probably pointless)
+            paper.view.draw();
+        }
+
+        // Move event handler
+        move_handler(event) {
+            if(this.curr_polygon && this.moving_edge) {
+                let x = ev_point(event);
+                let p = this.curr_polygon.polygon;
+                if(x != this.moving_edge.segments[1].point) {
+                    this.moving_edge.segments[1].point = x;
+                    if(this.check_snap_to_closing(x, 10)) {
+                        this.moving_edge.segments[1].point = p.firstSegment.point;
+                        this.moving_edge.strokeColor = 'red';
+                    }
+                    else {
+                        this.moving_edge.strokeColor = 'black';
+                    }
+                    paper.view.draw();
+                }
+            }
+        }
     }
 
     // Instantiate API for getting samples
@@ -1667,8 +1979,12 @@ $(document).ready(function()
 
     // Instantiate API for sampling regions
     var sroi_api = undefined;
+    var sampling_poly_draw  = undefined;
+    var sampling_trapezoid_draw = undefined;
     if(seg_mode == 'sampling') {
         sroi_api = new SamplingRegionAPI();
+        sampling_trapezoid_draw = new SamplingTrapezoidDrawingAPI(sroi_api);
+        sampling_poly_draw = new SamplingPolygonDrawingAPI(sroi_api);
     }
 
     // This variable stores the current mouse position in the viewer
@@ -1686,7 +2002,6 @@ $(document).ready(function()
             hit = my_hit_test(ev_point(event));
             moving_object=null;
             if(hit) {
-                console.log('Hit:', hit.type, hit.item);
                 if(!hit.item.selected) {
                     // Hitting an unselected target
                     deselect_all_manipulables();
@@ -1709,7 +2024,6 @@ $(document).ready(function()
                 else {
                     moving_object = hit.item;
                     moving_object_moved = false;
-
 
                     if (seg_mode === 'dltrain' || seg_mode === 'sampling') {
                         if(hit.type === 'segment') {
@@ -1742,26 +2056,10 @@ $(document).ready(function()
             paper.view.draw();
         }
         else if (curr_mode === 'TRAPEZOID') {
-            // Record the starting point
-            curr_trapezoid_drag_start = ev_point(event);
-
-            // Create an empty trapezoid at the point
-            curr_trapezoid = sroi_api.create_trapezoid(
-                [ [ curr_trapezoid_drag_start.x, curr_trapezoid_drag_start.y, 0. ],
-                  [ curr_trapezoid_drag_start.x, curr_trapezoid_drag_start.y, 0. ] ],
-                get_current_label_id(), get_current_label_color());
-
-            // Redraw canvas (probably pointless)
-            paper.view.draw();
+            sampling_trapezoid_draw.press_handler(event);
         }
-        else if (curr_mode === 'TRAPEZOID_WIDTH') {
-            // Store the trapezoid on the server
-            sroi_api.upload_new_trapezoid(
-                curr_trapezoid, 
-                function() {
-                    do_delay(reload_label_and_sample_tables, 1000)
-                });
-            update_current_mode('NAV');
+        else if (curr_mode === 'POLYGON_DRAW') {
+            sampling_poly_draw.press_handler(event);
         }
     };
 
@@ -1813,19 +2111,8 @@ $(document).ready(function()
             }
         }
         else if(curr_mode === 'TRAPEZOID') {
-            let p0 = curr_trapezoid_drag_start;
-            let p1 = ev_point(event);
-            sroi_api.update_midline(curr_trapezoid, p0.x, p0.y, p1.x, p1.y);
-            paper.view.draw();
+            sampling_trapezoid_draw.drag_handler(event);
         }
-    };
-
-    // Something to do about overlapping timers
-    var timer_map = {};
-    var do_delay = function(fn, t_wait) {
-        if(timer_map[fn.name])
-            clearTimeout(timer_map[fn.name])
-        timer_map[fn.name] = setTimeout(fn, t_wait)
     };
 
     // A variable indicating whether the current tool is in sticky mode (does not snap back to navigation)
@@ -1861,7 +2148,7 @@ $(document).ready(function()
             on_interaction_completed();
         }
         else if(curr_mode === 'TRAPEZOID') {
-            update_current_mode('TRAPEZOID_WIDTH');
+            sampling_trapezoid_draw.dragEnd_handler(event);
         }
         else if(curr_mode === 'NAV' && moving_object)
         {
@@ -1960,7 +2247,7 @@ $(document).ready(function()
                 segments: true,
                 stroke: true,
                 fill: false,
-                tolerance: 3
+                tolerance: 6
             };
             return paper.project.hitTest(point, hit_test_options);
         }
@@ -1997,6 +2284,12 @@ $(document).ready(function()
 
         if(curr_mode === 'NAV' && paper.project) {
             let hit = my_hit_test(ev_point(event));
+            if(seg_mode === 'sampling') {
+                // Reset the opacity of every item
+                let need_redraw = sroi_api.on_hover(hit ? hit.item : undefined);
+                if(need_redraw)
+                    paper.view.draw();
+            }
             if(hit) {
                 if(seg_mode === 'annot') {
                     pointer = "pointer";
@@ -2031,10 +2324,11 @@ $(document).ready(function()
             pointer = "crosshair";
             paper.view.draw();
         }
-        else if(curr_mode === 'TRAPEZOID_WIDTH') {
-            let p = ev_point(event);
-            sroi_api.update_widths(curr_trapezoid, p.x, p.y);
-            paper.view.draw();
+        else if(curr_mode === 'TRAPEZOID') {
+            sampling_trapezoid_draw.move_handler(event);
+        }
+        else if(curr_mode === "POLYGON_DRAW") {
+            sampling_poly_draw.move_handler(event);
         }
 
         document.getElementById("view").style.cursor = pointer;
@@ -2157,6 +2451,19 @@ $(document).ready(function()
         update_current_mode('TRAPEZOID');
 
         fn_active_button(document.getElementById('trap_button'))
+        document.getElementById("view").style.cursor = "crosshair";
+        fn_focus_on_viewer()
+    };
+
+    var polygon_pressed_handler = function(options) {
+        set_slide_mouse_nav(false);
+        viewer.outerTracker.setTracking(false);
+
+        // The active mode depends on whether this is a fixed-size box
+        // or a draggable box
+        update_current_mode('POLYGON_DRAW');
+
+        fn_active_button(document.getElementById('poly_button'))
         document.getElementById("view").style.cursor = "crosshair";
         fn_focus_on_viewer()
     };
@@ -2287,7 +2594,12 @@ $(document).ready(function()
             'Draw sampling trapezoid',
             OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
             trapezoid_pressed_handler);
-        Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
+        var polyButton = add_seadragon_button(
+            'poly_button',
+            'Draw sampling polygon',
+            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+            polygon_pressed_handler);
+        Mousetrap.bind('p', function() { polygon_pressed_handler(); });
     }
 
     if(seg_mode == 'annot' || seg_mode == 'dltrain' || seg_mode == 'sampling') {

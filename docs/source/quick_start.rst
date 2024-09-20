@@ -259,3 +259,47 @@ Then add the task to the server::
     flask rebuild-task-slide-index example
 
 Now the task will be available in the web interface. 
+
+
+Configure a Sampling ROI Task
+-----------------------------
+
+A sampling ROI task allows you to define sampling ROIs from which quantitative measures can be derived. To set up this task we also first have to define labels.
+
+Create the file ``instance/json/sampling_labels.json`` with contents::
+
+    [
+        {
+            "name": "Hipp",
+            "color": "#ff3300",
+            "description": "Hipppocampus"
+        },
+        {
+            "name": "PHG",
+            "color": "#ff6600",
+            "description": "Parahippocampal Gyrus"
+        },
+        {
+            "name": "FuG",
+            "color": "#ff6699",
+            "description": "Fusiform Gyrus"
+        }
+    ]
+
+And create the task descriptor file ``instance/json/example_sroi.json`` with contents::
+
+    {
+        "restrict-access": false,
+        "name": "Sampling ROI Placement",
+        "desc": "Placement of Sampling ROIs for Quantification",
+        "mode": "sampling",
+        "sampling": {
+            "labelset": "blockface_srois"
+        }
+    }
+
+Then add the labelset and task to the server::
+
+    flask labelset-add example blockface_srois instance/json/sampling_labels.json
+    flask tasks-add example instance/json/example_sroi.json
+    flask rebuild-task-slide-index example

@@ -229,7 +229,6 @@ def get_mail():
     return g.mail
 
 
-
 @bp.route('/pwreset', methods=('GET', 'POST'))
 def reset():
     if request.method == 'GET':

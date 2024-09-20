@@ -120,14 +120,18 @@
       position: absolute;
       right: 0;
       width: min(500px, 80%);
-      padding-right: 20px;
+      /* padding-right: 20px; */
       box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
       z-index: 1;
       background-color: #e8e8e8;
     }
 
     .display-opts-dropdown-content h4 {
-        margin: 0px;
+        /* margin: 0px; */
+        text-align: left; 
+        border-bottom: 1px solid lightgray; 
+        margin-bottom: 5px;
+        line-height: 0.85em;
     }
 
     /* Show the dropdown menu on hover */
@@ -264,9 +268,10 @@
                         <div id="display-opts-dropdown-tabs">
                             <ul>
                                 <li><a href="#tabs-opts">Display Options</a></li>
-                                <li><a href="#tabs-label">Slide Label</a></li>
-                                <li><a href="#tabs-macro">Macro Image</a></li>
-                                <li><a href="#tabs-header">Image Header</a></li>
+                                <li><a href="#tabs-overlay">Overlays</a></li>
+                                <li id="display-opts-tab-label"><a href="#tabs-label">Label</a></li>
+                                <li id="display-opts-tab-macro"><a href="#tabs-macro">Macro</a></li>
+                                <li><a href="#tabs-header">Header</a></li>
                             </ul>
                             <div id="tabs-opts">
                                 <!-- Main image contrast properties -->
@@ -296,34 +301,52 @@
 
                                     <!-- affine or raw mode -->
                                     {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
+                                    <!-- <form id="form_server_disp_opt" target="#"> -->
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                        <select id="form_mode_select" class="pure-input-1-1" required>
+                                            {% if have_affine  %}
+                                            <option value="affine">Aligned to MRI</option>
+                                            {% endif %}
+                                            <option value="raw">Native Space</option>
+                                        </select>
+                                    </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                        <select id="form_res_select" class="pure-input-1-1" required>
+                                            {% if have_x16  %}
+                                            <option value="x16">1:16</option>
+                                            {% endif %}
+                                            <option value="raw">1:1</option>
+                                        </select>
+                                    </div>
+                                    {% endif %}
+                                    <!-- </form> -->
 
-                                    <form id="form_server_disp_opt" target="#">
-                                        <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
-                                        <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                            <select id="form_mode_select" class="pure-input-1-1" required>
-                                                {% if have_affine  %}
-                                                <option value="affine">Aligned to MRI</option>
-                                                {% endif %}
-                                                <option value="raw">Native Space</option>
-                                            </select>
-                                        </div>
-                                        <div class="pure-u-1 pure-u-md-1-2"> <label> Slide resolution: </label> </div>
-                                        <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
-                                            <select id="form_res_select" class="pure-input-1-1" required>
-                                                {% if have_x16  %}
-                                                <option value="x16">1:16</option>
-                                                {% endif %}
-                                                <option value="raw">1:1</option>
-                                            </select>
-                                        </div>
-                                    </form>
+                                    <div class="pure-u-1 pure-u-md-1-1"> 
+                                        <h4>Slide Information</h4>
+                                    </div> 
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Slide dimensions (pixels):</label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <input id="form_info_dims" class="pure-input-1-1" value="{{dims_str}}" readonly>
+                                    </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Pixel spacing (µm):</label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <input id="form_info_spacing" class="pure-input-1-1" value="{{spacing_str}}" readonly>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="tabs-overlay">
+
+                                <!-- Overlay options -->
+                                <div class="pure-g">
+                                    {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
                                     <div class="pure-u-1 pure-u-md-1-2"> <label> Slide overlay: </label> </div>
                                     <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
                                         <select id="form_overlay_select" class="pure-input-1-1" required>
                                             <option value="none">None</option>
                                         </select>
                                     </div>
-
                                     <div id="div_overlay_options" class="display-opts-hidden-content">
                                         <div class="pure-u-1 pure-u-md-1-1"> 
                                             <h4>Overlay Properties</h4>
@@ -345,29 +368,25 @@
                                             <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
                                         </div>
                                     </div>
-
                                     {% endif %}
-                                    <div class="pure-u-1 pure-u-md-1-1"> 
-                                        <h4>Slide Information</h4>
-                                    </div> 
-                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Slide dimensions (pixels):</label> </div>
-                                    <div class="pure-u-1 pure-u-md-1-2"> 
-                                        <input id="form_info_dims" class="pure-input-1-1" value="{{dims_str}}" readonly>
+
+                                    <!-- Annotation overlay dropdown -->
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label> Annotation overlay: </label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
+                                        <select id="form_overlay_annot_select" class="pure-input-1-1" required>
+                                        </select>
                                     </div>
-                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Pixel spacing (µm):</label> </div>
-                                    <div class="pure-u-1 pure-u-md-1-2"> 
-                                        <input id="form_info_spacing" class="pure-input-1-1" value="{{spacing_str}}" readonly>
-                                    </div>
+
                                 </div>
                             </div>
-                            <div id="tabs-label">
+                            <div>
                                 <div class="pure-u-1 pure-u-md-1-1"> 
-                                    <img src="{{url_tmpl_download_label}}" alt="Slide label image" style="display: block; margin-left: auto; margin-right: auto;">
+                                    <img id="slide_label" alt="Slide label image" style="display: block; margin-left: auto; margin-right: auto;">
                                 </div> 
                             </div>
-                            <div id="tabs-macro">
+                            <div>
                                 <div class="pure-u-1 pure-u-md-1-1"> 
-                                    <img src="{{url_tmpl_download_macro}}" alt="Slide macro image" style="display: block; margin-left: auto; margin-right: auto;">
+                                    <img id="slide_macro" alt="Slide macro image" style="display: block; margin-left: auto; margin-right: auto;">
                                 </div> 
                             </div>
                             <div id="tabs-header">
@@ -507,6 +526,7 @@
 $(document).ready(function()
 {
     // Segmentation/interaction mode
+    const task_id = parseInt('{{task_id}}');
     const seg_mode='{{seg_mode}}';
 
     // Mode-specific properties
@@ -520,6 +540,11 @@ $(document).ready(function()
     const init_rotation = user_prefs.rotation || 0;
     const init_flip = user_prefs.flip || false;
     const overlays = {{overlays|tojson}};
+    const other_tasks_dict = {{other_tasks|tojson}};
+
+    // Common URLs
+    url_dl_annot = "{{ url_for('slide.get_annot_json', task_id = '999999', slide_id = slide_id, mode = affine_mode, resolution=resolution) }}";
+
 
     // Initialize the viewer
     var viewer = new OpenSeadragon({
@@ -665,14 +690,13 @@ $(document).ready(function()
     console.log("MPP", mpp);
     viewer.scalebar({
         pixelsPerMeter: mpp ? (1e3 / mpp) : 0,
-	location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
+	    location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
         xOffset: 10,
         yOffset: 50,
-	minWidth: "75px",
+	    minWidth: "75px",
         barThickness: 3,
-	backgroundColor: "rgba(255, 255, 255, 0.2)",
-	stayInsideImage: false
-    });
+	    backgroundColor: "rgba(255, 255, 255, 0.2)",
+	    stayInsideImage: false});
 
     // Initialization for paper_js
     var overlay;
@@ -765,6 +789,30 @@ $(document).ready(function()
         }
         return jsonArray;
     }
+
+    // Handle loading of label and macro images
+    let load_label_or_macro_image = function(url, tab, image) {
+        tab.hide();
+        image.hide();
+        $.ajax({
+            url: url,
+            type: 'HEAD', // Only fetch the headers to check if the file exists
+            success: function() {
+                // If the request succeeds, set the image source and show the image
+                image.attr("src", url);
+                tab.show();
+            },
+            error: function() {}
+        });
+    }
+
+    load_label_or_macro_image(
+        "{{url_tmpl_download_label}}", 
+        $("#display-opts-tab-label"), $("#slide_label"));
+    load_label_or_macro_image(
+        "{{url_tmpl_download_macro}}", 
+        $("#display-opts-tab-macro"), $("#slide_macro"));
+
 
     // Slide header table
     let slide_header_table = $("#slide_header").DataTable( {
@@ -941,6 +989,25 @@ $(document).ready(function()
         }
     };
 
+    // Populate the menu with available annotation overlays
+    let populate_annot_overlays_select = function() {
+        const sel = $('#form_overlay_annot_select');
+        sel.empty();
+        sel.append($('<option></option>').val(-1).text('None'));
+        $.each(other_tasks_dict, function(id, details) {
+            if (details.mode === "annot" && +id !== task_id) {
+                sel.append($('<option></option>').val(+id).text(details.name));
+            }
+        })
+        sel.change(function() {
+            console.log('Selected', $(this).val());
+            if($(this).val() >= 0) {
+                download_other_task_annot($(this).val());
+            }
+        });
+    }
+    populate_annot_overlays_select();
+
     // Current interaction mode
     var curr_mode = 'NAV';
 
@@ -1045,13 +1112,41 @@ $(document).ready(function()
 
 
     var download_annot = function() {
-        $.get( "{{ url_for('slide.get_annot_json', task_id = task_id, slide_id = slide_id, mode = affine_mode, resolution=resolution) }}",
+        $.get(url_dl_annot.replace('999999', task_id),
             function(data, status) {
                 if(status=='success' && data.length) {
                     paper.project.importJSON(data);
                     adjust_paperjs_scaling(get_image_zoomlevel());
                     adjust_paperjs_text_rotation();
                     deselect_all_manipulables();
+                }
+            })
+    };
+
+    var download_other_task_annot = function(other_task_id) {
+        $.get(url_dl_annot.replace('999999', other_task_id),
+            function(data, status) {
+                if(status=='success' && data.length) {
+                    let overlay_layer = null;
+                    let overlay_list = paper.project.layers.filter(l => l.name === 'annot_overlay');
+                    if(overlay_list.length == 0) {
+                        overlay_layer = new paper.Layer();
+                        overlay_layer.name = 'annot_overlay';
+                        overlay_layer.locked = true;
+                        paper.project.addLayer(overlay_layer);
+                    }
+                    else {
+                        overlay_layer = overlay_list[0];
+                    }
+
+                    // Due to back compatibility we stored project-level data in the database
+                    // here we need to extract data from the first layer
+                    d_proj = JSON.parse(data)
+                    if(d_proj.length) {
+                        overlay_layer.importJSON(JSON.stringify(d_proj[0]));
+                        adjust_paperjs_scaling(get_image_zoomlevel());
+                        adjust_paperjs_text_rotation();
+                    }
                 }
             })
     };

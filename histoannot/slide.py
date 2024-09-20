@@ -655,6 +655,30 @@ def get_dltrain_fixed_box_size(task):
     return min_size
 
 
+# Get all the tasks that are available to the user for a particular slide, returns
+# as a dictionary, with task_id as key, dict with task info as value
+def get_available_tasks_for_slide(project, slide_id):
+    db = get_db()
+    user = session['user_id']
+    
+    # All tasks that the user has access to on this slide
+    rc = db.execute(
+        "SELECT DISTINCT TI.* FROM task_info TI "
+        "       LEFT JOIN task_access TA ON TI.id=TA.task "
+        "       LEFT JOIN task_slide_index TSI on TSI.task_id = TI.id "
+        "WHERE project=? AND TSI.slide = ? "
+        "       AND (restrict_access=0 OR (user=? and access != 'none')) ",
+        (project, slide_id, user))
+    
+    # For each task, designate its mode
+    task_mode_dict = {}
+    for row in rc.fetchall():
+        task = json.loads(row['json'])
+        task_mode_dict[row['id']] = { k : task[k] for k in ('mode', 'name', 'desc') }
+        
+    return task_mode_dict
+        
+
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<resolution>/<affine_mode>', methods=('GET', 'POST'))
 @access_task_read
@@ -678,12 +702,15 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the list of available overlays and jsonify
     overlays = sr.get_available_overlays(local = False)
+    
+    # Get the list of other tasks available for this slide
+    other_tasks = get_available_tasks_for_slide(project, slide_id)
+    other_tasks = { k:v for k,v in other_tasks.items() if k != task_id }
 
     # Remove the URL from the overlay dict - this is not for public consumption
     if overlays:
         for k,v in overlays.items():
             v.pop('url', None)
-    print("Overlays: ", overlays)
 
     if (affine_mode == 'affine' and not have_affine) or (resolution == 'x16' and not have_x16):
         return redirect(url_for('slide.slide_view', 
@@ -741,7 +768,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'task': task,
         'fixed_box_size': get_dltrain_fixed_box_size(task),
         'user_prefs': user_prefs,
-        'overlays': overlays
+        'overlays': overlays,
+        'other_tasks': other_tasks
     }
 
     # Load the metadata for the slide to get spacing information

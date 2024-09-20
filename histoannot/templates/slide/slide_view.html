@@ -301,7 +301,7 @@
 
                                     <!-- affine or raw mode -->
                                     {% if seg_mode != 'dltrain' and seg_mode != 'sampling' %}
-                                    <!-- <form id="form_server_disp_opt" target="#"> -->
+                                    <form id="form_server_disp_opt" target="#"></form>
                                     <div class="pure-u-1 pure-u-md-1-2"> <label> Spatial Transform: </label> </div>
                                     <div class="pure-u-1 pure-u-md-1-2 pure-form"> 
                                         <select id="form_mode_select" class="pure-input-1-1" required>
@@ -2914,7 +2914,7 @@ $(document).ready(function()
     }
 
     // Initialize parts of UI related to annotation
-    else if (seg_mode === 'annot' || seg_mode === 'browse') {
+    else if (seg_mode === 'annot' || seg_mode === 'browse' || seg_mode === 'sampling') {
 
         // Populate the transform form
         let s_mode = $("#form_mode_select");

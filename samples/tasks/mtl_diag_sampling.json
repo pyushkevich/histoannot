@@ -1,0 +1,10 @@
+{
+    "restrict-access": true, 
+    "name": "Diagnostic slide sampling",
+    "sampling": {
+        "labelset": "mtl_diag_sampling"
+    }, 
+    "mode": "sampling", 
+    "desc": "Diagnostic slide sampling",
+    "tags": { "any" :  [ "diag" ] }
+}

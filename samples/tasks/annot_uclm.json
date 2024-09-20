@@ -2,5 +2,6 @@
     "restrict-access": false, 
     "mode": "annot", 
     "name": "Anatomical Labeling - UCLM", 
-    "desc": "Labeling anatomical boundaries and regions by the UCLM team (2019)"
+    "desc": "Labeling anatomical boundaries and regions by the UCLM team (2019)",
+    "anonymize": true
 }

@@ -708,18 +708,17 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0, metadata=
 
 # For safety, any JSON inserted into the database should be validated
 # A schema against which the JSON is validated
-sampling_roi_trapezoid_schema = {
+sampling_roi_schema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
     "properties": {
-        "type": {"type": "string", "enum": [ "trapezoid" ]},
+        "type": {"type": "string", "enum": [ "trapezoid", "polygon" ]},
         "data": {
             "type": "array",
             "minItems": 2,
-            "maxItems": 2, 
             "items": { 
                 "type": "array", 
-                "minItems": 3,
+                "minItems": 2,
                 "maxItems": 3, 
                 "items": {"type": "number"} } } },
     "required": ["type", "data"]
@@ -748,14 +747,25 @@ def compute_sampling_roi_bounding_box(geom_data):
         xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
 
         return [xmin, ymin, xmax, ymax]
+    elif geom_data.get('type') == 'polygon':
+        # Read the vertex coordinates
+        verts = np.array(geom_data['data'])
+
+        # Compute bounding box with numpy/
+        (xmin, ymin) = np.min(verts, axis=0)
+        (xmax, ymax) = np.max(verts, axis=0)
+        return [xmin, ymin, xmax, ymax]
+
+        # Iterate over polygon edges to compute center of mass
+        # edges = list(zip(verts,np.roll(verts,-1)))
 
 
 # Callable function for creating a sampling ROI
 def create_sampling_roi_base(task_id, slide_id, label_id, geom_data, osl_level=0, metadata={}):
 
     # Validate the JSON
-    if geom_data.get('type') == 'trapezoid':
-        validate(instance=geom_data, schema=sampling_roi_trapezoid_schema)
+    if geom_data.get('type') in ('trapezoid', 'polygon'):
+        validate(instance=geom_data, schema=sampling_roi_schema)
     else:
         raise ValueError('Unknown or missing sampling roi type')
 
@@ -800,8 +810,8 @@ def update_sampling_roi(task_id, slide_id):
     # Validate the JSON
     data = json.loads(request.get_data())
     geom_data = data['geometry']
-    if geom_data.get('type') == 'trapezoid':
-        validate(instance=geom_data, schema=sampling_roi_trapezoid_schema)
+    if geom_data.get('type') in ('trapezoid', 'polygon'):
+        validate(instance=geom_data, schema=sampling_roi_schema)
     else:
         raise ValueError('Unknown or missing sampling roi type')
     
@@ -913,6 +923,12 @@ def draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, fill=None, outline=Non
     draw.polygon([(x3*sx,y3*sy),(x4*sx,y4*sy),(x6*sx,y6*sy),(x5*sx,y5*sy)], fill=fill, outline=outline)
 
 
+# Draw a polygon on the image
+def draw_polygon(image, verts, sx, sy, fill=None, outline=None):
+    draw = ImageDraw.Draw(image)
+    draw.polygon([(x * sx, y * sy) for (x,y) in verts], fill=fill, outline=outline)
+
+
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/sampling_roi/make_image_<int:maxdim>.nii.gz', methods=('GET',))
 @access_task_read
 def make_sampling_roi_image(task_id, slide_id, maxdim):
@@ -942,6 +958,8 @@ def make_sampling_roi_image(task_id, slide_id, maxdim):
             # Read the coordinates
             [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
             draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, fill=label)
+        elif geom_data.get('type') == 'polygon':
+            draw_polygon(image, geom_data['data'], sx, sy, fill=label)
 
     # Generate a nifti image
     print('shape: ', np.array(image, dtype=np.uint8).shape)
@@ -983,6 +1001,8 @@ def make_thumbnail_for_sampling_roi(task_id, sroi_id):
         # Read the coordinates
         [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
         draw_trapezoid(thumb, x1, y1, x2, y2, w1, w2, sx, sy, outline=color)
+    elif geom_data.get('type') == 'polygon':
+        draw_polygon(image, geom_data['data'], sx, sy, outline=color)
 
     # Crop the image around the center
     cx, cy = (x1+x2) / 2, (y1+y2) / 2

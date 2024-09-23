@@ -29,7 +29,7 @@ from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_
 from histoannot.project_ref import ProjectRef
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.dzi import get_patch, pil_to_nifti_gz
-from histoannot.slide import make_slide_dbview, annot_sample_path_curves
+from histoannot.slide import make_slide_dbview, annot_sample_path_curves, get_affine_matrix_by_slideid
 from histoannot.slideref import get_slide_ref
 
 import json
@@ -792,24 +792,64 @@ def create_sampling_roi_base(task_id, slide_id, label_id, geom_data, osl_level=0
     return json.dumps({ 'id' : roi_id })
 
 
-@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sampling_roi/create', methods=('POST',))
+# Apply affine transform to sampling ROI payload
+def affine_transform_roi(geom_data, M):
+    
+    # Extract matrix components
+    (A,b) = (M[0:2,0:2], M[0:2,2])
+    scale = np.sqrt(np.linalg.det(A))
+
+    # Load the JSON
+    if geom_data.get('type') == 'trapezoid':
+        
+        # Read the coordinates
+        [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
+        
+        # Transform the endpoints
+        p1, p2 = np.array([x1, y1]), np.array([x2, y2])
+        q1, q2 = np.dot(A, p1) + b, np.dot(A, p2) + b
+        
+        # Recompute the widths using the determinant
+        geom_data['data'] = [ [ q1[0], q1[1], w1 * scale ], [ q2[0], q2[1], w2 * scale ] ]
+        
+    elif geom_data.get('type') == 'polygon':
+        
+        # Transform each vertex
+        p = [ np.array(v) for v in geom_data['data'] ]
+        q = [ np.dot(A, v) + b for v in p ]
+        geom_data['data'] = [ [v[0], v[1]] for v in q ]
+        
+    return geom_data
+        
+
+@bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/dltrain/sampling_roi/create', methods=('POST',))
 @access_task_write
-def create_sampling_roi(task_id, slide_id):
+def create_sampling_roi(task_id, mode, resolution, slide_id):
+    # Affine transform to apply 
+    M_inv = get_affine_matrix_by_slideid(slide_id, mode, resolution)
 
     print(request.get_data())
     data = json.loads(request.get_data())
-    geom_data = data['geometry']
+    geom_data = affine_transform_roi(data['geometry'], M_inv)
+    if geom_data.get('type') in ('trapezoid', 'polygon'):
+        validate(instance=geom_data, schema=sampling_roi_schema)
+    else:
+        raise ValueError('Unknown or missing sampling roi type')
+
     label_id = data['label_id']
     return create_sampling_roi_base(task_id, slide_id, label_id, geom_data)
 
 
-@bp.route('/task/<int:task_id>/slide/<int:slide_id>/dltrain/sampling_roi/update', methods=('POST',))
+@bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/dltrain/sampling_roi/update', methods=('POST',))
 @access_task_write
-def update_sampling_roi(task_id, slide_id):
+def update_sampling_roi(task_id, mode, resolution, slide_id):
+
+    # Affine transform to apply 
+    M_inv = get_affine_matrix_by_slideid(slide_id, mode, resolution)
 
     # Validate the JSON
     data = json.loads(request.get_data())
-    geom_data = data['geometry']
+    geom_data = affine_transform_roi(data['geometry'], M_inv)
     if geom_data.get('type') in ('trapezoid', 'polygon'):
         validate(instance=geom_data, schema=sampling_roi_schema)
     else:
@@ -890,18 +930,30 @@ def sampling_roi_delete_on_slice(task_id, slide_id):
     do_delete_sampling_rois_on_slide(task_id, slide_id)
     return "success"
 
+            
 
-@bp.route('/task/<int:task_id>/slide/<int:slide_id>/sampling_roi/get', methods=('GET',))
+@bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/sampling_roi/get', methods=('GET',))
 @access_task_read
-def get_sampling_rois(task_id, slide_id):
+def get_sampling_rois(task_id, mode, resolution, slide_id):
     db = get_db()
     ll = db.execute(
         'SELECT SR.*, M.creator, M.editor, M.t_create, M.t_edit, L.color '
         'FROM sampling_roi SR LEFT JOIN label L on SR.label = L.id '
         '                     LEFT JOIN edit_meta M on SR.meta_id = M.id '
         'WHERE SR.slide=? and SR.task=? ORDER BY M.t_edit DESC ',
-        (slide_id, task_id));
-    return json.dumps([dict(row) for row in ll.fetchall()])
+        (slide_id, task_id))
+    
+    # Get the affine transform to apply to the sampling ROIs
+    M = np.linalg.inv(get_affine_matrix_by_slideid(slide_id, mode, resolution))
+    
+    # Apply the transformation to the JSON
+    result = []
+    for row in ll.fetchall():
+        d = dict(row)
+        d['json'] = json.dumps(affine_transform_roi(json.loads(d['json']), M))
+        result.append(d)
+    
+    return json.dumps(result)
 
 
 # Define a function to draw a trapezoid on an image

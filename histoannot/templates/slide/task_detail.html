@@ -115,8 +115,7 @@ $(document).ready(function() {
   var url_blk="{{url_for('slide.specimen_block_listing', task_id=task_id, specimen=999999)}}";
   var url_sld="{{url_for('slide.block_slide_listing', task_id=task_id, specimen=999999, block_name='YYYY')}}";
   var url_tmb="{{url_for('slide.thumb', id=999999)}}";
-  var url_ann="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='affine', resolution='x16')}}";
-  var url_dlt="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode='raw', resolution='raw')}}";
+  var url_slide="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=pref_affine_mode, resolution=pref_resolution)}}";
   var url_self="{{url_for('slide.block_detail_by_id', task_id=task_id, specimen=999999, block_name='YYYY')}}";
 
   // Thumbnail render function
@@ -127,17 +126,22 @@ $(document).ready(function() {
 
   // Render functions with URLs
   var fn_annot_link = function(data, type, row) {
-    var url = url_ann.replace('999999',data);
+    var url = url_slide.replace('999999',data);
     return '<a class="action" href="'+url+'">Annotate</a>';
   };
 
   var fn_dltrain_link = function(data, type, row) {
-    var url = url_dlt.replace('999999',data);
+    var url = url_slide.replace('999999',data);
     return '<a class="action" href="'+url+'">Train</a>';
   };
 
+  var fn_sroi_link = function(data, type, row) {
+    var url = url_slide.replace('999999',data);
+    return '<a class="action" href="'+url+'">Sample</a>';
+  };
+
   var fn_browse_link = function(data, type, row) {
-    var url = url_dlt.replace('999999',data);
+    var url = url_slide.replace('999999',data);
     return '<a class="action" href="'+url+'">View</a>';
   };
 
@@ -176,7 +180,7 @@ $(document).ready(function() {
     col_desc.push({ data: "nsamples"});
     blk_col_desc.push({ data: "nsamples"});
     sld_col_desc.push({ data: "n_samples"});
-    sld_col_desc.push({ data: "id", render: fn_dltrain_link});
+    sld_col_desc.push({ data: "id", render: fn_sroi_link});
   }
   else {
     sld_col_desc.push({ data: "id", render: fn_browse_link});

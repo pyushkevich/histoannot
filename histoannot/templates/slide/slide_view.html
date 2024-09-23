@@ -1765,7 +1765,7 @@ $(document).ready(function()
             // Send the completed marker to the server
             let roimap = this.roimap;
             $.ajax({
-                url: "{{ url_for('dltrain.create_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
+                url: "{{ url_for('dltrain.create_sampling_roi',task_id=task_id,slide_id=slide_id,mode=affine_mode,resolution=resolution) }}",
                 type: 'post',
                 data: JSON.stringify(ajax_data),
                 success: function(response_text) {
@@ -1784,17 +1784,17 @@ $(document).ready(function()
         };
 
         // Modify an existing sample (e.g., as a result of dragging, resizing)
-        modify_roi(path_obj, cb_success) {
+        modify_roi(id, cb_success) {
 
             // Look up the roi
-            let roi = this.roimap.get(path_obj.data.id);
+            let roi = this.roimap.get(id);
 
             // Create JSON describing this object
             let ajax_data = roi.todict();
-            ajax_data["id"] = path_obj.data.id;
+            ajax_data["id"] = id;
 
             // Send the completed marker to the server
-            $.post("{{ url_for('dltrain.update_sampling_roi', task_id = task_id, slide_id = slide_id) }}",
+            $.post("{{ url_for('dltrain.update_sampling_roi',task_id=task_id,slide_id=slide_id,mode=affine_mode,resolution=resolution) }}",
                 JSON.stringify(ajax_data),
                 function(response_text) {
                     if(cb_success)
@@ -1809,7 +1809,7 @@ $(document).ready(function()
             let roimap = this.roimap;
             let self = this;
             $.ajax({
-                url: "{{ url_for('dltrain.get_sampling_rois', task_id = task_id, slide_id = slide_id) }}",
+                url: "{{ url_for('dltrain.get_sampling_rois',task_id=task_id,slide_id=slide_id,mode=affine_mode,resolution=resolution) }}",
                 type: 'get',
                 success: function(data) {
 
@@ -1935,11 +1935,12 @@ $(document).ready(function()
 
         // Relabel selected samples
         relabel_selected_rois(new_label_id, new_label_color, cb_success) {
+            let self = this;
             this.roimap.forEach(function(T, index) {
                 if(T.selected) {
                     if(T.label_id != new_label_id) {
                         T.update_label(new_label_id, new_label_color);
-                        this.modify_roi(midline, cb_success);
+                        self.modify_roi(T.id, cb_success);
                     }
                 }
             });
@@ -2285,7 +2286,7 @@ $(document).ready(function()
                     });
                 }
                 else if(seg_mode === 'sampling') {
-                    sroi_api.modify_roi(moving_object, function() {
+                    sroi_api.modify_roi(moving_object.data.id, function() {
                         do_delay(reload_label_and_sample_tables, 1000)
                     });
                 }
@@ -2722,6 +2723,7 @@ $(document).ready(function()
             'Draw sampling polygon',
             OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
             polygon_pressed_handler);
+        Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
         Mousetrap.bind('p', function() { polygon_pressed_handler(); });
     }
 

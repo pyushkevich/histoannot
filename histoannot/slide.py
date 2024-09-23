@@ -259,13 +259,19 @@ def specimen_detail_by_id(task_id, specimen):
 @bp.route('/task/<int:task_id>/specimen/<int:specimen>/block/<block_name>')
 @access_task_read
 def block_detail_by_id(task_id, specimen, block_name):
-
+    
     # Get the current task data
     project,task = get_task_data(task_id)
     pr = ProjectRef(project)
+    
+    # Load the view preferences for this task
+    d_pref = session.get('slide_view_pref', {}).get(str(task_id), {'resolution':'raw', 'affine_mode':'raw'})
+
     return render_template('slide/task_detail.html',
                            project=project, project_name=pr.disp_name, task=task, task_id=task_id,
-                           specimen=specimen, block_name=block_name)
+                           specimen=specimen, block_name=block_name, 
+                           pref_resolution=d_pref['resolution'], 
+                           pref_affine_mode=d_pref['affine_mode'])
 
 
 # Complete listing of slides in a task
@@ -797,6 +803,15 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         for source in request.args, request.form, sample_data:
             if field in source:
                 context[field] = source[field]
+                
+    # Record the user preferences for resolution and affine mode for the current task,
+    # which should then be reused for other slides in this task
+    if 'slide_view_pref' not in session:
+        session['slide_view_pref'] = {}
+    if str(task_id) not in session['slide_view_pref']:
+        session['slide_view_pref'][str(task_id)] = {}
+    session['slide_view_pref'][str(task_id)]['resolution'] = resolution
+    session['slide_view_pref'][str(task_id)]['affine_mode'] = affine_mode
 
     # Render the template
     return render_template('slide/slide_view.html', **context)

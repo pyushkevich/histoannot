@@ -41,6 +41,10 @@
 
         this._canvas = document.createElement('canvas');
         this._canvas.setAttribute('id', 'osd-overlaycanvas');
+
+        // TODO: this fixed a nasty error with rendering of layers and 
+        // objects with non-zero opacity
+        this._canvas.setAttribute('data-paper-hidpi', 'off');
         this._canvasdiv.appendChild(this._canvas);
         this.resize();
 

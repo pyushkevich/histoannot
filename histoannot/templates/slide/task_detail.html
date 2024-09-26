@@ -23,12 +23,26 @@ Specimen Listing - {{task['name']}}
 }
 </style>
 
-
-<a href="{{ url_for('slide.index')}}">Home</a> : 
-<a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
-{{task['name']}}
-<span id="span_specimen_display"></span>
-<span id="span_block_name"></span>
+<table style="width:100%; position: relative;">
+  <tr>
+    <td>
+      <a href="{{ url_for('slide.index')}}">Home</a> : 
+      <a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
+      {{task['name']}}
+      <span id="span_specimen_display"></span>
+      <span id="span_block_name"></span>      
+    </td>
+    <td style="text-align: right">
+      <form id="form_pref" target="#" style="display: inline; white-space: nowrap;">
+        <label for="resolution_select">Resolution:</label>
+        <select id="resolution_select" style="font-size: 80%; color: black;">
+            <option value="raw">1:1</option>
+            <option value="x16">1:16</option>
+        </select>
+      </form>  
+    </td>
+  </tr>
+</table>
 
 <div class="pure-g">
   <div class="pure-u-1 pure-u-md-7-24">
@@ -44,7 +58,7 @@ Specimen Listing - {{task['name']}}
           {% elif task['mode'] == 'dltrain' %}
             <th>#Sam</th>
           {% elif task['mode'] == 'sampling' %}
-            <th>#Sam</th>
+            <th>#ROIs</th>
           {% endif %}
         </tr>
       </thead>
@@ -110,13 +124,18 @@ $(document).ready(function() {
 
   mode="{{task['mode']}}";
 
+  // Preferred resolution
+  var pref_resolution = '{{pref_resolution}}';
+  $('#resolution_select').val(pref_resolution);
+
   // AJAX url templates
   var url_spc="{{url_for('slide.task_specimen_listing', task_id=task_id)}}";
   var url_blk="{{url_for('slide.specimen_block_listing', task_id=task_id, specimen=999999)}}";
   var url_sld="{{url_for('slide.block_slide_listing', task_id=task_id, specimen=999999, block_name='YYYY')}}";
   var url_tmb="{{url_for('slide.thumb', id=999999)}}";
-  var url_slide="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=pref_affine_mode, resolution=pref_resolution)}}";
+  var url_slide="{{url_for('slide.slide_view', task_id=task_id, slide_id=999999, affine_mode=pref_affine_mode, resolution='XXXXXX')}}";
   var url_self="{{url_for('slide.block_detail_by_id', task_id=task_id, specimen=999999, block_name='YYYY')}}";
+  var url_set_resolution_pref="{{url_for('slide.task_set_resolution_preference', task_id=task_id, resolution='XXXXXX')}}";
 
   // Thumbnail render function
   var fn_render_thumb = function(data, type, row) {
@@ -126,22 +145,22 @@ $(document).ready(function() {
 
   // Render functions with URLs
   var fn_annot_link = function(data, type, row) {
-    var url = url_slide.replace('999999',data);
+    var url = url_slide.replace('999999',data).replace('XXXXXX', pref_resolution);
     return '<a class="action" href="'+url+'">Annotate</a>';
   };
 
   var fn_dltrain_link = function(data, type, row) {
-    var url = url_slide.replace('999999',data);
+    var url = url_slide.replace('999999',data).replace('XXXXXX', pref_resolution);
     return '<a class="action" href="'+url+'">Train</a>';
   };
 
   var fn_sroi_link = function(data, type, row) {
-    var url = url_slide.replace('999999',data);
+    var url = url_slide.replace('999999',data).replace('XXXXXX', pref_resolution);
     return '<a class="action" href="'+url+'">Sample</a>';
   };
 
   var fn_browse_link = function(data, type, row) {
-    var url = url_slide.replace('999999',data);
+    var url = url_slide.replace('999999',data).replace('XXXXXX', pref_resolution);
     return '<a class="action" href="'+url+'">View</a>';
   };
 
@@ -305,10 +324,18 @@ $(document).ready(function() {
     selected_blk = null;
     $('#span_block_name').text("");
     $('#d_slides').css('display','none');
-  })
+  });
+
+  // Handle preferred resolution by modifying all the URLs in the rightmost table
+  $("#resolution_select").change(function() {
+    pref_resolution = $("#resolution_select").val();
+    t_slide.rows().invalidate().draw();
+    $.ajax({ url: url_set_resolution_pref.replace('XXXXXX', pref_resolution) });
+  });
 
 
 } );
+
 </script>
 
 {% endblock %}

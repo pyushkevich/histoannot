@@ -710,7 +710,19 @@ $(document).ready(function()
     // Initialization for paper_js
     var overlay;
     function init_paperjs() {
+        // This function will setup the paper.js project (calls paper.setup())
         overlay = viewer.paperjsOverlay();
+
+        // Add extra layers to paper.js
+        let main_layer = paper.project.activeLayer;
+        let annot_overlay = new paper.Layer();
+        annot_overlay.name = 'annot_overlay';
+        annot_overlay.locked = true;
+        paper.project.addLayer(annot_overlay);
+
+        main_layer.activate();
+
+        // Does some important calibration of canvas and paperjs
         overlay.resize();
         overlay.resizecanvas();
 
@@ -1150,26 +1162,18 @@ $(document).ready(function()
         $.get(url_dl_annot.replace('999999', other_task_id),
             function(data, status) {
                 if(status=='success' && data.length) {
-                    let overlay_layer = null;
-                    let overlay_list = paper.project.layers.filter(l => l.name === 'annot_overlay');
-                    if(overlay_list.length == 0) {
-                        overlay_layer = new paper.Layer();
-                        overlay_layer.name = 'annot_overlay';
-                        overlay_layer.locked = true;
-                        overlay_layer.opacity = 0.5;
-                        paper.project.addLayer(overlay_layer);
-                    }
-                    else {
-                        overlay_layer = overlay_list[0];
-                    }
 
                     // Due to back compatibility we stored project-level data in the database
                     // here we need to extract data from the first layer
                     d_proj = JSON.parse(data)
                     if(d_proj.length) {
+                        let overlay_layer = paper.project.layers.find(l => l.name === 'annot_overlay');
+                        overlay_layer.removeChildren();
                         overlay_layer.importJSON(JSON.stringify(d_proj[0]));
                         overlay_layer.children.forEach(function(item, index) {
                             item.selected = false;
+                            // TODO: this breaks display on High DPI devices
+                            // item.opacity = 0.5;
                         });
                         adjust_paperjs_scaling(get_image_zoomlevel());
                         adjust_paperjs_text_rotation();
@@ -1179,10 +1183,8 @@ $(document).ready(function()
     };
 
     var unload_other_task_annot = function() {
-        let overlay_list = paper.project.layers.filter(l => l.name === 'annot_overlay');
-        overlay_list.forEach(l => {
-            l.remove();
-        });
+        let overlay_layer = paper.project.layers.find(l => l.name === 'annot_overlay');
+        overlay_layer.removeChildren();
     }
 
     // A class dealing with keeping track of training patches
@@ -1205,6 +1207,7 @@ $(document).ready(function()
             new_box.data.label_color = color;
             new_box.data.geometry = [x0, y0, x1, y1];
             set_paperjs_item_strokewidth(new_box, raw_stroke_width);
+
             return new_box;
         };
 
@@ -2951,9 +2954,19 @@ $(document).ready(function()
 
         s_res.val("{{resolution}}");
         s_res.change(function() {
-            const tmpl="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}";
-            let url = tmpl.replace('XXXX', $("#form_res_select").val());
-            $("#form_server_disp_opt").attr("method","post").attr("action", url).submit();
+            // Update the resolution preferences for this task
+            let new_res = $("#form_res_select").val();
+            const url_pref="{{url_for('slide.task_set_resolution_preference', task_id=task_id, resolution='XXXX')}}".replace('XXXX', new_res);
+            const url_redirect="{{ url_for('slide.slide_view', task_id=task_id, slide_id=slide_info['id'], affine_mode=affine_mode, resolution='XXXX') }}".replace('XXXX', new_res);
+            $.ajax({ 
+                url: url_pref, 
+                success: function() {
+                    // Navigate to the new task
+                    setTimeout(function() { 
+                        $("#form_server_disp_opt").attr("method","post").attr("action", url_redirect).submit(); 
+                    }, 100);
+                } 
+            });
         });
     }
 

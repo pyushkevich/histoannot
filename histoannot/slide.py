@@ -229,6 +229,67 @@ def task_slide_listing_csv(task_id):
     return Response(fout.getvalue(), mimetype='text/csv')
 
 
+# Command to generate a slide listing in CSV format
+def generate_detailed_slide_listing(
+    task, specimen, block, section, slide, stain,
+    min_paths, min_markers, min_sroi, csv):    
+
+    # Create a DB view of slide details
+    db=get_db()
+    make_slide_dbview(task, 'v_full')
+
+    # Build up a where clause
+    w = list(filter(lambda x: x[1] is not None and x[1] is not False, 
+            [('specimen_private LIKE ?', specimen),
+             ('block_name LIKE ?', block),
+             ('section = ?', section),
+             ('slide = ?', slide),
+             ('stain = ?', stain),
+             ('n_paths >= ?', min_paths), 
+             ('n_markers >= ?', min_markers),
+             ('n_sampling_rois >= ?', min_sroi)]))
+
+    if len(w) > 0:
+        w_sql,w_prm = zip(*w)
+        w_clause = 'WHERE %s' % ' AND '.join(w_sql)
+    else:
+        w_clause = ''
+        w_prm = ()
+
+    # Create a Pandas data frame
+    df = pandas.read_sql_query( "SELECT * FROM v_full %s" % w_clause, db, params=w_prm)
+
+    # Dump the database entries
+    if csv is not None:
+        df.to_csv(csv, index=False)
+    else:
+        with pandas.option_context('display.max_rows', None):  
+            print(df)
+
+
+# Slide listing for a task - simple
+@bp.route('/api/task/<int:task_id>/slide_detailed_manifest.csv')
+@access_task_read
+def get_slide_detailed_manifest(task_id):
+
+    # Parameters to read from the request
+    param = {
+        'specimen': None, 'block': None, 'section': None, 'slide': None,
+        'stain': None, 'min_paths': None, 'min_markers': None, 'min_sroi': None
+    }
+    
+    for k in param.keys():
+        if k in request.args:
+            param[k] = int(request.args[k]) if k.startswith('min_') else request.args[k]
+    
+    # Call the main command
+    out = StringIO()
+    generate_detailed_slide_listing(task_id, csv=out, **param)
+    
+    # Write the response
+    return Response(out.getvalue(), mimetype='text/csv')
+
+
 def get_task_listing(task_id, specimen, block_name):
     
     # Get the current task data
@@ -1730,40 +1791,8 @@ def annot_copy_to_task_cmd(source_task, target_task, overwrite):
 def slides_list_cmd(task, specimen, block, section, slide, stain,
         min_paths, min_markers, min_sroi, csv):
     """List slides in a task"""
-
-    db=get_db()
-
-    # Create a DB view of slide details
-    make_slide_dbview(task, 'v_full')
-
-    # Build up a where clause
-    w = list(filter(lambda x: x[1] is not None and x[1] is not False, 
-            [('specimen_private LIKE ?', specimen),
-             ('block_name LIKE ?', block),
-             ('section = ?', section),
-             ('slide = ?', slide),
-             ('stain = ?', stain),
-             ('n_paths >= ?', min_paths), 
-             ('n_markers >= ?', min_markers),
-             ('n_sampling_rois >= ?', min_sroi)]))
-
-    if len(w) > 0:
-        w_sql,w_prm = zip(*w)
-        w_clause = 'WHERE %s' % ' AND '.join(w_sql)
-    else:
-        w_clause = ''
-        w_prm = ()
-
-    # Create a Pandas data frame
-    df = pandas.read_sql_query( "SELECT * FROM v_full %s" % w_clause, db, params=w_prm)
-
-    # Dump the database entries
-    if csv is not None:
-        df.to_csv(csv, index=False)
-    else:
-        with pandas.option_context('display.max_rows', None):  
-            print(df)
-
+    generate_detailed_slide_listing(task, specimen, block, section, slide, stain,
+                                    min_paths, min_markers, min_sroi, csv)
 
 def init_app(app):
     app.cli.add_command(import_annot_cmd)

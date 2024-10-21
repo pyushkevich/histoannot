@@ -80,8 +80,7 @@ class GCSHandler:
 
         # Make sure the path containing local_file exists
         dir_path = os.path.dirname(local_file)
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+        os.makedirs(dir_path, exist_ok=True)
 
         # Perform the download
         blob = self._get_blob(uri)

@@ -42,6 +42,7 @@ from histoannot.project_ref import ProjectRef
 from histoannot.cache import AffineTransformedOpenSlide
 from histoannot.delegate import find_delegate_for_slide
 from histoannot.auth import access_project_read, access_project_admin
+from google.cloud import storage
 
 bp = Blueprint('dzi', __name__)
 
@@ -51,6 +52,73 @@ from flask.cli import with_appcontext
 import nibabel as nib
 import gzip
 from PIL import Image
+import socket
+import pickle
+from datetime import datetime
+
+class OpenSlideThinInterface:
+    """
+    This class is a thin interface to an OpenSlide object that is running in a 
+    different process and is connected to via a socket. 
+    """
+    
+    def __init__(self, socket_addr, url):
+        self.socket_addr = socket_addr
+        self.url = url
+        
+    def _exec_remote(self, method, **kwargs):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            
+            # Request a region from an image 
+            request = {
+                'url': self.url,
+                'command': method,
+                'args': kwargs
+            }
+            
+            # Connect to server and send data
+            sock.connect(self.socket_addr)
+            sock.sendall(pickle.dumps(request))
+
+            # Receive data from the server and shut down
+            header = sock.recv(8)
+            n_bytes = int.from_bytes(header)
+            payload = bytearray(n_bytes)
+            pos = 0
+            while pos < n_bytes:
+                chunk = sock.recv(n_bytes-pos)
+                payload[pos:pos+len(chunk)] = chunk
+                pos += len(chunk)
+            result = pickle.loads(payload)
+            return result
+        
+    @property
+    def level_count(self):
+        return self._exec_remote('level_count')
+
+    @property
+    def dimensions(self):
+        return self._exec_remote('dimensions')
+        
+    @property
+    def level_dimensions(self):
+        return self._exec_remote('level_dimensions')
+    
+    @property
+    def level_downsamples(self):
+        return self._exec_remote('level_downsamples')
+    
+    @property
+    def properties(self):
+        return self._exec_remote('properties')
+    
+    def get_best_level_for_downsample(self, downsample):
+        return self._exec_remote('get_best_level_for_downsample', downsample=downsample)
+                
+    def read_region(self, pos, level, size):
+        return self._exec_remote('read_region', pos=pos, level=level, size=size)
+
+
 
 
 # The function that is enqueued in RQ
@@ -132,6 +200,9 @@ def dzi_preload(project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+    return json.dumps({ "status" : JobStatus.FINISHED })
+
+    '''
 
     # Check if the file exists locally. If so, there is no need to queue a worker
     tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
@@ -150,6 +221,7 @@ def dzi_preload(project, slide_id, resource):
 
     # Return the job id
     return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
+    '''
 
 
 # Check the status of a job - version that does not require database but uses private ids
@@ -225,6 +297,15 @@ def dzi_slide_filepath(project, slide_id):
          "local": sr.get_resource_url('raw', True) })
 
 
+def get_osl(slide_id, sr:SlideRef, resource):
+    tiff_file = sr.get_resource_url(resource, local=False)
+    if tiff_file.startswith('gs://'):
+        socket_addr = current_app.config['OPENSLIDE_SOCKET']
+        return OpenSlideThinInterface(socket_addr, tiff_file)
+    else:
+        return OpenSlide(tiff_file)
+
+
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
 @access_project_read
@@ -233,13 +314,15 @@ def dzi(mode, project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-    tiff_file = sr.get_local_copy(resource, check_hash=True)
+    # tiff_file = sr.get_local_copy(resource, check_hash=True)
+    tiff_file = sr.get_resource_url(resource, False)
 
     # Get an affine transform if that is an option
     A = get_affine_matrix(sr, mode, resource, 'image')
 
     # Load the slide
-    osa = AffineTransformedOpenSlide(tiff_file, A)
+    # osa = AffineTransformedOpenSlide(tiff_file, A)
+    osa = get_osl(slide_id, sr, resource)
     dz = DeepZoomGenerator(osa)
     dz.filename = os.path.basename(tiff_file)
     resp = make_response(dz.get_dzi('png'))
@@ -297,7 +380,7 @@ def dzi_download(project, slide_id, resource, downsample, extension):
         return send_file(tiff_file)
 
     else:
-        os = OpenSlide(tiff_file)
+        os = get_osl(slide_id, sr, resource)
         thumb = os.get_thumbnail((downsample, downsample))
         mpp = sr.get_pixel_spacing(resource)
 
@@ -372,13 +455,14 @@ def tile_db(mode, project, slide_id, resource, level, col, row, format):
 
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
-    tiff_file = sr.get_local_copy(resource)
+    # tiff_file = sr.get_local_copy(resource)
 
-    os = None
-    if mode == 'affine':
-        os = AffineTransformedOpenSlide(tiff_file, get_affine_matrix(sr, 'affine', resource, 'image'))
-    else:
-        os = OpenSlide(tiff_file)
+    #os = None
+    #if mode == 'affine':
+    #    os = AffineTransformedOpenSlide(tiff_file, get_affine_matrix(sr, 'affine', resource, 'image'))
+    #else:
+    #    os = OpenSlide(tiff_file)
+    os = get_osl(slide_id, sr, resource)
 
     dz = DeepZoomGenerator(os)
     tile = dz.get_tile(level, (col, row))
@@ -406,7 +490,8 @@ def get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format):
     tiff_file = sr.get_local_copy(resource)
 
     # Read the region centered on the box of size 512x512
-    os = OpenSlide(tiff_file)
+    # os = OpenSlide(tiff_file)
+    os = get_osl(slide_id, sr, resource)
 
     # Work out the offset
     x = ctrx - int(w * 0.5 * os.level_downsamples[level])
@@ -435,7 +520,8 @@ def get_random_patch(project, slide_id, resource, level, w, format):
     tiff_file = sr.get_local_copy(resource)
 
     # Read the region centered on the box of size 512x512
-    os = OpenSlide(tiff_file)
+    # os = OpenSlide(tiff_file)
+    os = get_osl(slide_id, sr, resource)
 
     # Work out the offset
     cx = randint(0, int(os.level_dimensions[level][0] - w * os.level_downsamples[level]))
@@ -566,12 +652,13 @@ def dzi_download_header(project, slide_id, resource):
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
 
     # Get the resource
-    tiff_file = sr.get_local_copy(resource, check_hash=True)
-    print(f'Fetching {sr.get_resource_url(resource, False)}')
-    if tiff_file is None:
-        return f'Resource {resource} not available for slide {slide_id}', 400
+    # tiff_file = sr.get_local_copy(resource, check_hash=True)
+    # print(f'Fetching {sr.get_resource_url(resource, False)}')
+    # if tiff_file is None:
+    #    return f'Resource {resource} not available for slide {slide_id}', 400
 
-    os = OpenSlide(tiff_file)
+    # os = OpenSlide(tiff_file)
+    os = get_osl(slide_id, sr, resource)
     prop_dict = { k:v for k,v in os.properties.items() }
     return json.dumps(prop_dict), 200, {'ContentType':'application/json'}
 
@@ -583,6 +670,66 @@ def run_preload_worker_cmd():
     with Connection():
         w = Worker(current_app.config['PRELOAD_QUEUE'])
         w.work()
+
+
+import socketserver
+from histoannot.gcs_handler import GoogleCloudOpenSlideWrapper, MultiFilePageCache
+
+class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
+    """
+    The request handler class for our server.
+
+    It is instantiated once per connection to the server, and must
+    override the handle() method to implement communication to the
+    client.
+    """
+    def handle(self):
+        # Block to receive request
+        self.data = pickle.loads(self.request.recv(4096))
+        
+        # Get the slide URL
+        url = self.data['url']
+        
+        # Get a cached TIFF object for the URL or create and cache one
+        # TODO: purge tiff cache once in a while
+        tiff = self.server.osl_cache.get(url, None)
+        if not tiff:
+            if self.server.gcs_client is None:
+                self.server.gcs_client = storage.Client()                
+            tiff = GoogleCloudOpenSlideWrapper(self.server.gcs_client, url, self.server.gcs_cache)
+            self.server.osl_cache[url] = tiff
+            
+        # Process the request
+        attr = getattr(tiff, self.data['command'])
+        result = attr(**self.data['args']) if callable(attr) else attr
+
+        payload = pickle.dumps(result)
+        self.request.send(len(payload).to_bytes(8))
+        self.request.sendall(payload)
+
+
+# Command to run openslide server
+@click.command('openslide-server-run')
+@with_appcontext
+def run_openslide_server():
+    socketserver.UnixStreamServer.allow_reuse_address = True
+    with socketserver.UnixStreamServer(current_app.config['OPENSLIDE_SOCKET'], OpenSlideRequestHandler) as server:
+        server.osl_cache = {}
+        server.gcs_cache = MultiFilePageCache(page_size_mb=1, cache_max_size_mb=1024, purge_size_pct=0.25)
+        server.gcs_client = None
+        server.timeout = 30
+        last_report_time = datetime.now()
+        while(True):
+            server.handle_request()
+            #if (datetime.now() - last_report_time).seconds > 30:
+            #    print(' ---- PRINTING SOME STATS ---- ')
+            #    for k,v in server.cache.items():
+            #        h = v.h
+            #        cache = h._cache
+            #        s = sum([x.size for x in h._cache.cache])
+            #        print(k,s)                       
+            #    last_report_time = datetime.now()
+            
 
 
 # Command to ping master
@@ -616,3 +763,4 @@ def delegate_dzi_ping_command():
 def init_app(app):
     app.cli.add_command(run_preload_worker_cmd)
     app.cli.add_command(delegate_dzi_ping_command)
+    app.cli.add_command(run_openslide_server)

@@ -18,6 +18,7 @@
 import os
 from flask import Flask, request, g
 from flask_pure import Pure
+from flask_caching import Cache
 from . import cache
 from . import db
 from . import auth
@@ -31,6 +32,9 @@ from . import admin
 from glob import glob
 from histoannot.project_ref import RemoteResourceCache, ProjectRef
 from socket import gethostname
+
+# Create a cache
+phas_cache = Cache()
 
 # Needed for AJAX redirects to DZI nodes
 def _add_cors_headers(response):
@@ -60,6 +64,9 @@ def create_app(test_config = None):
 
     # Descriptive keys
     app.config['HISTOANNOT_PUBLIC_NAME'] = 'PICSL Histology Annotation System'
+
+    # Set up the cache
+    app.config['CACHE_TYPE'] = 'SimpleCache'
 
     # Read the config file
     if test_config is None:
@@ -91,6 +98,9 @@ def create_app(test_config = None):
 
         # Configure database
         app.config['DATABASE'] = os.path.join(app.instance_path, 'histoannot.sqlite')
+        
+        # Configure the socket
+        app.config['OPENSLIDE_SOCKET'] = os.path.join(app.instance_path, 'openslide.sock')
 
         # Database connection
         db.init_app(app)
@@ -149,7 +159,9 @@ def create_app(test_config = None):
 
     else:
         raise ValueError('Missing or unknown HISTOANNOT_SERVER_MODE')
-
+    
+    # Set up the cache
+    phas_cache.init_app(app)
 
     return app
 

@@ -14,3 +14,4 @@ Pillow
 nibabel
 tifffile
 sortedcontainers
+imagecodecs

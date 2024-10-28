@@ -26,6 +26,7 @@ from collections import namedtuple
 import numpy as np
 from PIL import Image
 from sortedcontainers import SortedKeyList
+import time
 
 # This class handles remote URLs for Google cloud. The remote URLs must have format
 # "gs://bucket/path/to/blob.ext"
@@ -140,9 +141,191 @@ class PageCache:
         page = self.Page(offset, len(data), data, self._counter)
         self._counter += 1
         insort(self.cache, page)
+
+
+
+class AbstractMultiFilePageCache:
+    """
+    Abstract parent class for in-memory cache for large files. A file is divided into 
+    discrete pages of equal size. Each page has a timestamp that is updated when the 
+    page is read or written.
+    """
+
+    class CachePage:
+        def __init__(self, index, t_access, data=None):
+            self.index = index
+            self.t_access = t_access
+            self.data = data
+
+    def __init__(self, page_size_mb=1):
+        self.cache = {}
+        self.page_size = page_size_mb * 1024**2
+        self.t_last_purge = time.time_ns()
+
+    def get_page(self, url, pageno):        
+        pages = self.cache.get(url)
+        if not pages:
+            self.cache[url] = pages = dict()
+        page = pages.get(pageno)
+        if page:
+            page.t_access = time.time_ns()
+            return page
+    
+    def set_page(self, url, pageno, data):
+        pages = self.cache.get(url)
+        if not pages:
+            self.cache[url] = pages = dict()
+        page = pages.get(pageno)
+        if not page:
+            pages[pageno] = page = self.CachePage(pageno, time.time_ns(), data)
+            return page
+
+    def purge(self, t_purge):
+        if t_purge > self.t_last_purge:
+            for url, pages in self.cache.items():
+                self.cache[url] = dict({ i: page for (i, page) in pages.items() if page.t_access >= t_purge })
+            self.t_last_purge = t_purge
+
+
+class SelfManagedMultiFilePageCache(AbstractMultiFilePageCache):
+    """
+    An in-memory cache for large files. A file is divided into discrete pages of equal
+    size. Each page has a timestamp that is updated when the page is read or written.
+
+    This cache does simple memory management based on maximum allowed size. When the size
+    is exceeded, the specified fraction of the cache is purged.
+    """
+
+    def __init__(self, page_size_mb=1, cache_max_size_mb=1024, purge_size_pct=0.25):
+        AbstractMultiFilePageCache.__init__(self, page_size_mb)
+        self.cache_max_size_mb = cache_max_size_mb
+        self.purge_size = int(self.cache_max_size_mb * purge_size_pct)
+        self.total_size = 0
+
+    def set_page(self, url, pageno, data):
+        if AbstractMultiFilePageCache.set_page(self, url, pageno, data):
+            self.total_size += self.page_size
+        
+        if self.total_size >= self.cache_max_size_mb:
+            # Time has come to purge the cache. For this we need to sort
+            # all the pages by access time
+            l_purge = SortedKeyList(key=lambda x:x[2].t_access)
+            for url,pp in self.cache:
+                for index,page in pp:
+                    l_purge.add((url, index, page))
+                    
+            # Purge pages to free up space
+            n_purge = min(max(1,self.purge_size // self.page_size), len(l_purge))
+            t_purge = l_purge[n_purge].t_access
+            self.purge(t_purge)
         
 
-class MultiFilePageCache:
+class MultiprocessManagedMultiFilePageCache(AbstractMultiFilePageCache):
+    """
+    An in-memory cache for large files. A file is divided into discrete pages of equal
+    size. Each page has a timestamp that is updated when the page is read or written.
+
+    A special feature of this cache is that it is designed to be used in a multiprocess
+    setting. Each process has its own cache, but the size of the cache across all the 
+    processes is monitored and constrained. The cache is purged whenever the total size
+    of all caches exceeds a threshhold. To facilitate this, the cache writes to a queue
+    each time that a page is read or written, allowing the manager process to keep track
+    of pages and timestamps across all pages. 
+    """
+
+    def __init__(self, unique_id, report_queue, page_size_mb=1):
+        AbstractMultiFilePageCache.__init__(self, page_size_mb)
+        self.cache = {}
+        self.unique_id = unique_id
+        self.report_queue = report_queue
+        self.page_size = page_size_mb * 1024**2
+
+    def get_page(self, url, pageno):        
+        page = AbstractMultiFilePageCache.get_page(self, url, pageno)
+        if page:
+            self.report_queue.put((self.unique_id, url, pageno, page.t_access))
+        return page
+
+    def set_page(self, url, pageno, data):
+        page = AbstractMultiFilePageCache.set_page(self, url, pageno, data)
+        if page:
+            self.report_queue.put((self.unique_id, url, pageno, page.t_access))
+        return page
+
+
+class CachedFileRepresentation:
+    """
+    This class works together with a cache to provide fast access to files that may
+    be on a remote filesystem. The main method is readinto which reads data either 
+    from the source using the callback supplied by the user, or from the cache if
+    available.
+    """
+        
+    def __init__(self, cache):
+        self.cache = cache
+        self.page_size = cache.page_size
+        
+    def fullfill(self, offset, size, dest, page):
+        page_start = page.index * self.page_size        
+        off_dest = max(0, page_start - offset)
+        off_page = max(0, offset - page_start)
+        size_adj = min(offset + size - (page_start + off_page), self.page_size)
+        dest[off_dest:(off_dest+size_adj)] = page.data[off_page:(off_page+size_adj)]
+        return size_adj
+        
+    def split_range(self, p0, p1, p_excl):
+        ranges = []
+        current_start = p0
+        for p in p_excl:
+            if p0 <= p <= p1:
+                if current_start < p:
+                    ranges.append((current_start, p))
+                current_start = p + 1
+        if current_start < p1:
+            ranges.append((current_start, p1))
+        return ranges    
+        
+    def readinto(self, url, offset, size, dest, fn_readinto):
+        
+        # This is the range of pages that is spanned by the data
+        ps = self.page_size
+        p0, p1 = offset // ps, (offset+size-1) // ps
+        
+        # Iterate over the needed pages
+        size_fullfilled = 0
+        not_in_cache = []
+        p = p0
+        while True:
+            page = self.cache.get_page(url, p) if p <= p1 else None
+            if p <= p1 and page is None:
+                not_in_cache.append(p)
+            else:
+                if len(not_in_cache) > 0:
+
+                    # Read the missing pages
+                    j0, j1 = not_in_cache[0], not_in_cache[-1]
+                    chunk_size = (1 + j1 - j0) * ps
+                    chunk = bytearray(chunk_size)
+                    fn_readinto(j0 * ps, chunk_size, chunk)
+                    
+                    # Place the missing pages into the cache
+                    for j in range(j0, j1+1):
+                        pnew = self.cache.set_page(url, j, chunk[(j-j0)*ps:(j+1-j0)*ps])
+                        size_fullfilled += self.fullfill(offset, size, dest, pnew)
+
+                    not_in_cache = []
+                if p <= p1:
+                    size_fullfilled += self.fullfill(offset, size, dest, page)
+                else:
+                    break
+            p += 1
+                
+        return size_fullfilled
+
+
+
+'''
+class MultiFilePageCacheWrap:
     """
     This class caches pieces of remote files. Each file is divided into pages of a fixed
     size and pages are stored in the cache until memory is exhausted. When a range of data
@@ -260,23 +443,30 @@ class MultiFilePageCache:
             p += 1
                 
         return size_fullfilled
+'''
 
         
 class GoogleCloudTiffHandle(io.RawIOBase):
-    def __init__(self, client: storage.Client, gs_url: str, cache: None):
+    def __init__(self, client: storage.Client, gs_url: str, cache):
         self.gs_url = gs_url
         url_parts = urlparse.urlparse(gs_url)
         self._bucket = client.get_bucket(url_parts.netloc)
         self._blob = self._bucket.get_blob(url_parts.path.strip('/'))        
         self.fsize = self._blob.size  
         self.pos = 0
-        self.cache = cache
+        self.cache = CachedFileRepresentation(cache)
         self.total_read = 0
         self.total_served = 0
+        self.total_gcpops = 0
         print(f'Created handle for GCS-hosted Tiff file {gs_url} of size {self.fsize}')  
         
     def __del__(self):
-        print(f'GoogleCloudTiffHandle[{self.gs_url}]  Total Read: {self.total_read}   Total Served: {self.total_served}   Efficiency: {self.total_served / self.total_read}')
+        print(f'Cache Performance for GoogleCloudTiffHandle[{self.gs_url}]:')
+        print(f'  Total Read (MB):        {self.total_read / 1024**2:6.2f}')
+        print(f'  Total Served (MB):      {self.total_served / 1024**2:6.2f}MB') 
+        print(f'  Efficiency:             {self.total_served / self.total_read}')
+        print(f'  REST API calls:         {self.total_gcpops}')
+        print(f'  MB per call:            {self.total_read / (1024 ** 2 * self.total_gcpops):6.2f}')
     
     def _readinto_internal(self, offset, size, buffer):
         size = min(size, self.fsize - offset)
@@ -284,6 +474,8 @@ class GoogleCloudTiffHandle(io.RawIOBase):
         chunk = self._blob.download_as_bytes(start=offset, end=offset+size-1, checksum=None)
         n_read = len(chunk)
         buffer[:n_read] = chunk
+        self.total_read += n_read
+        self.total_gcpops += 1
         return n_read
     
     def readinto(self, buffer):
@@ -292,12 +484,12 @@ class GoogleCloudTiffHandle(io.RawIOBase):
         elif not isinstance(buffer, (bytearray, memoryview)):
             raise TypeError("Buffer object expected, got: {}".format(type(buffer)))
         size = min(len(buffer), self.fsize - self.pos)
-        print(f'Read {self.pos}:{self.pos+size} FROM {self.gs_url}')
         if self.cache:
             n_read = self.cache.readinto(self.gs_url, self.pos, size, buffer, self._readinto_internal)
         else:
             n_read = self._readinto_internal(self.pos, size, buffer)            
         self.pos += n_read
+        self.total_served += n_read
         return n_read
 
     def read(self, size=-1):
@@ -426,7 +618,6 @@ class GoogleCloudOpenSlideWrapper:
         self.tiled_pages = [ p for p in self.tf.pages if p.is_tiled ]
         
     def read_region(self, pos, level, size):
-        print(f'Read region {pos}, {level}, {size}')
         page = self.tiled_pages[level]
         
         # The pos coordinates are in the coordinate frame of level 0 and
@@ -435,10 +626,8 @@ class GoogleCloudOpenSlideWrapper:
         pos = [ int(0.5 + x // ds) for x in pos ]
 
         if not page.is_tiled:
-            print(f'Page {level} is not tiled, size {page.imagewidth, page.imagelength}')
             arr = page.asarray()
             icrop = arr[pos[1]:(pos[1]+size[1]),pos[0]:(pos[0]+size[0]),:]
-            print('icrop', icrop.shape)
 
         else:
             fh = self.tf.filehandle
@@ -454,11 +643,7 @@ class GoogleCloudOpenSlideWrapper:
             ty1 = (pos[1] + size[1]) // th
             stx, sty = 1+tx1-tx0, 1+ty1-ty0
             
-            print(tw, th, ntx, nty, tx0, tx1, ty0, ty1, stx, sty)
-
-                    
             image = np.zeros((sty * th, stx * tw, page.samplesperpixel), dtype=page.dtype)
-            print(f'Reading tiles {tx0}:{tx1+1} in x, {ty0}:{ty1+1} in y')
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
                     i_tile = ty * ntx + tx

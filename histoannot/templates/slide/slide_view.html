@@ -859,7 +859,7 @@ $(document).ready(function()
             { 
                 data: "value", 
                 render: function (data, type, row, meta) {
-                    return data.replaceAll('\n','<br>');
+                    return typeof(data) == 'string' ? data.replaceAll('\n','<br>') : data;
                 }
             }
         ],
@@ -868,7 +868,8 @@ $(document).ready(function()
         searching: false,
         scrollY: '400px'
       } );
-                                            
+
+    /* preloading is no longer required                      
     // Get the progress of loading the current slide
     var check_preload_progress = function(job_id, cb_complete) {
         var myurl =
@@ -920,6 +921,10 @@ $(document).ready(function()
 
     // Preload the main image
     preload_dzi("{{resolution}}", init_viewer);
+    */
+
+    // Initialize the viewer
+    init_viewer();
 
     // Contrast adjustment and overlay settings
     let display_options = {
@@ -1009,7 +1014,7 @@ $(document).ready(function()
         };
 
         // Preload the resource
-        preload_dzi(resource, on_loaded);
+        // preload_dzi(resource, on_loaded);
     };
 
     // A function to remove an overlay

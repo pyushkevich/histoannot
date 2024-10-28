@@ -31,9 +31,10 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status
+from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status, get_osl
 from io import BytesIO, StringIO
 from PIL import Image
+from threading import Thread
 
 import os
 import json
@@ -756,6 +757,13 @@ def get_available_tasks_for_slide(project, slide_id):
         task_mode_dict[row['id']] = { k : task[k] for k in ('mode', 'name', 'desc') }
         
     return task_mode_dict
+
+
+# Dummy command to get some metadata from openslide, just meant to get the slide header
+# loaded in a thread before the user needs it
+def load_slide_into_cache(slide_id, sr, resource):
+    osl = get_osl(slide_id, sr, resource, socket_addr_list=current_app.config['OPENSLIDE_SERVER_ADDR'])
+    print(f'================== Slide {slide_id} has dimensions {osl.dimensions} ===================')
         
 
 # The slide view
@@ -781,6 +789,11 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     # If one is missing, we need a redirect
     rd_affine_mode = affine_mode if have_affine else 'raw'
     rd_resolution = resolution if have_x16 else 'raw'
+
+    # At this point, we can request the openslide server to read our slide and get some basic 
+    # information to reduce the wait time when the page loads
+    prime_cache_thread = Thread(target=load_slide_into_cache, args=(slide_id, sr, rd_resolution))
+    prime_cache_thread.start()
 
     # Get the list of available overlays and jsonify
     overlays = sr.get_available_overlays(local = False)

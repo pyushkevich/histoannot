@@ -56,69 +56,6 @@ import socket
 import pickle
 from datetime import datetime
 
-class OpenSlideThinInterface:
-    """
-    This class is a thin interface to an OpenSlide object that is running in a 
-    different process and is connected to via a socket. 
-    """
-    
-    def __init__(self, socket_addr, url):
-        self.socket_addr = socket_addr
-        self.url = url
-        
-    def _exec_remote(self, method, **kwargs):
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            
-            # Request a region from an image 
-            request = {
-                'url': self.url,
-                'command': method,
-                'args': kwargs
-            }
-            
-            # Connect to server and send data
-            sock.connect(self.socket_addr)
-            sock.sendall(pickle.dumps(request))
-
-            # Receive data from the server and shut down
-            header = sock.recv(8)
-            n_bytes = int.from_bytes(header)
-            payload = bytearray(n_bytes)
-            pos = 0
-            while pos < n_bytes:
-                chunk = sock.recv(n_bytes-pos)
-                payload[pos:pos+len(chunk)] = chunk
-                pos += len(chunk)
-            result = pickle.loads(payload)
-            return result
-        
-    @property
-    def level_count(self):
-        return self._exec_remote('level_count')
-
-    @property
-    def dimensions(self):
-        return self._exec_remote('dimensions')
-        
-    @property
-    def level_dimensions(self):
-        return self._exec_remote('level_dimensions')
-    
-    @property
-    def level_downsamples(self):
-        return self._exec_remote('level_downsamples')
-    
-    @property
-    def properties(self):
-        return self._exec_remote('properties')
-    
-    def get_best_level_for_downsample(self, downsample):
-        return self._exec_remote('get_best_level_for_downsample', downsample=downsample)
-                
-    def read_region(self, pos, level, size):
-        return self._exec_remote('read_region', pos=pos, level=level, size=size)
-
-
 
 
 # The function that is enqueued in RQ
@@ -295,15 +232,6 @@ def dzi_slide_filepath(project, slide_id):
     return jsonify(
         {"remote": sr.get_resource_url('raw', False),
          "local": sr.get_resource_url('raw', True) })
-
-
-def get_osl(slide_id, sr:SlideRef, resource):
-    tiff_file = sr.get_resource_url(resource, local=False)
-    if tiff_file.startswith('gs://'):
-        socket_addr = current_app.config['OPENSLIDE_SOCKET']
-        return OpenSlideThinInterface(socket_addr, tiff_file)
-    else:
-        return OpenSlide(tiff_file)
 
 
 # Get the DZI for a slide
@@ -673,7 +601,84 @@ def run_preload_worker_cmd():
 
 
 import socketserver
-from histoannot.gcs_handler import GoogleCloudOpenSlideWrapper, MultiFilePageCache
+import multiprocessing
+import ctypes
+from histoannot.gcs_handler import GoogleCloudOpenSlideWrapper, MultiprocessManagedMultiFilePageCache
+from sortedcontainers import SortedKeyList
+
+class OpenSlideThinInterface:
+    """
+    This class is a thin interface to an OpenSlide object that is running in a 
+    different process and is connected to via a socket. 
+    """
+    
+    def __init__(self, url, socket_addr_list):
+        # Hash the URL to determine which socket to connect to
+        self.socket_addr = socket_addr_list[hash(url) % len(socket_addr_list)]
+        self.url = url
+        
+    def _exec_remote(self, method, **kwargs):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            
+            # Request a region from an image 
+            request = {
+                'url': self.url,
+                'command': method,
+                'args': kwargs
+            }
+            
+            # Connect to server and send data
+            sock.connect(self.socket_addr)
+            sock.sendall(pickle.dumps(request))
+
+            # Receive data from the server and shut down
+            header = sock.recv(8)
+            n_bytes = int.from_bytes(header, byteorder='big')
+            payload = bytearray(n_bytes)
+            pos = 0
+            while pos < n_bytes:
+                chunk = sock.recv(n_bytes-pos)
+                payload[pos:pos+len(chunk)] = chunk
+                pos += len(chunk)
+            result = pickle.loads(payload)
+            return result
+        
+    @property
+    def level_count(self):
+        return self._exec_remote('level_count')
+
+    @property
+    def dimensions(self):
+        return self._exec_remote('dimensions')
+        
+    @property
+    def level_dimensions(self):
+        return self._exec_remote('level_dimensions')
+    
+    @property
+    def level_downsamples(self):
+        return self._exec_remote('level_downsamples')
+    
+    @property
+    def properties(self):
+        return self._exec_remote('properties')
+    
+    def get_best_level_for_downsample(self, downsample):
+        return self._exec_remote('get_best_level_for_downsample', downsample=downsample)
+                
+    def read_region(self, pos, level, size):
+        return self._exec_remote('read_region', pos=pos, level=level, size=size)
+
+
+def get_osl(slide_id, sr:SlideRef, resource, socket_addr_list=None):
+    tiff_file = sr.get_resource_url(resource, local=False)
+    if tiff_file.startswith('gs://'):
+        if socket_addr_list is None:
+            socket_addr_list = current_app.config['OPENSLIDE_SERVER_ADDR']
+        return OpenSlideThinInterface(tiff_file, socket_addr_list=socket_addr_list)
+    else:
+        return OpenSlide(tiff_file)
+
 
 class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
     """
@@ -704,32 +709,96 @@ class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
         result = attr(**self.data['args']) if callable(attr) else attr
 
         payload = pickle.dumps(result)
-        self.request.send(len(payload).to_bytes(8))
+        self.request.send(len(payload).to_bytes(8, byteorder='big'))
         self.request.sendall(payload)
+
+
+# Worker process that runs the openslide server. This thread operates a single 
+# unix socket based on its id and handles files that correspond to this ID 
+# based on its hash. 
+def openslide_server_process_run(index, cache_queue, purge_value):
+    
+    # Get the socket address
+    socket_addr = current_app.config['OPENSLIDE_SERVER_ADDR'][index]
+    
+    # Make sure the directory exists and delete the socket file if present
+    os.makedirs(os.path.dirname(socket_addr), exist_ok=True)
+    if os.path.exists(socket_addr):
+        os.remove(socket_addr)
+    
+    # Run the socket server forever or until interrupted
+    try:
+        with socketserver.UnixStreamServer(socket_addr, OpenSlideRequestHandler) as server:
+            server.osl_cache = {}
+            server.gcs_cache = MultiprocessManagedMultiFilePageCache(index, cache_queue, page_size_mb=1)
+            server.gcs_client = None
+            server.timeout = 30
+            while(True):
+                # print(f'Worker {index} waiting for request')
+                server.handle_request()
+                server.gcs_cache.purge(purge_value.value)
+    except KeyboardInterrupt:
+        print(f'Worker {index} interrupted by keyboard')
+    finally:
+        # Clean up the socket
+        os.remove(socket_addr)
+
+
+# Manager process that keeps an eye on the cache size and forces a purge when the
+# cache size is exceeded
+def openslide_server_cache_manager_process_run(cache_queue, purge_value, max_pages=4096, purge_size_pct=0.25):
+    cache_metadata = dict()
+    t_last_print = time.time_ns()
+    try:
+        while(True):
+            (id,url,index,t_access) = cache_queue.get()
+            cache_metadata[(id,url,index)] = t_access
+            if time.time_ns() - t_last_print > 5 * 1e9:
+                print(f'Cache Manager: {len(cache_metadata)} of {max_pages} allocated')
+                t_last_print = time.time_ns()
+            if len(cache_metadata) > max_pages:
+                l_purge = SortedKeyList(key=lambda x:x[1])
+                for key, t_access in cache_metadata.items():
+                    l_purge.add((key, t_access))
+
+                n_purge = min(max(1,int(purge_size_pct * max_pages)), len(l_purge)-1)
+                t_purge = l_purge[n_purge][1]
+                print(f'Cache manager: Purging cache with cutoff t={t_purge}')
+                cache_metadata = dict({
+                    key:t_access for key, t_access in cache_metadata.items() if t_access >= t_purge })
+
+                # This communicates to the workers that their caches must be freed
+                purge_value.value = t_purge
+    except KeyboardInterrupt:
+        print('Cache manager processinterrupted by keyboard')
 
 
 # Command to run openslide server
 @click.command('openslide-server-run')
 @with_appcontext
 def run_openslide_server():
-    socketserver.UnixStreamServer.allow_reuse_address = True
-    with socketserver.UnixStreamServer(current_app.config['OPENSLIDE_SOCKET'], OpenSlideRequestHandler) as server:
-        server.osl_cache = {}
-        server.gcs_cache = MultiFilePageCache(page_size_mb=1, cache_max_size_mb=1024, purge_size_pct=0.25)
-        server.gcs_client = None
-        server.timeout = 30
-        last_report_time = datetime.now()
-        while(True):
-            server.handle_request()
-            #if (datetime.now() - last_report_time).seconds > 30:
-            #    print(' ---- PRINTING SOME STATS ---- ')
-            #    for k,v in server.cache.items():
-            #        h = v.h
-            #        cache = h._cache
-            #        s = sum([x.size for x in h._cache.cache])
-            #        print(k,s)                       
-            #    last_report_time = datetime.now()
-            
+    # Create the queue and value to share between processes
+    cache_queue = multiprocessing.Queue()
+    purge_value = multiprocessing.Value(ctypes.c_longlong, int(time.time_ns()))
+
+    # Start the manager process
+    p_man = multiprocessing.Process(
+        target = openslide_server_cache_manager_process_run,
+        args = (cache_queue, purge_value, 32))
+    p_man.start()
+
+    # Start the worker processes
+    p_workers = []
+    for k in range(len(current_app.config['OPENSLIDE_SERVER_ADDR'])):
+        p = multiprocessing.Process(
+            target = openslide_server_process_run,
+            args = (k, cache_queue, purge_value))
+        p.start()
+        p_workers.append(p)
+
+    # Wait for the workers to finish (never)
+    for p in p_workers:
+        p.join()
 
 
 # Command to ping master

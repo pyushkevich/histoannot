@@ -516,7 +516,23 @@ def get_osl(slide_id, sr:SlideRef, resource='raw', socket_addr_list=None):
     return OpenSlideThinInterface(tiff_file, socket_addr_list=socket_addr_list)
     #else:
     #    return OpenSlide(tiff_file)
-
+    
+    
+class SlideCacheEntry:
+    """
+    Representation of a slide that is kept by a slide server process. Stores a
+    handle to the slide wrapper and a timestamp from last use, which is
+    updated whenever the wrapper is requested
+    """    
+    def __init__(self, osl_wrapper):
+        self._osl = osl_wrapper
+        self.t_access = time.time_ns()
+        
+    @property
+    def osl_wrapper(self):
+        self.t_access = time.time_ns()
+        return self._osl
+    
 
 class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
     """
@@ -535,18 +551,18 @@ class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
         
         # Get a cached TIFF object for the URL or create and cache one
         # TODO: purge tiff cache once in a while
-        tiff = self.server.osl_cache.get(url, None)
-        if not tiff:
+        slide_cache_entry = self.server.osl_cache.get(url, None)
+        if not slide_cache_entry:
             if url.startswith('gs://'):
                 if self.server.gcs_client is None:
                     self.server.gcs_client = storage.Client()                
                 tiff = GoogleCloudOpenSlideWrapper(self.server.gcs_client, url, self.server.gcs_cache)
-                self.server.osl_cache[url] = tiff
             else:
-                self.server.osl_cache[url] = tiff = OpenSlidePickleableWrapper(url)
+                tiff = OpenSlidePickleableWrapper(url)
+            self.server.osl_cache[url] = slide_cache_entry = SlideCacheEntry(tiff)
             
         # Process the request
-        attr = getattr(tiff, self.data['command'])
+        attr = getattr(slide_cache_entry.osl_wrapper, self.data['command'])
         result = attr(**self.data['args']) if callable(attr) else attr
 
         payload = pickle.dumps(result)
@@ -575,9 +591,16 @@ def slide_server_process_run(index, socket_addr_list, page_size_mb, cache_queue,
             server.gcs_client = None
             server.timeout = 30
             while(True):
-                # print(f'Worker {index} waiting for request')
+                # Handle the request
                 server.handle_request()
+                
+                # Purge the memory cache of pages newer than specified value
                 server.gcs_cache.purge(purge_value.value)
+                
+                # Purge the slide wrapper cache of slides that have not been accessed in 30 minutes
+                t_cutoff = time.time_ns() - 1800 * 1000**3
+                server.osl_cache = dict({k:v for k,v in server.osl_cache.items() if v.t_access >= t_cutoff})
+                
     except KeyboardInterrupt:
         print(f'Worker {index} interrupted by keyboard')
     finally:

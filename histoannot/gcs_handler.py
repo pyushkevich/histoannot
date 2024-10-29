@@ -323,130 +323,7 @@ class CachedFileRepresentation:
                 
         return size_fullfilled
 
-
-
-'''
-class MultiFilePageCacheWrap:
-    """
-    This class caches pieces of remote files. Each file is divided into pages of a fixed
-    size and pages are stored in the cache until memory is exhausted. When a range of data
-    is needed from the remote file, calling readinto() on the cache will provide the part 
-    of the range that is already available and will fullfill the rest from the remote 
-    source. 
-    """
-    
-    class CachePage:
-        def __init__(self, index, t_access, data=None):
-            self.index = index
-            self.t_access = t_access
-            self.data = data
-
-    # Counter - used to implement time for cache clearing purposes
-    _counter = 0
-    
-    def __init__(self, page_size_mb=1, cache_max_size_mb=1024, purge_size_pct=0.25):
-        self.cache = {}
-        self.page_size = int(page_size_mb * 1024**2)
-        self.cache_max_size = int(cache_max_size_mb * 1024**2)
-        self.purge_size = int(self.cache_max_size * purge_size_pct)
-        self.total_size = 0
-        
-    @property
-    def timestamp(self):
-        self._counter += 1
-        return self._counter
-    
-    def insert(self, entry, page):
-        if self.total_size + self.page_size > self.cache_max_size:
-            # Time has come to purge the cache. For this we need to sort
-            # all the pages by access time
-            l_purge = SortedKeyList(key=lambda x:x[2].t_access)
-            for url,pp in self.cache:
-                for index,page in pp:
-                    l_purge.add((url, index, page))
-                    
-            # Purge pages to free up space
-            n_purge = min(max(1,self.purge_size // self.page_size), len(l_purge))
-            for k in range(n_purge):
-                url,index,_ = l_purge[k]
-                self.cache[url].remove(index)
-                
-        # Finally add the new page to the cache entry
-        entry[page.index] = page        
-    
-    def fullfill(self, offset, size, dest, page):
-        page_start = page.index * self.page_size        
-        off_dest = max(0, page_start - offset)
-        off_page = max(0, offset - page_start)
-        size_adj = min(offset + size - (page_start + off_page), self.page_size)
-        dest[off_dest:(off_dest+size_adj)] = page.data[off_page:(off_page+size_adj)]
-        page.t_access = self.timestamp
-        return size_adj
-        
-    def split_range(self, p0, p1, p_excl):
-        ranges = []
-        current_start = p0
-        for p in p_excl:
-            if p0 <= p <= p1:
-                if current_start < p:
-                    ranges.append((current_start, p))
-                current_start = p + 1
-        if current_start < p1:
-            ranges.append((current_start, p1))
-        return ranges    
-        
-    def readinto(self, url, offset, size, dest, fn_readinto):
-        
-        # Retrieve the cache entry for this URL
-        pages = self.cache.get(url)
-        if not pages:
-            self.cache[url] = pages = dict()
-            
-        # This is the range of pages that is spanned by the data
-        ps = self.page_size
-        p0, p1 = offset // ps, (offset+size-1) // ps
-        
-        # This is a list of pages that are present in the cache
-        #p_cached = SortedKeyList(pages.irange_key(p0, p1), key=lambda x: x.index)
-        #print(f'Need pages {p0} through {p1}, cache has pages {[x.index for x in p_cached]}')
-        
-        # Get the list of ranges that need to be retrieved from the cache
-        #r_missing = self.split_range(p0, p1+1, [p.index for p in p_cached])
-        
-        # Iterate over the needed pages
-        #i_miss = iter(r_missing)
-        size_fullfilled = 0
-        not_in_cache = []
-        p = p0
-        while True:
-            if p <= p1 and p not in pages:
-                not_in_cache.append(p)
-            else:
-                if len(not_in_cache) > 0:
-
-                    # Read the missing pages
-                    j0, j1 = not_in_cache[0], not_in_cache[-1]
-                    chunk_size = (1 + j1 - j0) * ps
-                    chunk = bytearray(chunk_size)
-                    fn_readinto(j0 * ps, chunk_size, chunk)
-                    
-                    # Place the missing pages into the cache
-                    for j in range(j0, j1+1):
-                        page = self.CachePage(j, self.timestamp, chunk[(j-j0)*ps:(j+1-j0)*ps])
-                        size_fullfilled += self.fullfill(offset, size, dest, page)
-                        self.insert(pages, page)
-
-                    not_in_cache = []
-                if p <= p1:
-                    size_fullfilled += self.fullfill(offset, size, dest, pages[p])
-                else:
-                    break
-            p += 1
-                
-        return size_fullfilled
-'''
-
-        
+import concurrent.futures
 class GoogleCloudTiffHandle(io.RawIOBase):
     def __init__(self, client: storage.Client, gs_url: str, cache):
         self.gs_url = gs_url
@@ -459,24 +336,53 @@ class GoogleCloudTiffHandle(io.RawIOBase):
         self.total_read = 0
         self.total_served = 0
         self.total_gcpops = 0
+        self.total_gcpns = 0
         print(f'Created handle for GCS-hosted Tiff file {gs_url} of size {self.fsize}')  
-        
+
     def __del__(self):
+        self.print_report()
+        
+    def print_report(self):        
         print(f'Cache Performance for GoogleCloudTiffHandle[{self.gs_url}]:')
-        print(f'  Total Read (MB):        {self.total_read / 1024**2:6.2f}')
-        print(f'  Total Served (MB):      {self.total_served / 1024**2:6.2f}MB') 
-        print(f'  Efficiency:             {self.total_served / self.total_read}')
-        print(f'  REST API calls:         {self.total_gcpops}')
-        print(f'  MB per call:            {self.total_read / (1024 ** 2 * self.total_gcpops):6.2f}')
+        print(f'  Total Read (MB)        : {self.total_read / 1024**2:6.2f}')
+        print(f'  Total Served (MB)      : {self.total_served / 1024**2:6.2f}MB') 
+        print(f'  Efficiency             : {self.total_served / self.total_read}')
+        print(f'  REST API calls         : {self.total_gcpops}')
+        print(f'  MB per call            : {self.total_read / (1024**2 * self.total_gcpops):6.2f}')
+        print(f'  Time per call (ms)     : {self.total_gcpns / (1000**2 * self.total_gcpops):6.2f}')
     
     def _readinto_internal(self, offset, size, buffer):
         size = min(size, self.fsize - offset)
-        print(f'GCS DL {offset}:{offset+size-1} FROM {self.gs_url}')
+        
+        # Concurrent download with 8 threads (does not seem to provide meaningful speedup)
+        '''
+        def dl_piece(start, end):
+            # print(f'  chunk {start}:{end}')
+            data = self._blob.download_as_bytes(start=start, end=end, checksum=None)
+            return start, data
+        n_threads = 8
+        piece_bnd = np.lib.stride_tricks.sliding_window_view(np.linspace(offset,offset+size-1,n_threads+1).astype(int),2).tolist()
+
+        t_start = time.time_ns()
+        chunk = bytearray(size)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_threads) as executor:
+            futures = [ executor.submit(dl_piece, p[0], p[1]) for p in piece_bnd ]
+            for future in concurrent.futures.as_completed(futures):
+                start, data = future.result()
+                chunk[start-offset:start+len(data)-offset] = data
+        '''
+        
+        # Non-concurrent download
+        t_start = time.time_ns()
         chunk = self._blob.download_as_bytes(start=offset, end=offset+size-1, checksum=None)
+        t_used = time.time_ns() - t_start
+        
         n_read = len(chunk)
+        print(f'GCS DL {n_read//1024**2}MB @{offset//1024**2}MB from {self.gs_url} in {t_used//1000**2}ms')
         buffer[:n_read] = chunk
         self.total_read += n_read
         self.total_gcpops += 1
+        self.total_gcpns += t_used
         return n_read
     
     def readinto(self, buffer):
@@ -517,96 +423,6 @@ class GoogleCloudTiffHandle(io.RawIOBase):
         """Return the current file position."""
         return self.pos
 
-'''
-
-class GoogleCloudTiffHandle(io.RawIOBase):
-    def __init__(self, client: storage.Client, cache, gs_url: str, page_size=1024**2):
-        self.gs_url = gs_url
-        url_parts = urlparse.urlparse(gs_url)
-        self._bucket = client.get_bucket(url_parts.netloc)
-        self._blob = self._bucket.get_blob(url_parts.path.strip('/'))        
-        self.fsize = self._blob.size  
-        self.pos = 0
-        self.total_read = 0
-        self.total_served = 0
-        self.cache = cache
-        self.page_size = page_size
-        print(f'Read GSC resource {gs_url} of size {self.fsize}')  
-        
-    def __del__(self):
-        print(f'GoogleCloudTiffHandle[{self.gs_url}]  Total Read: {self.total_read}   Total Served: {self.total_served}   Efficiency: {self.total_served / self.total_read}')
-    
-    def read(self, size=-1):
-        """Fetch `size` bytes from the current position in the file."""
-        if size == -1:
-            size = self.fsize - self.pos
-            
-        # Compute the first page from which this data might be read
-        p0 = self.pos // self.page_size
-        
-        # Compute the last page from which the data might be read
-        p1 = (self.pos + size - 1) // self.page_size
-        
-        # Read pages from the cache (TODO: set a limit on how many pages)
-        data = bytearray(size)
-        d_pos = 0
-        for p in range(p0,p1+1):
-            
-            # Get the page from cache or GCS
-            key = (self.gs_url, p)
-            d_cached = self.cache.get(key)
-            if d_cached is None:
-                p_start = p0*self.page_size
-                p_end = min(p_start + self.page_size, self.fsize)
-                d_cached = self._blob.download_as_bytes(start=p_start, end=p_end-1, checksum=None)
-                self.cache.set(key, d_cached)
-            else:
-                print(f'Read page {p} from cache {self.gs_url}')
-            
-            # Where does the chunk we want from this page start?
-            ch_start = self.pos - p0 * self.page_size if p == p0 else 0
-            
-            # How long is the chunk we want from this page
-            ch_len = self.pos + size - p1 * self.page_size if p == p1 else len(d_cached)
-            
-            # Copy the data to the chunk
-            data[d_pos:(d_pos+ch_len)] = d_cached[ch_start:(ch_start+ch_len)]
-
-            # Advance the current position
-            d_pos +=ch_len
-        
-        # Update the current file position
-        self.pos += len(data)
-        self.total_served += len(data)
-        return data
-    
-    def readinto(self, buffer):
-        if isinstance(buffer, np.ndarray):
-            buffer = memoryview(buffer)
-        if not isinstance(buffer, (bytearray, memoryview)):
-            raise TypeError("Buffer object expected, got: {}".format(type(buffer)))
-        data = self.read(len(buffer))
-        print(f'readinto read {len(data)} bytes')
-        buffer[:len(data)] = data
-        return len(data)
-
-    def seek(self, offset, whence=io.SEEK_SET):
-        """Move to a new file position."""
-        if whence == io.SEEK_SET:
-            self.pos = offset
-        elif whence == io.SEEK_CUR:
-            self.pos += offset
-        elif whence == io.SEEK_END:
-            self.pos = self.fsize + offset
-        else:
-            raise ValueError("Invalid value for `whence`.")
-        return self.pos
-
-    def tell(self):
-        """Return the current file position."""
-        return self.pos
-'''
-    
     
 # OpenSlide wrapper for GCS
 class GoogleCloudOpenSlideWrapper:

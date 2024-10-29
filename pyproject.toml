@@ -1,0 +1,42 @@
+[project]
+name = "phas"
+version = "1.0.0"
+authors = [
+  { name="Paul Yushkevich", email="pyushkevich@gmail.com" },
+]
+description = "PICSL Histology Annotation Server (PHAS)"
+dependencies = [
+    'Flask == 2.3.2',
+    'Flask-Pure',
+    'Flask-Mail',
+    'openslide-python',
+    'jsonschema',
+    'google-cloud-storage',
+    'numpy',
+    'psutil',
+    'Click >= 7.0',
+    'pandas',
+    'svgwrite',
+    'Pillow',
+    'nibabel',
+    'tifffile',
+    'sortedcontainers',
+    'imagecodecs'
+]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Development Status :: 4 - Beta",
+    "Topic :: Scientific/Engineering :: Medical Science Apps."
+]
+
+[project.urls]
+Homepage = "https://github.com/pyushkevich/histoannot"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

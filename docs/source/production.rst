@@ -121,8 +121,9 @@ The last step is to configure a service that will execute the workers that suppo
 
     [Service]
     Type=simple
-    User=foo  # Change to the user that should run the service
+    User=foo
     WorkingDirectory=/home/foo/phas
+    Environment=PYTHONUNBUFFERED=1
     ExecStart=/bin/bash -c "source env.sh && flask slide-server-run"
     Restart=always
     StandardOutput=journal
@@ -130,4 +131,13 @@ The last step is to configure a service that will execute the workers that suppo
 
     [Install]
     WantedBy=multi-user.target
+
+Run the following commands to install and start the service::
+
+    sudo systemctl enable phas01-slide-server
+    sudo systemctl start phas01-slide-server
+
+To monitor the output from the service, run::
+
+    journalctl -u phas01-slide-server -f
 

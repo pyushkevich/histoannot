@@ -2,9 +2,9 @@ import os
 import json
 import heapq
 from flask import current_app, g
-from histoannot.gcs_handler import GCSHandler
-from histoannot.db import get_db
-from histoannot.common import AccessLevel
+from .gcs_handler import GCSHandler
+from .db import get_db
+from .common import AccessLevel
 
 # This class represents a project configuration. It stores data associated
 # with the project that is not kept in a database, but rather stored in 

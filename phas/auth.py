@@ -25,18 +25,12 @@ from flask.cli import with_appcontext
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_mail import Message, Mail
 
-from histoannot.db import get_db
-from histoannot.common import AccessLevel
+from .db import get_db
+from .common import AccessLevel
 
-from histoannot.project_ref import ProjectRef
-import os
 import click
-import hashlib
-import getpass
-import sys
 import uuid
 import json
-import csv
 import pandas
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')

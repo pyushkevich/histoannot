@@ -21,8 +21,6 @@ import threading
 from google.cloud import storage
 import io
 import tifffile
-from bisect import bisect, insort
-from collections import namedtuple
 import numpy as np
 from PIL import Image
 from sortedcontainers import SortedKeyList
@@ -111,37 +109,6 @@ class GCSHandler:
     # Get the remote download size
     def get_size(self, uri):
         return self._get_blob(uri).size
-
-
-class PageCache:
-
-    Page = namedtuple('Page', ('offset', 'size', 'data', 'order'))
-    _counter = 0
-    
-    def __init__(self, chunk_size, cache_max_size=200, purge_size=50):
-        self.cache = []
-        self.chunk_size = chunk_size
-        self.cache_max_size = cache_max_size
-        self.purge_size = purge_size
-        
-    def read_cache(self, offset, size):
-        page = self.Page(offset=offset, size=self.chunk_size+1, data=None, order=0)
-        pos = bisect(self.cache, page) - 1
-        
-        if pos >= 0 and pos < len(self.cache):
-            z_offset, z_size = self.cache[pos].offset, self.cache[pos].size
-            if z_offset <= offset and z_offset + z_size >= offset + size:
-                c_offset = offset - self.cache[pos].offset
-                self.cache[pos]._replace(order=self._counter)
-                self._counter+=1
-                return self.cache[pos].data[c_offset: c_offset+size]
-        return None
-    
-    def write_cache(self, offset, data):
-        page = self.Page(offset, len(data), data, self._counter)
-        self._counter += 1
-        insort(self.cache, page)
-
 
 
 class AbstractMultiFilePageCache:

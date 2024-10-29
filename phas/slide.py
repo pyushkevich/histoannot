@@ -19,19 +19,19 @@ import uuid
 
 from flask import(
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response,
-    current_app, send_from_directory, session, send_file, Response, jsonify
+    current_app, send_from_directory, session, Response, jsonify
 )
 from werkzeug.exceptions import abort
 
-from histoannot.auth import login_required, get_user_id, \
-    access_project_read, access_project_write, access_project_admin, \
+from .auth import login_required, get_user_id, \
+    access_project_read, access_project_admin, \
     access_task_read, access_task_write, access_task_admin
-from histoannot.db import get_db
-from histoannot.project_ref import ProjectRef
-from histoannot.slideref import SlideRef, get_slide_ref
-from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
-from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, get_random_patch, get_osl
+from .db import get_db
+from .project_ref import ProjectRef
+from .slideref import SlideRef, get_slide_ref
+from .project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
+from .delegate import find_delegate_for_slide
+from .dzi import get_affine_matrix, get_random_patch, get_osl
 from io import BytesIO, StringIO
 from PIL import Image
 from threading import Thread
@@ -761,8 +761,8 @@ def get_available_tasks_for_slide(project, slide_id):
 
 # Dummy command to get some metadata from openslide, just meant to get the slide header
 # loaded in a thread before the user needs it
-def load_slide_into_cache(slide_id, sr, resource):
-    osl = get_osl(slide_id, sr, resource, socket_addr_list=current_app.config['SLIDE_SERVER_ADDR'])
+def load_slide_into_cache(slide_id, sr, resource, socket_addr_list):
+    osl = get_osl(slide_id, sr, resource, socket_addr_list)
     print(f'================== Slide {slide_id} has dimensions {osl.dimensions} ===================')
         
 
@@ -792,7 +792,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # At this point, we can request the openslide server to read our slide and get some basic 
     # information to reduce the wait time when the page loads
-    prime_cache_thread = Thread(target=load_slide_into_cache, args=(slide_id, sr, rd_resolution))
+    socket_addr_list=current_app.config['SLIDE_SERVER_ADDR']
+    prime_cache_thread = Thread(target=load_slide_into_cache, args=(slide_id, sr, rd_resolution, socket_addr_list))
     prime_cache_thread.start()
 
     # Get the list of available overlays and jsonify

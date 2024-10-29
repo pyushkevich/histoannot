@@ -25,28 +25,32 @@ The `OpenSlide library <https://openslide.org/>`_ is required and must be instal
 
     brew install openslide
 
-Checkout The Code Repository
-----------------------------
-Checkout the code from Github with this command. Then enter the directory where to code was checked out::
+Create a Directory for PHAS
+---------------------------
+Create a directory where you will store all the files for your PHAS installation. This directory will contain your configuration, your database, and other important files. In this tutorial we will assume your Linux username is ``foo`` and that your installation directory is ``/home/foo/phas``. This command will create this directory::
 
-    git clone https://github.com/pyushkevich/histoannot.git phas
-    cd phas
-
+    # Change to match your username and preferred location
+    mkdir -p /home/foo/phas 
 
 Create Python Virtual Environment
 ---------------------------------
-This step is highly recommended, creating a virtual environment specifically for PHAS::
+Create a virtual environment that will contain PHAS and all the Python modules on which it depends::
 
+    cd /home/foo/phas
     python3 -m venv .venv
     source .venv/bin/activate
 
+Install the PHAS Application
+----------------------------
+If you would like to get a stable version of PHAS and do not expect to make your own changes to the code, we recommend installing PHAS using ``pip``, the Python package manager::
 
-Install Python Dependencies
----------------------------
-This command will install all the dependencies into the virtual environment::
+    pip install phas
 
-    pip install -r histoannot/requirements.txt
+If you want the most recent code and/or want to be able to make changes to the code, you can checkout the source code from Github with this command::
 
+    # Source code will be located in /home/foo/phas/histoannot
+    git clone https://github.com/pyushkevich/histoannot.git histoannot
+    pip install -e histoannot
 
 Environment Variables
 ---------------------
@@ -56,7 +60,10 @@ Create a shell script ``env.sh`` in the ``phas`` that will contain system comman
     source .venv/bin/activate
 
     # Name of the FLASK application
-    export FLASK_APP=histoannot
+    export FLASK_APP=phas
+
+    # Path to the instance directory (config files and database will go here)
+    export FLASK_INSTANCE_PATH=/home/foo/phas/instance
 
     # On Mac, if using homebrew to install openslide, set this to the location of the openslide library
     export DYLD_LIBRARY_PATH=DYLD_LIBRARY_PATH:/opt/homebrew/lib
@@ -70,15 +77,20 @@ Configuration and Launching
 
 Main Configuration File
 -----------------------
-Create a directory called ``instance`` in the ``phas`` directory. This will contain your database, configuration files, and application cache::
+Create a directory called ``instance`` in the ``/home/foo/phas`` directory. This will contain your database, configuration files, and application cache::
 
+    cd /home/foo/phas
     mkdir -p instance
 
-Create a file ``instance/config.py`` and add the lines below, replacing the secret code with your own. Also you can change 8888 to your preferred port number::
+Create a file ``instance/config.py`` and add the lines below, `replacing the secret code with your own <https://flask.palletsprojects.com/en/stable/config/#:~:text=%24%20python%20%2Dc%20%27import%20secrets%3B%20print(secrets.token_hex())%27%0A%27192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf%27>`. Also you can change 8888 to your preferred port number::
 
-    SECRET_KEY="lfkwelkjrwleklmasndikfbsqr"
-    HISTOANNOT_SERVER_MODE="master"
+    # Replace with your own random sequence
+    SECRET_KEY="cf55754542254a76fbd839970ddd55fee4088ed594511c90ea3976428a851374"
+
+    # Name of your server printed on the landing page
     HISTOANNOT_PUBLIC_NAME="My Test PHAS Server"
+
+    # URL for your PHAS installation
     HISTOANNOT_PUBLIC_URL="http://127.0.0.1:8888"
 
 
@@ -88,11 +100,11 @@ Run this command to create the sqlite3 database structure for the first time::
 
     flask init-db
 
-Use the commands below to to verify that the database tables have been created. You should see the names of about 20 tables listed::
+Test Your Configuration
+-----------------------
+If successful, the command below will print the configuration settings you provided above and list the tables in the database (about 20)::
 
-    sqlite3 instance/histoannot.sqlite
-    .tables
-    .exit
+    flask info
 
 Start the Web Application
 -------------------------

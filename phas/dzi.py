@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, make_response, current_app, send_file, jsonify
+    Blueprint, request, url_for, make_response, current_app, send_file, jsonify
 )
 from werkzeug.exceptions import abort
 
@@ -27,15 +27,14 @@ import time
 import numpy as np
 import urllib
 import psutil
-import functools
 
 from random import randint
 
 from openslide import OpenSlide
 from openslide.deepzoom import DeepZoomGenerator
-from histoannot.slideref import SlideRef,get_slide_ref
-from histoannot.project_ref import ProjectRef
-from histoannot.auth import access_project_read, access_project_admin
+from .slideref import SlideRef,get_slide_ref
+from .project_ref import ProjectRef
+from .auth import access_project_read, access_project_admin
 from google.cloud import storage
 
 bp = Blueprint('dzi', __name__)
@@ -53,7 +52,7 @@ from datetime import datetime
 import socketserver
 import multiprocessing
 import ctypes
-from histoannot.gcs_handler import GoogleCloudOpenSlideWrapper, MultiprocessManagedMultiFilePageCache
+from .gcs_handler import GoogleCloudOpenSlideWrapper, MultiprocessManagedMultiFilePageCache
 from sortedcontainers import SortedKeyList
 
 

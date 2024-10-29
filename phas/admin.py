@@ -20,10 +20,10 @@ from flask import(
     current_app, send_from_directory, session, send_file
 )
 
-from histoannot.auth import login_required, get_user_id, site_admin_access_required, create_password_reset_link, add_user
-from histoannot.db import get_db
-from histoannot.common import AccessLevel, abort_json, success_json
-from histoannot.project_ref import ProjectRef
+from .auth import site_admin_access_required, create_password_reset_link, add_user
+from .db import get_db
+from .common import abort_json, success_json
+from .project_ref import ProjectRef
 import json
 import re
 

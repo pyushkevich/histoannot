@@ -32,14 +32,23 @@ Create and edit file ``/etc/nginx/conf.d/phas01.conf`` (the filename is arbitrar
         charset     utf-8;
         client_max_body_size 8G;
         location / {
-            try_files $uri @histoannot;
+            try_files $uri @phas;
         }
-        location @histoannot {
+        location @phas {
             include uwsgi_params;
             uwsgi_pass unix:/home/foo/phas/instance/phas01_uwsgi.sock;
         }
         location /static {
             root /home/foo/phas;
+        }
+    }
+
+**Important**: make sure that the ``location /static`` matches where your static files are located. This depends on whether you installed PHAS using ``git clone`` or ``pip install``. The best way to check is to call ``flask info`` and look for the line ``Static folder path:``, strip off the ``/static`` at the end. For example if you installed using ``pip install``, the static folder path might be ``/home/foo/phas/.venv/lib/python3.9/site-packages/phas/static`` in which case you should change the ``location /static`` section to::
+
+    server {
+        ...
+        location /static {
+            root /home/foo/phas/.venv/lib/python3.9/site-packages/phas;
         }
     }
 
@@ -64,6 +73,9 @@ Create a file ``/etc/uwsgi/apps-enabled/phas01_uwsgi.ini`` (name is arbitrary) w
     base = /home/foo/phas
     venv = %(base)/.venv
 
+    # Important - this must point to the instance directory
+    env = FLASK_INSTANCE_PATH=/home/foo/phas/instance
+
     # User and group: change to match yours
     uid = foo
     gid = foo
@@ -72,7 +84,7 @@ Create a file ``/etc/uwsgi/apps-enabled/phas01_uwsgi.ini`` (name is arbitrary) w
     plugins = python3
 
     # Python module to import: do not change
-    app = histoannot
+    app = phas
     module = %(app):create_app()
 
     # Python path: should not need changing

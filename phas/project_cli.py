@@ -36,12 +36,12 @@ from jsonschema import validate
 
 from PIL import Image
 
-from histoannot.project_ref import ProjectRef
-from histoannot.slideref import SlideRef,get_slide_ref
-from histoannot.db import get_db
-from histoannot.gcs_handler import GCSHandler
-from histoannot.auth import get_user_id
-from histoannot.common import AccessLevel
+from .project_ref import ProjectRef
+from .slideref import SlideRef,get_slide_ref
+from .db import get_db
+from .gcs_handler import GCSHandler
+from .auth import get_user_id
+from .common import AccessLevel
 
 def init_db_dltrain():
     db = get_db()

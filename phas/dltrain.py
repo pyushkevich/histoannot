@@ -16,21 +16,21 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response, url_for, session
+    Blueprint, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response, url_for, session
 )
 from werkzeug.exceptions import abort
-from histoannot.auth import login_required, \
+from .auth import \
     access_project_read, access_project_write, access_project_admin, \
-    access_task_read, access_task_write, access_task_admin
-from histoannot.db import get_db
+    access_task_read, access_task_write
+from .db import get_db
 
 # TODO: these should be moved to another module
-from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta_to_current
-from histoannot.project_ref import ProjectRef
-from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_osl, get_patch, pil_to_nifti_gz
-from histoannot.slide import make_slide_dbview, annot_sample_path_curves, get_affine_matrix_by_slideid
-from histoannot.slideref import get_slide_ref
+from .project_cli import get_task_data, create_edit_meta, update_edit_meta_to_current
+from .project_ref import ProjectRef
+from .delegate import find_delegate_for_slide
+from .dzi import get_osl, get_patch, pil_to_nifti_gz
+from .slide import make_slide_dbview, annot_sample_path_curves, get_affine_matrix_by_slideid
+from .slideref import get_slide_ref
 
 import json
 import time

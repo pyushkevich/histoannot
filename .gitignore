@@ -5,6 +5,7 @@
 libs/os_affine/build
 instance
 docs/build
+dist
 venv
 .venv
 .idea

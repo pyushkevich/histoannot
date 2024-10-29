@@ -17,8 +17,8 @@
 #
 from urllib.parse import urlparse
 
-from histoannot.project_ref import ProjectRef
-from histoannot.db import get_db
+from .project_ref import ProjectRef
+from .db import get_db
 import os
 import json
 from flask import g, current_app

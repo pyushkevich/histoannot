@@ -16,12 +16,12 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import os
-from flask import Blueprint, Flask, request, current_app, url_for
+from flask import Blueprint, request, current_app
 import click
 import time
 from flask.cli import with_appcontext
 import urllib
-from histoannot.db import get_db
+from .db import get_db
 
 # Create blueprint
 bp = Blueprint('delegate', __name__)

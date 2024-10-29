@@ -5,4 +5,4 @@ source .venv/bin/activate
 export FLASK_APP=phas
 
 # Path to the instance directory (config files and database will go here)
-export FLASK_INSTANCE_PATH=/home/foo/phas/instance
+export FLASK_INSTANCE_PATH=/instance

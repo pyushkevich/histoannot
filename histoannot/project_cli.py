@@ -28,13 +28,11 @@ import click
 from flask import current_app, g
 from flask.cli import with_appcontext
 
-import openslide
 import time
 import urllib.request
 import logging
 import json
 from jsonschema import validate
-
 
 from PIL import Image
 
@@ -93,22 +91,6 @@ def parse_slide_filename(matfile, src_dir):
 
     return {'slide': s[n - 2], 'section': s[n - 3], 'stain': s[n - 1], 'block': s[n - 4],
             'tiff_file': tiff_file, 'mat_file': matfile_full}
-
-
-# Generate a screenshot for a slice
-def make_thumbnail(slide_id, tiff_file, lazy):
-    thumb_dir = os.path.join(current_app.instance_path, 'thumb')
-    thumb_fn = os.path.join(thumb_dir, "thumb%08d.png" % (slide_id,))
-
-    if lazy is True and os.path.exists(thumb_fn):
-        return
-
-    if not os.path.exists(thumb_dir):
-        os.makedirs(thumb_dir)
-
-    osr = openslide.OpenSlide(tiff_file)
-    thumb = osr.get_thumbnail((256, 192))
-    thumb.save(thumb_fn)
 
 
 @click.command('init-db')

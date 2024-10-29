@@ -31,7 +31,7 @@ from histoannot.project_ref import ProjectRef
 from histoannot.slideref import SlideRef, get_slide_ref
 from histoannot.project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_affine_matrix, forward_to_worker, get_random_patch, dzi_preload, dzi_job_status, get_osl
+from histoannot.dzi import get_affine_matrix, get_random_patch, get_osl
 from io import BytesIO, StringIO
 from PIL import Image
 from threading import Thread
@@ -762,7 +762,7 @@ def get_available_tasks_for_slide(project, slide_id):
 # Dummy command to get some metadata from openslide, just meant to get the slide header
 # loaded in a thread before the user needs it
 def load_slide_into_cache(slide_id, sr, resource):
-    osl = get_osl(slide_id, sr, resource, socket_addr_list=current_app.config['OPENSLIDE_SERVER_ADDR'])
+    osl = get_osl(slide_id, sr, resource, socket_addr_list=current_app.config['SLIDE_SERVER_ADDR'])
     print(f'================== Slide {slide_id} has dimensions {osl.dimensions} ===================')
         
 
@@ -826,7 +826,6 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             'extension': sr.slide_ext
             }
 
-    url_tmpl_preload = url_for('dzi.dzi_preload', **url_ctx)
     url_tmpl_dzi = url_for('dzi.dzi', **url_ctx)
     url_tmpl_download_tiff = url_for('dzi.dzi_download_tiff', **url_ctx)
     url_tmpl_download_nii_gz = url_for('dzi.dzi_download_nii_gz', **url_ctx)
@@ -852,7 +851,6 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'project': si['project'],
         'project_name': pr.disp_name,
         'block_id': si['block_id'],
-        'url_tmpl_preload': url_tmpl_preload,
         'url_tmpl_dzi': url_tmpl_dzi,
         'url_tmpl_download_tiff': url_tmpl_download_tiff,
         'url_tmpl_download_nii_gz': url_tmpl_download_nii_gz,
@@ -1322,31 +1320,6 @@ def api_get_slide_random_patch(task_id, slide_id, width):
     resp = make_response(rawbytes)
     resp.mimetype = 'image/png'
     return resp
-
-
-# Preload a slide (using task/id)
-@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/preload/<resource>', methods=('GET','POST'))
-@access_task_read
-def api_slide_preload(task_id, slide_id, resource):
-    (project,task) = get_task_data(task_id)
-    return dzi_preload(project, slide_id, resource)
-
-    #db = get_db()
-    #sr = get_slide_ref(slide_id)
-    #(project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
-
-    # Are we de this slide to a different node?
-    #del_url = find_delegate_for_slide(slide_id)
-
-    # If local, call the method directly
-    #if del_url is None:
-    #    return dzi_preload(project, slide_id, resource)
-    #else:
-    #    url = '%s/dzi/preload/%s/%s/%s/%s/%s.%s.dzi' % (
-    #            del_url, project, specimen, block, resource, slide_name, slide_ext)
-    #    pr = sr.get_project_ref()
-    #    post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-    #    return urllib.request.urlopen(url, post_data).read()
 
 
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/job/<jobid>/status', methods=('GET','POST'))

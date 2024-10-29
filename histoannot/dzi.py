@@ -20,27 +20,21 @@ from flask import (
 )
 from werkzeug.exceptions import abort
 
-from io import BytesIO, StringIO
+from io import BytesIO
 import os
 import json
 import time
 import numpy as np
 import urllib
 import psutil
-import re
 import functools
 
-from rq import Queue, Connection, Worker
-from rq.job import Job, JobStatus
-from redis import Redis
 from random import randint
 
-from openslide import OpenSlide, OpenSlideError
+from openslide import OpenSlide
 from openslide.deepzoom import DeepZoomGenerator
 from histoannot.slideref import SlideRef,get_slide_ref
 from histoannot.project_ref import ProjectRef
-from histoannot.cache import AffineTransformedOpenSlide
-from histoannot.delegate import find_delegate_for_slide
 from histoannot.auth import access_project_read, access_project_admin
 from google.cloud import storage
 
@@ -56,6 +50,11 @@ import socket
 import pickle
 from datetime import datetime
 
+import socketserver
+import multiprocessing
+import ctypes
+from histoannot.gcs_handler import GoogleCloudOpenSlideWrapper, MultiprocessManagedMultiFilePageCache
+from sortedcontainers import SortedKeyList
 
 
 # The function that is enqueued in RQ
@@ -68,38 +67,6 @@ def do_preload_file(project, proj_info, slide_info, resource):
     tiff_file = sr.get_local_copy(resource, check_hash=True)
     print('Fetched to %s' % tiff_file)
     return tiff_file
-
-
-# Forward to a worker if possible
-def forward_to_worker(view):
-    @functools.wraps(view)
-    def wrapped_view(**kwargs):
-
-        # Get the slide id and project variables
-        project, slide_id = kwargs['project'], kwargs['slide_id']
-
-        # Find or allocate an assigned worker for this slide
-        worker_url = find_delegate_for_slide(slide_id)
-
-        # If no worker, just call the method
-        if worker_url is None:
-            return view(**kwargs)
-
-        # Call the worker's method
-        full_url = '%s/%s' % (worker_url, request.full_path)
-
-        # Take the project information and embed it in the call as a POST parameter
-        pr = ProjectRef(kwargs['project'])
-        sr = get_slide_ref(slide_id, pr)
-        post_data = urllib.parse.urlencode({
-            'project_data': json.dumps(pr.get_dict()),
-            'slide_data': json.dumps(sr.get_dict())
-            })
-
-        # Pass the information to the delegate
-        return urllib.request.urlopen(full_url, post_data.encode('ascii')).read()
-
-    return wrapped_view
 
 
 # Get the project data if present in the request
@@ -127,63 +94,6 @@ def dzi_get_project_and_slide_ref(project, slide_id):
         pdata = json.loads(request.form.get('project_data'))
         sdata = json.loads(request.form.get('slide_data'))
         ProjectRef(project, pdata), SlideRef(project, **sdata)
-
-
-# Preload the slide using complete information (no access to database needed)
-@bp.route('/dzi/preload/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
-@access_project_read
-@forward_to_worker
-def dzi_preload(project, slide_id, resource):
-
-    # Get a project reference, using either local database or remotely supplied dict
-    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-    return json.dumps({ "status" : JobStatus.FINISHED })
-
-    '''
-
-    # Check if the file exists locally. If so, there is no need to queue a worker
-    tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
-    print("Preload for %s,%s,%s returned local file %s" % (project, slide_id, resource, tiff_file))
-    if tiff_file is not None:
-        return json.dumps({ "status" : JobStatus.FINISHED })
-
-    # Get a redis queue
-    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, 
-                    job_timeout="300s", result_ttl="60s", ttl="3600s", failure_ttl="48h")
-
-    # Stick the properties into the job
-    job.meta['args'] = (project, pr.get_dict(), sr.get_dict(), resource)
-    job.save_meta()
-
-    # Return the job id
-    return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
-    '''
-
-
-# Check the status of a job - version that does not require database but uses private ids
-@bp.route('/dzi/job/<project>/<int:slide_id>/<job_id>/status', methods=('GET', 'POST'))
-@access_project_read
-@forward_to_worker
-def dzi_job_status(project, slide_id, job_id):
-    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    j = q.fetch_job(job_id)
-
-    if j is None:
-        return 'bad job'
-        abort(404)
-
-    res = { 'status' : j.get_status() }
-    print('JOB status: ', j)
-
-    if j.get_status() == JobStatus.STARTED:
-        (project, proj_data, slide_data, resource) = j.meta['args']
-        pr = ProjectRef(project, proj_data)
-        sr = SlideRef(pr, **slide_data)
-        res['progress'] = sr.get_download_progress(resource)
-
-    return json.dumps(res)
 
 
 # Get affine matrix corresponding to affine mode and resolution
@@ -215,7 +125,6 @@ def get_affine_matrix(slide_ref, mode, resolution='raw', target='annot'):
 # Get the dimensions for a slide in JSON format
 @bp.route('/dzi/<project>/<int:slide_id>/header', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_slide_dimensions(project, slide_id):
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     return jsonify(
@@ -226,7 +135,6 @@ def dzi_slide_dimensions(project, slide_id):
 # Get the file path of the slide - this requires admin access
 @bp.route('/dzi/<project>/<int:slide_id>/filepath', methods=('GET', 'POST'))
 @access_project_admin
-@forward_to_worker
 def dzi_slide_filepath(project, slide_id):
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     return jsonify(
@@ -237,7 +145,6 @@ def dzi_slide_filepath(project, slide_id):
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi(mode, project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
@@ -290,14 +197,12 @@ def dzi_download(project, slide_id, resource, downsample, extension):
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
 
-    # Get the resource
-    tiff_file = sr.get_local_copy(resource, check_hash=True)
-    print(f'Fetching {sr.get_resource_url(resource, False)}')
-    if tiff_file is None:
-        return f'Resource {resource} not available for slide {slide_id}', 400
-
     # If no downsample, send raw file
     if downsample == 0:
+        # TODO: downloads are broken now
+        tiff_file = sr.get_local_copy(resource, check_hash=True)
+        if tiff_file is None:
+            return f'Resource {resource} not available for slide {slide_id}', 400
         if not tiff_file.lower().endswith(extension.lower()):
             return "Wrong extension requested", 400
 
@@ -339,7 +244,6 @@ def dzi_download(project, slide_id, resource, downsample, extension):
 # Download a thumbnail for the slide
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_download_tiff(project, slide_id, resource, downsample):
     return dzi_download(project, slide_id, resource, downsample, 'tiff')
 
@@ -347,7 +251,6 @@ def dzi_download_tiff(project, slide_id, resource, downsample):
 # Download a thumbnail for the slide, in NIFTI format
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.nii.gz', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_download_nii_gz(project, slide_id, resource, downsample):
     return dzi_download(project, slide_id, resource, downsample, 'nii.gz')
 
@@ -355,7 +258,6 @@ def dzi_download_nii_gz(project, slide_id, resource, downsample):
 # Download a full-resolution slide, in whatever format the slide is in
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_fullres.<extension>', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_download_fullres(project, slide_id, resource, extension):
     return dzi_download(project, slide_id, resource, 0, extension)
 
@@ -370,7 +272,6 @@ class PILBytesIO(BytesIO):
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def tile_db(mode, project, slide_id, resource, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
@@ -384,13 +285,14 @@ def tile_db(mode, project, slide_id, resource, level, col, row, format):
     # Get the raw SVS/tiff file for the slide (the resource should exist, 
     # or else we will spend a minute here waiting with no response to user)
     # tiff_file = sr.get_local_copy(resource)
+    os = get_osl(slide_id, sr, resource)
 
+    # TODO: bring back affine!
     #os = None
     #if mode == 'affine':
     #    os = AffineTransformedOpenSlide(tiff_file, get_affine_matrix(sr, 'affine', resource, 'image'))
     #else:
     #    os = OpenSlide(tiff_file)
-    os = get_osl(slide_id, sr, resource)
 
     dz = DeepZoomGenerator(os)
     tile = dz.get_tile(level, (col, row))
@@ -412,13 +314,6 @@ def get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-
-    # Get the raw SVS/tiff file for the slide (the resource should exist,
-    # or else we will spend a minute here waiting with no response to user)
-    tiff_file = sr.get_local_copy(resource)
-
-    # Read the region centered on the box of size 512x512
-    # os = OpenSlide(tiff_file)
     os = get_osl(slide_id, sr, resource)
 
     # Work out the offset
@@ -464,62 +359,10 @@ def get_random_patch(project, slide_id, resource, level, w, format):
     return resp
 
 
-# Queue patch generation at a worker
-@bp.route('/dzi/preload/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
-@access_project_read
-@forward_to_worker
-def patch_preload(project, slide_id, resource):
-
-
-        # Create a job that will sample the patch from the image. The reason we do this in a queue
-    # is that a server hosting the slide might have gone down and the slide would need to be
-    # downloaded again, and we don't want to hold up returning to the user for so long
-    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, 
-                    (patch_dim, patch_dim), osl_level, 
-                    job_timeout="20s", result_ttl="60s", ttl="3600s", failure_ttl="48h",
-                    at_front=True)
-
-    # Stick the properties into the job
-    job.meta['args']=(slide_id, sample_id, rect)
-    job.save_meta()
-
-    # Only commit once this has been saved
-    db.commit()
-
-    # Return the sample id and the patch generation job id
-    return json.dumps({ 'id' : sample_id, 'patch_job_id' : job.id })
-
-    # Get a project reference, using either local database or remotely supplied dict
-    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-
-    # Check if the file exists locally. If so, there is no need to queue a worker
-    tiff_file = sr.get_local_copy(resource, check_hash=True, dry_run=True)
-    print("Preload for %s,%s,%s returned local file %s" % (project, slide_id, resource, tiff_file))
-    if tiff_file is not None:
-        return json.dumps({ "status" : JobStatus.FINISHED })
-
-    # Get a redis queue
-    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(do_preload_file, project, pr.get_dict(), sr.get_dict(), resource, 
-                    job_timeout="300s", result_ttl="60s", ttl="3600s", failure_ttl="48h",
-                    at_front=True)
-
-    # Stick the properties into the job
-    job.meta['args'] = (project, pr.get_dict(), sr.get_dict(), resource)
-    job.save_meta()
-
-    # Return the job id
-    return json.dumps({ "job_id" : job.id, "status" : JobStatus.QUEUED })
-
-
-
-
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
 @access_project_read
-@forward_to_worker
 def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, format):
     return get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format)
 
@@ -528,7 +371,6 @@ def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, for
 @bp.route('/dzi/random_patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:width>.<format>',
         methods=('GET','POST'))
 @access_project_read
-@forward_to_worker
 def get_random_patch_endpoint(project, slide_id, resource, level, width, format):
     return get_random_patch(project, slide_id, resource, level, width, format)
 
@@ -537,18 +379,16 @@ def dzi_download_thumblike_image(project, slide_id, resource, extension):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+    osl = get_osl(slide_id, sr)
+    assoc_image = osl.associated_images.get(resource.lower(), None)
 
     # Get the resource
-    local_file = sr.get_local_copy(resource, check_hash=True)
-    if local_file is None:
+    if not assoc_image:    
         return f'Resource {resource} not available for slide {slide_id}', 400
     
-    # Load the file as an image
-    image = Image.open(local_file)
-
     # Save in requested format to a buffer
     buf = PILBytesIO()
-    image.save(buf, extension)
+    assoc_image.save(buf, extension)
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
     return resp
@@ -557,7 +397,6 @@ def dzi_download_thumblike_image(project, slide_id, resource, extension):
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_label.png', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_download_label_image(project, slide_id):
     return dzi_download_thumblike_image(project, slide_id, 'label', 'png')
 
@@ -565,7 +404,6 @@ def dzi_download_label_image(project, slide_id):
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_macro.png', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_download_macro_image(project, slide_id):
     return dzi_download_thumblike_image(project, slide_id, 'macro', 'png')
 
@@ -573,17 +411,10 @@ def dzi_download_macro_image(project, slide_id):
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_header.json', methods=('GET', 'POST'))
 @access_project_read
-@forward_to_worker
 def dzi_download_header(project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-
-    # Get the resource
-    # tiff_file = sr.get_local_copy(resource, check_hash=True)
-    # print(f'Fetching {sr.get_resource_url(resource, False)}')
-    # if tiff_file is None:
-    #    return f'Resource {resource} not available for slide {slide_id}', 400
 
     # os = OpenSlide(tiff_file)
     os = get_osl(slide_id, sr, resource)
@@ -591,20 +422,19 @@ def dzi_download_header(project, slide_id, resource):
     return json.dumps(prop_dict), 200, {'ContentType':'application/json'}
 
 
-# Command to run preload worker
-@click.command('preload-worker-run')
-@with_appcontext
-def run_preload_worker_cmd():
-    with Connection():
-        w = Worker(current_app.config['PRELOAD_QUEUE'])
-        w.work()
+class OpenSlidePickleableWrapper(OpenSlide):
+    
+    def __init__(self, filename):
+        OpenSlide.__init__(self, filename)
+        
+    @property
+    def properties(self):
+        return dict({k:v for (k,v) in OpenSlide.properties.fget(self).items()})
 
+    @property
+    def associated_images(self):
+        return dict({k:v for (k,v) in OpenSlide.associated_images.fget(self).items()})
 
-import socketserver
-import multiprocessing
-import ctypes
-from histoannot.gcs_handler import GoogleCloudOpenSlideWrapper, MultiprocessManagedMultiFilePageCache
-from sortedcontainers import SortedKeyList
 
 class OpenSlideThinInterface:
     """
@@ -663,21 +493,29 @@ class OpenSlideThinInterface:
     def properties(self):
         return self._exec_remote('properties')
     
+    @property
+    def associated_images(self):
+        return self._exec_remote('associated_images')
+    
     def get_best_level_for_downsample(self, downsample):
         return self._exec_remote('get_best_level_for_downsample', downsample=downsample)
                 
-    def read_region(self, pos, level, size):
-        return self._exec_remote('read_region', pos=pos, level=level, size=size)
+    def read_region(self, location, level, size):
+        return self._exec_remote('read_region', location=location, level=level, size=size)
+    
+    def get_thumbnail(self, size):
+        return self._exec_remote('get_thumbnail', size=size)
+        
 
 
-def get_osl(slide_id, sr:SlideRef, resource, socket_addr_list=None):
+def get_osl(slide_id, sr:SlideRef, resource='raw', socket_addr_list=None):
     tiff_file = sr.get_resource_url(resource, local=False)
-    if tiff_file.startswith('gs://'):
-        if socket_addr_list is None:
-            socket_addr_list = current_app.config['OPENSLIDE_SERVER_ADDR']
-        return OpenSlideThinInterface(tiff_file, socket_addr_list=socket_addr_list)
-    else:
-        return OpenSlide(tiff_file)
+    # if tiff_file.startswith('gs://'):
+    if socket_addr_list is None:
+        socket_addr_list = current_app.config['SLIDE_SERVER_ADDR']
+    return OpenSlideThinInterface(tiff_file, socket_addr_list=socket_addr_list)
+    #else:
+    #    return OpenSlide(tiff_file)
 
 
 class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
@@ -699,10 +537,13 @@ class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
         # TODO: purge tiff cache once in a while
         tiff = self.server.osl_cache.get(url, None)
         if not tiff:
-            if self.server.gcs_client is None:
-                self.server.gcs_client = storage.Client()                
-            tiff = GoogleCloudOpenSlideWrapper(self.server.gcs_client, url, self.server.gcs_cache)
-            self.server.osl_cache[url] = tiff
+            if url.startswith('gs://'):
+                if self.server.gcs_client is None:
+                    self.server.gcs_client = storage.Client()                
+                tiff = GoogleCloudOpenSlideWrapper(self.server.gcs_client, url, self.server.gcs_cache)
+                self.server.osl_cache[url] = tiff
+            else:
+                self.server.osl_cache[url] = tiff = OpenSlidePickleableWrapper(url)
             
         # Process the request
         attr = getattr(tiff, self.data['command'])
@@ -716,10 +557,10 @@ class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
 # Worker process that runs the openslide server. This thread operates a single 
 # unix socket based on its id and handles files that correspond to this ID 
 # based on its hash. 
-def openslide_server_process_run(index, cache_queue, purge_value):
+def slide_server_process_run(index, socket_addr_list, page_size_mb, cache_queue, purge_value):
     
     # Get the socket address
-    socket_addr = current_app.config['OPENSLIDE_SERVER_ADDR'][index]
+    socket_addr = socket_addr_list[index]
     
     # Make sure the directory exists and delete the socket file if present
     os.makedirs(os.path.dirname(socket_addr), exist_ok=True)
@@ -730,7 +571,7 @@ def openslide_server_process_run(index, cache_queue, purge_value):
     try:
         with socketserver.UnixStreamServer(socket_addr, OpenSlideRequestHandler) as server:
             server.osl_cache = {}
-            server.gcs_cache = MultiprocessManagedMultiFilePageCache(index, cache_queue, page_size_mb=1)
+            server.gcs_cache = MultiprocessManagedMultiFilePageCache(index, cache_queue, page_size_mb=page_size_mb)
             server.gcs_client = None
             server.timeout = 30
             while(True):
@@ -746,7 +587,7 @@ def openslide_server_process_run(index, cache_queue, purge_value):
 
 # Manager process that keeps an eye on the cache size and forces a purge when the
 # cache size is exceeded
-def openslide_server_cache_manager_process_run(cache_queue, purge_value, max_pages=4096, purge_size_pct=0.25):
+def slide_server_cache_manager_process_run(cache_queue, purge_value, max_pages=4096, purge_size_pct=0.25):
     cache_metadata = dict()
     t_last_print = time.time_ns()
     try:
@@ -774,27 +615,36 @@ def openslide_server_cache_manager_process_run(cache_queue, purge_value, max_pag
 
 
 # Command to run openslide server
-@click.command('openslide-server-run')
+@click.command('slide-server-run')
 @with_appcontext
-def run_openslide_server():
+def run_slide_server():
     # Create the queue and value to share between processes
     cache_queue = multiprocessing.Queue()
     purge_value = multiprocessing.Value(ctypes.c_longlong, int(time.time_ns()))
-
+    socket_addr_list = current_app.config['SLIDE_SERVER_ADDR']
+    
+    # Load cache properties
+    page_size_mb = current_app.config['SLIDE_SERVER_CACHE_PAGE_SIZE_MB']
+    cache_size_pg = current_app.config['SLIDE_SERVER_CACHE_SIZE_IN_PAGES']
+    
     # Start the manager process
     p_man = multiprocessing.Process(
-        target = openslide_server_cache_manager_process_run,
-        args = (cache_queue, purge_value, 32))
+        target = slide_server_cache_manager_process_run,
+        args = (cache_queue, purge_value, cache_size_pg))
     p_man.start()
 
     # Start the worker processes
     p_workers = []
-    for k in range(len(current_app.config['OPENSLIDE_SERVER_ADDR'])):
+    for k in range(len(current_app.config['SLIDE_SERVER_ADDR'])):
         p = multiprocessing.Process(
-            target = openslide_server_process_run,
-            args = (k, cache_queue, purge_value))
+            target = slide_server_process_run,
+            args = (k, socket_addr_list, page_size_mb, cache_queue, purge_value))
         p.start()
         p_workers.append(p)
+
+    # Print startup message
+    print(f'PHAS slide server started with {len(p_workers)} workers, '
+          f'total cache size {cache_size_pg*page_size_mb}MB')
 
     # Wait for the workers to finish (never)
     for p in p_workers:
@@ -830,6 +680,5 @@ def delegate_dzi_ping_command():
 
 # CLI stuff
 def init_app(app):
-    app.cli.add_command(run_preload_worker_cmd)
     app.cli.add_command(delegate_dzi_ping_command)
-    app.cli.add_command(run_openslide_server)
+    app.cli.add_command(run_slide_server)

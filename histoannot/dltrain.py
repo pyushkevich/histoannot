@@ -28,7 +28,7 @@ from histoannot.db import get_db
 from histoannot.project_cli import get_task_data, create_edit_meta, update_edit_meta_to_current
 from histoannot.project_ref import ProjectRef
 from histoannot.delegate import find_delegate_for_slide
-from histoannot.dzi import get_patch, pil_to_nifti_gz
+from histoannot.dzi import get_osl, get_patch, pil_to_nifti_gz
 from histoannot.slide import make_slide_dbview, annot_sample_path_curves, get_affine_matrix_by_slideid
 from histoannot.slideref import get_slide_ref
 
@@ -47,16 +47,12 @@ import numpy as np
 
 from . import slide
 
-from rq import Queue, Connection, Worker
-from rq.job import Job, JobStatus
-from redis import Redis
 from math import sqrt
 
 import click
 from flask.cli import cli, with_appcontext
 
 from jsonschema import validate
-from openslide import OpenSlide, OpenSlideError
 
 
 bp = Blueprint('dltrain', __name__)
@@ -685,25 +681,15 @@ def create_sample_base(task_id, slide_id, label_id, rect, osl_level=0, metadata=
 
     # Get the preferred patch size
     patch_dim = t_data['dltrain'].get('display-patch-size', 512)
-
-    # Create a job that will sample the patch from the image. The reason we do this in a queue
-    # is that a server hosting the slide might have gone down and the slide would need to be
-    # downloaded again, and we don't want to hold up returning to the user for so long
-    q = Queue(current_app.config['PRELOAD_QUEUE'], connection=Redis())
-    job = q.enqueue(generate_sample_patch, slide_id, sample_id, rect, 
-                    (patch_dim, patch_dim), osl_level, 
-                    job_timeout="120s", result_ttl="60s", ttl="3600s", failure_ttl="48h",
-                    at_front=True)
-
-    # Stick the properties into the job
-    job.meta['args']=(slide_id, sample_id, rect)
-    job.save_meta()
+    
+    # Generate the patch
+    generate_sample_patch(slide_id, sample_id, rect, (patch_dim, patch_dim), osl_level)
 
     # Only commit once this has been saved
     db.commit()
 
     # Return the sample id and the patch generation job id
-    return json.dumps({ 'id' : sample_id, 'patch_job_id' : job.id })
+    return json.dumps({ 'id' : sample_id })
 
 
 # For safety, any JSON inserted into the database should be validated
@@ -994,8 +980,7 @@ def make_sampling_roi_image(task_id, slide_id, maxdim):
     # Get the slide dimensions from OpenSlide - this is slower than using metadata but
     # closer to the source and ensures that the image generated matches the thumbnail        
     sr = get_slide_ref(slide_id)
-    tiff_file = sr.get_local_copy('raw', check_hash=True)
-    os = OpenSlide(tiff_file)
+    os = get_osl(slide_id, sr)
     thumb = os.get_thumbnail((maxdim, maxdim))
 
     # Calculate the scale factor to fit the maximum dimension

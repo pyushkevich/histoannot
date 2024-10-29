@@ -269,7 +269,8 @@ class CachedFileRepresentation:
         page_start = page.index * self.page_size        
         off_dest = max(0, page_start - offset)
         off_page = max(0, offset - page_start)
-        size_adj = min(offset + size - (page_start + off_page), self.page_size)
+        len_page = len(page.data)
+        size_adj = min(offset + size - (page_start + off_page), len_page - off_page)
         dest[off_dest:(off_dest+size_adj)] = page.data[off_page:(off_page+size_adj)]
         return size_adj
         
@@ -480,7 +481,8 @@ class GoogleCloudTiffHandle(io.RawIOBase):
     
     def readinto(self, buffer):
         if isinstance(buffer, np.ndarray):
-            buffer = memoryview(buffer)
+            buffer = buffer.view(np.uint8)
+            print(buffer, len(buffer), self.fsize, self.pos, self.fsize - self.pos)
         elif not isinstance(buffer, (bytearray, memoryview)):
             raise TypeError("Buffer object expected, got: {}".format(type(buffer)))
         size = min(len(buffer), self.fsize - self.pos)
@@ -617,17 +619,20 @@ class GoogleCloudOpenSlideWrapper:
         # Collect the tiled pages
         self.tiled_pages = [ p for p in self.tf.pages if p.is_tiled ]
         
-    def read_region(self, pos, level, size):
+        # Place to store associated images
+        self.assoc = {}
+        
+    def read_region(self, location, level, size):
         page = self.tiled_pages[level]
         
         # The pos coordinates are in the coordinate frame of level 0 and
         # have to be converted to the correct coordinate frame
         ds = self.level_downsamples[level]
-        pos = [ int(0.5 + x // ds) for x in pos ]
+        location = [ int(0.5 + x // ds) for x in location ]
 
         if not page.is_tiled:
             arr = page.asarray()
-            icrop = arr[pos[1]:(pos[1]+size[1]),pos[0]:(pos[0]+size[0]),:]
+            icrop = arr[location[1]:(location[1]+size[1]),location[0]:(location[0]+size[0]),:]
 
         else:
             fh = self.tf.filehandle
@@ -637,10 +642,10 @@ class GoogleCloudOpenSlideWrapper:
             ntx = 1 + (page.imagewidth-1) // page.tilewidth
             nty = 1 + (page.imagelength-1) // page.tilelength
             
-            tx0 = pos[0] // tw
-            ty0 = pos[1] // th
-            tx1 = (pos[0] + size[0]) // tw
-            ty1 = (pos[1] + size[1]) // th
+            tx0 = location[0] // tw
+            ty0 = location[1] // th
+            tx1 = (location[0] + size[0]) // tw
+            ty1 = (location[1] + size[1]) // th
             stx, sty = 1+tx1-tx0, 1+ty1-ty0
             
             image = np.zeros((sty * th, stx * tw, page.samplesperpixel), dtype=page.dtype)
@@ -654,11 +659,28 @@ class GoogleCloudOpenSlideWrapper:
                     image[offy:(offy+th),offx:(offx+th),:] = np.array(tile, dtype=page.dtype)
                     
             # Crop out the exact image requested
-            crop_x, crop_y = pos[0] - tx0 * tw, pos[1] - ty0 * th
+            crop_x, crop_y = location[0] - tx0 * tw, location[1] - ty0 * th
             icrop = image[crop_y:(crop_y+size[1]),crop_x:(crop_x+size[0]),:]
         
         # Return the image as PIL
         return Image.fromarray(icrop).convert("RGBA")
+
+    def get_thumbnail(self, size):
+        # Taken from openslide
+        downsample = max(dim / thumb for dim, thumb in zip(self.dimensions, size))
+        level = self.get_best_level_for_downsample(downsample)
+        tile = self.read_region((0, 0), level, self.level_dimensions[level])
+        # Apply on solid background
+        bg_color = '#' + self.properties.get('openslide.background-color', 'ffffff')
+        thumb = Image.new('RGB', tile.size, bg_color)
+        thumb.paste(tile, None, tile)
+        # Image.Resampling added in Pillow 9.1.0
+        # Image.LANCZOS removed in Pillow 10
+        thumb.thumbnail(size, getattr(Image, 'Resampling', Image).LANCZOS)
+        # if self._profile is not None:
+        #    thumb.info['icc_profile'] = self._profile
+        return thumb
+
     
     @property
     def level_count(self):
@@ -678,6 +700,17 @@ class GoogleCloudOpenSlideWrapper:
         w = self.tiled_pages[0].imagewidth
         return list([w / p.imagewidth for p in self.tiled_pages])
     
+    @property
+    def associated_images(self):
+        if not self.assoc:
+            for page in self.tf.pages:
+                if page.is_tiled is False and 'ImageDescription' in page.tags:
+                    for tag in 'macro', 'label', 'thumbnail':
+                        if tag in page.tags['ImageDescription'].value.lower():
+                            self.assoc[tag] = Image.fromarray(page.asarray()).convert("RGBA")
+        return self.assoc
+    
+    # TODO: add all the TIFF properties 
     @property
     def properties(self):
         ppm_x, ppm_y = self.tiled_pages[0].get_resolution(unit=tifffile.RESUNIT.MICROMETER)

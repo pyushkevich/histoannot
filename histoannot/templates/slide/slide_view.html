@@ -869,60 +869,6 @@ $(document).ready(function()
         scrollY: '400px'
       } );
 
-    /* preloading is no longer required                      
-    // Get the progress of loading the current slide
-    var check_preload_progress = function(job_id, cb_complete) {
-        var myurl =
-            $.ajax({
-                url: "{{ url_for('dzi.dzi_job_status', project=project, slide_id=slide_id, job_id=999999) }}".replace("999999",job_id),
-                success: function(response_text) {
-                    data = JSON.parse(response_text);
-                    if(data.status === 'queued' || data.status === 'started') {
-                        progress_dialog.dialog("open");
-                        if(data.progress) {
-                            progress_bar.progressbar("value", Math.floor(data.progress * 100));
-                            $("#progress_comment").text("")
-                        }
-                        else {
-                            $("#progress_comment").text("Waiting for other downloads to complete")
-                        }
-                        setTimeout(function() { check_preload_progress(job_id, cb_complete) }, 500);
-                    }
-                    else {
-                        progress_dialog.dialog("close");
-                        cb_complete();
-                    }
-                }
-            })
-    };
-
-    // Function to preload a resource
-    var preload_dzi = function(resource, cb_loaded) {
-
-        // Form URL
-        var url = "{{url_tmpl_preload}}".replace('XXXXX', resource);
-
-        // Make AJAX call
-        $.ajax({
-            url: url,
-            success: function(response_text) {
-                data = JSON.parse(response_text);
-                if(data.status === 'finished') {
-                    cb_loaded();
-                }
-                else {
-                    job_id = data.job_id;
-                    check_preload_progress(job_id, cb_loaded);
-                }
-            },
-            error: function() { window.alert("Slide failed to load"); }
-        })
-    };
-
-    // Preload the main image
-    preload_dzi("{{resolution}}", init_viewer);
-    */
-
     // Initialize the viewer
     init_viewer();
 

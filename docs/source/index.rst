@@ -13,6 +13,7 @@ PICSL Histology Annotation Server
    quick_start
    org_data_local
    org_data
+   production
    notes_tval
 
 The PICSL Histology Annotation Server (PHAS) is a platform for visualizing and annotating large serial histology datasets via the web. It allows annotation to be easily crowdsourced with a centralized data repository.

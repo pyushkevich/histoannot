@@ -18,7 +18,6 @@
 import os
 from flask import Flask, request, g
 from flask_pure import Pure
-from . import cache
 from . import db
 from . import auth
 from . import slide
@@ -93,9 +92,11 @@ def create_app(test_config = None):
         app.config['DATABASE'] = os.path.join(app.instance_path, 'histoannot.sqlite')
         
         # Configure the openslide server
-        n_proc = app.config.get('OPENSLIDE_SERVER_NUMPROC',8)
-        app.config['OPENSLIDE_SERVER_ADDR'] = [
+        n_proc = app.config.get('SLIDE_SERVER_NUMPROC',8)
+        app.config['SLIDE_SERVER_ADDR'] = [
             os.path.join(app.instance_path, 'oslserver', f'oslserver_{i:02d}.sock') for i in range(n_proc) ]
+        app.config['SLIDE_SERVER_CACHE_PAGE_SIZE_MB'] = app.config.get('SLIDE_SERVER_CACHE_PAGE_SIZE_MB', 1)
+        app.config['SLIDE_SERVER_CACHE_SIZE_IN_PAGES'] = app.config.get('SLIDE_SERVER_CACHE_SIZE_IN_PAGES', 2048)
 
         # Database connection
         db.init_app(app)

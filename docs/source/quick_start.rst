@@ -8,6 +8,7 @@ Requirements
 ============
 * A Linux/Unix/MacOS machine with Python3
 * An open port on this machine. We will assume port number **8888**.
+* We recommend using `tmux <https://github.com/tmux/tmux/wiki>` for this tutorial. It is a terminal multiplexer that allows you to create multiple terminal sessions in the same terminal window and when you disconnect from the server, your terminal sessions and the programs you launch inside them will keep running. 
 
 Installation
 ============
@@ -23,18 +24,6 @@ The `OpenSlide library <https://openslide.org/>`_ is required and must be instal
 * On MacOS::
 
     brew install openslide
-
-Install Redis
--------------
-The `Redis library <https://redis.io/docs/latest/>`_ is used to for coordination between the server and worker processes. 
-
-* On Linux see `the instructions on redis.io <https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/install-redis-on-linux/>`_
-
-* On MacOS::
-
-    brew install redis
-    brew services start redis
-
 
 Checkout The Code Repository
 ----------------------------
@@ -121,14 +110,14 @@ You will see this output::
 
 Navigate to the URL provided (http://127.0.0.1:8888) and you should see the login page.
 
-Start a Worker Process
-----------------------
-In addition to running the main server, you need to run one or more worker processes. These processes perform asynchronous tasks, such as extracting patches from histology images during classifier training. The worker process will need to run in a **separate terminal window**.
+Start the Slide Server Process
+------------------------------
+In addition to running the main web application with ``flask run``, you need to launch the slide server process, which manages the interface between the web application and the histology images. The server process should be run in a **separate terminal window**.
 
 Open a new terminal window and navigate to the ``phas`` directory::
 
     source env.sh
-    flask preload-worker-run
+    flask slide-server-run
 
 
 Creating Users, Projects and Tasks

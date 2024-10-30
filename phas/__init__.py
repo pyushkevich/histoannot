@@ -98,10 +98,6 @@ def create_app(test_config = None):
 
     app.add_url_rule('/', endpoint='index')
     
-    print(f'FLASK application {__name__}')
-    print(f'  Public name:               {app.config["HISTOANNOT_PUBLIC_NAME"]}')
-    print(f'  Instance directory:        {app.instance_path}')
-
     # Add the info command
     app.cli.add_command(flask_info)
 

@@ -10,9 +10,10 @@ PICSL Histology Annotation Server
    :maxdepth: 2
    :caption: Contents:
 
-   quick_start
+   About PHAS <about>
+   Quick Start <quick_start>
    org_data_local
-   org_data
+   gcs
    production
    upgrading
    notes_tval

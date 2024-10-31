@@ -143,6 +143,20 @@ def task_listing(project):
     return json.dumps([x for x in listing])
 
 
+# Get basic information about a task
+@bp.route('/api/task/<int:task_id>/info')
+@access_task_read
+def task_get_info(task_id):
+    db = get_db()
+    rc = db.execute('SELECT * FROM task_info WHERE id = ?', (task_id,)).fetchone()
+    d = { k:rc[k] for k in ('id','project','name','restrict_access','anonymize') }
+    detail = json.loads(d['json'])
+    for k in 'desc', 'mode', 'reference_task':
+        if k in detail:
+            d[k] = detail[k]
+    return json.dumps(d)  
+
+
 # Specimen listing for a task
 @bp.route('/api/task/<int:task_id>/specimens')
 @access_task_read
@@ -1321,29 +1335,6 @@ def api_get_slide_random_patch(task_id, slide_id, width):
     resp = make_response(rawbytes)
     resp.mimetype = 'image/png'
     return resp
-
-
-@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/job/<jobid>/status', methods=('GET','POST'))
-@access_task_read
-def api_slide_job_status(task_id, slide_id, jobid):
-    (project,task) = get_task_data(task_id)
-    return dzi_job_status(project, slide_id, jobid)
-    #db = get_db()
-    #sr = get_slide_ref(slide_id)
-    #(project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
-
-    # Are we de this slide to a different node?
-    #del_url = find_delegate_for_slide(slide_id)
-
-    # If local, call the method directly
-    #if del_url is None:
-    #    return dzi_job_status_nodb(project, slide_name, jobid)
-    #else:
-    #    url = '%s/dzi/job/%s/%s/%s/status' % (
-    #            del_url, project, slide_name, jobid)
-    #    pr = sr.get_project_ref()
-    #    post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-    #    return urllib.request.urlopen(url, post_data).read()
 
 
 @bp.route('/api/project/<project>/specimen/<specimen>/refresh_slides', methods=('GET','POST'))

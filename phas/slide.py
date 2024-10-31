@@ -150,7 +150,7 @@ def task_get_info(task_id):
     db = get_db()
     rc = db.execute('SELECT * FROM task_info WHERE id = ?', (task_id,)).fetchone()
     d = { k:rc[k] for k in ('id','project','name','restrict_access','anonymize') }
-    detail = json.loads(d['json'])
+    detail = json.loads(rc['json'])
     for k in 'desc', 'mode', 'reference_task':
         if k in detail:
             d[k] = detail[k]

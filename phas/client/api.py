@@ -8,7 +8,7 @@ from io import StringIO
 
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
 from ..dltrain import get_sampling_rois, make_sampling_roi_image
-from ..dzi import dzi_download_nii_gz
+from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath
 
 class Client:
     """A connection to a remote PHAS server. 
@@ -20,11 +20,13 @@ class Client:
     Args:
         url (str): URL of the remote server, e.g., `http://histo.itksnap.org:8888`. The URL must include the scheme (`http:` or `https:`) while the port number is optional.
         api_key (str,optional): path to the JSON file storing the user's API key. The API key can be downloaded by connecting to the PHAS server via the web interface.
+        verify (bool, optional): Whether to perform SSL verification (see ``requests`` package)
     """
     
-    def __init__(self, url, api_key=None):
+    def __init__(self, url, api_key=None, verify=True):
         # Create a Flask application, which will allow us to use url_for
         self.flask = create_app()
+        self.verify = verify
         
         # Split URL into components and assign them to parts of the flask config
         try:
@@ -50,7 +52,7 @@ class Client:
         auth = self.flask.url_for('auth.login_with_api_key')
         
         # Connect to the server with the API key
-        r = requests.post(auth, {'api_key': self.api_key_token})
+        r = requests.post(auth, {'api_key': self.api_key_token}, verify=self.verify)
         r.raise_for_status()
         self.jar = r.cookies
         
@@ -63,7 +65,7 @@ class Client:
     
     def _get(self, blueprint, endpoint, params=None, **kwargs):
         url = self.flask.url_for(f'{blueprint}.{endpoint.__name__}', **kwargs)
-        r = requests.get(url, cookies=self.jar, params=params)
+        r = requests.get(url, cookies=self.jar, params=params, verify=self.verify)
         r.raise_for_status()
         return r
                
@@ -105,6 +107,7 @@ class Task:
         self.task_id = task_id
         r = self.client._get('slide', task_get_info, task_id = self.task_id)
         self.detail = r.json()
+        self.project = self.detail['project']
         
     def __str__(self):
         o = StringIO()
@@ -112,6 +115,7 @@ class Task:
         print(f'  Project: {self.detail["project"]}', file=o)
         print(f'  Description: {self.detail["desc"]}', file=o)
         print(f'  Mode: {self.detail["mode"]}', file=o)
+        return o.getvalue()
         
     def slide_manifest(self, specimen=None, block=None, 
                        section=None, slide=None, stain=None, 
@@ -135,28 +139,8 @@ class Task:
         
         # This is a bit lame to convert to pandas and back to dict, but best for API consistency
         return pd.read_csv(io).to_dict()
-    
-    def slide_thumbnail_nifti_image(self, slide_id:int, filename:str=None, max_dim:int=1000):
-        """Generate a NIFTI image of the sampling ROIs on a slide.
-        
-        Args:
-            slide_id (int): Slide ID
-            filename (str, optional): File where to save the image, if not specified ``bytes``
-                containing the image are returned
-            max_dim (int, optional): Maximum image dimension, defaults to 1000.
-        
-        Returns:
-            raw image data as ``bytes`` or None if filename provided
-        """
-        r = self.client._get('dzi', dzi_download_nii_gz, 
-                             task_id=self.task_id, slide_id=slide_id, resource='raw', downsample=max_dim)
-        if filename:
-            with open(filename, 'wb') as f:
-                f.write(r.content)
-        else:
-            return r.content
 
-        
+
 class SamplingROITask(Task):
     """A representation of a sampling ROI placement task on the remote server.
     
@@ -167,9 +151,11 @@ class SamplingROITask(Task):
     
     def __init__(self, client:Client, task_id:int):
         Task.__init__(self, client, task_id)
+        if self.detail["mode"] != 'sampling':
+            raise ValueError(f'SamplingROITask cannot be used for task of mode {self.detail["mode"]}')
         
 
-    def get_sampling_rois(self, slide_id:int):
+    def slide_sampling_rois(self, slide_id:int):
         """Get all the sampling ROIs on a slide.
 
         Args:
@@ -203,3 +189,104 @@ class SamplingROITask(Task):
         else:
             return r.content
         
+        
+class Slide:
+    """A representation of a slide on the remote server.
+    
+    This class represents a slide and provides access to methods that are slide-specific.
+    
+    Args:
+        task (Task): Task under which to access the slide. The task is used to check access priviliges.
+        slide_id (int): Numerical id of the slide    
+    """
+    def __init__(self, task:Task, slide_id:int):
+        self.task = task
+        self.task_id = task.task_id
+        self.project = task.project
+        self.client = task.client
+        self.slide_id = slide_id
+        r = self.client._get('slide', task_get_slide_info, task_id = self.task_id, slide_id=self.slide_id)
+        self.detail = r.json()
+        
+    def __str__(self):
+        o = StringIO()
+        print(f'Slide {self.slide_id} in task {self.task_id}', file=o)
+        print(f'  Specimen (public name): {self.detail["specimen_public"]}', file=o)
+        print(f'  Specimen (private name): {self.detail["specimen_private"]}', file=o)
+        print(f'  Block name: {self.detail["block_name"]}', file=o)
+        print(f'  Section Number: {self.detail["section"]}', file=o)
+        print(f'  Slide Number: {self.detail["slide"]}', file=o)
+        print(f'  Stain: {self.detail["stain"]}', file=o)
+        return o.getvalue()
+    
+    def thumbnail_nifti_image(self, filename:str=None, max_dim:int=1000):
+        """Generate a NIFTI image of the sampling ROIs on a slide.
+        
+        Args:
+            filename (str, optional): File where to save the image, if not specified ``bytes``
+                containing the image are returned
+            max_dim (int, optional): Maximum image dimension, defaults to 1000.
+        
+        Returns:
+            raw image data as ``bytes`` or None if filename provided
+        """
+        r = self.client._get('dzi', dzi_download_nii_gz, 
+                             project=self.project, slide_id=self.slide_id, resource='raw', downsample=max_dim)
+        if filename:
+            with open(filename, 'wb') as f:
+                f.write(r.content)
+        else:
+            return r.content
+        
+    def _get_header(self):        
+        if self._header is None:
+            self._header = self.client._get('dzi', dzi_slide_dimensions, project=self.project, slide_id=self.slide_id).json()
+        return self._header
+        
+    @property
+    def dimensions(self):
+        """Slide dimensions in pixels (tuple of int)."""
+        return self._get_header()['dimensions']
+    
+    @property
+    def spacing(self):
+        """Slide pixel spacing in millimeters."""
+        return self._get_header()['spacing']
+    
+    # TODO: need to implement fine-grained permissions
+    @property
+    def fullpath(self):
+        """Full path or URL of the slide on the server."""
+        if self.fullpath is None:
+            self.fullpath = self.client._get('dzi', dzi_slide_filepath, project=self.project, slide_id=self.slide_id).json()['remote'] 
+        return self.fullpath        
+
+    @property
+    def stain(self):
+        """Name of the slide's stain (str)"""
+        return self.detail['stain']
+    
+    @property
+    def block_name(self):
+        """Name of the slide's block (str)"""
+        return self.detail['block_name']
+    
+    @property
+    def specimen_private(self):
+        """Name of the slide's specimen, not anonymized (str)"""
+        return self.detail['specimen_private']
+    
+    @property
+    def specimen_public(self):
+        """Name of the slide's specimen, anonymized (str)"""
+        return self.detail['specimen_public']
+    
+    @property
+    def section(self):
+        """Number of the slide's section (int)"""
+        return self.detail['section']
+
+    @property
+    def slide_number(self):
+        """Number of the slide within the section (int)"""
+        return self.detail['slide']

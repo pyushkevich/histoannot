@@ -280,6 +280,16 @@ def generate_detailed_slide_listing(
     else:
         with pandas.option_context('display.max_rows', None):  
             print(df)
+            
+            
+# Get basic information about a task
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/info')
+@access_task_read
+def task_get_slide_info(task_id, slide_id):
+    db = get_db()
+    rc = db.execute('SELECT * FROM slide_info WHERE id = ?', (slide_id,)).fetchone()
+    d = { k:rc[k] for k in ('specimen', 'block_name', 'specimen_private', 'specimen_public', 'section', 'slide', 'stain') }
+    return json.dumps(d)  
 
 
 # Slide listing for a task - simple

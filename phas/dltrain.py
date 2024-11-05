@@ -967,6 +967,16 @@ def draw_polygon(image, verts, sx, sy, fill=None, outline=None):
     draw.polygon([(x * sx, y * sy) for (x,y) in verts], fill=fill, outline=outline)
 
 
+# Draw a sampling ROI
+def draw_sampling_roi(image, geom_data, sx, sy, fill, outline):
+    if geom_data.get('type') == 'trapezoid':
+        # Read the coordinates
+        [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
+        draw_trapezoid(image, x1, y1, x2, y2, w1, w2, sx, sy, fill=fill, outline=outline)
+    elif geom_data.get('type') == 'polygon':
+        draw_polygon(image, geom_data['data'], sx, sy, fill=fill, outline=outline)
+
+
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/sampling_roi/make_image_<int:maxdim>.nii.gz', methods=('GET',))
 @access_task_read
 def make_sampling_roi_image(task_id, slide_id, maxdim):

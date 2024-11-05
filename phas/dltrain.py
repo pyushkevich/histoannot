@@ -968,7 +968,7 @@ def draw_polygon(image, verts, sx, sy, fill=None, outline=None):
 
 
 # Draw a sampling ROI
-def draw_sampling_roi(image, geom_data, sx, sy, fill, outline):
+def draw_sampling_roi(image, geom_data, sx, sy, fill=None, outline=None):
     if geom_data.get('type') == 'trapezoid':
         # Read the coordinates
         [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']

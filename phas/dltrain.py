@@ -716,6 +716,9 @@ def compute_sampling_roi_bounding_box(geom_data):
     if geom_data.get('type') == 'trapezoid':
         # Read the coordinates
         [ [x0, y0, w0], [x1, y1, w1] ] = geom_data['data']
+        
+        # Compute the corner vertices
+        
 
         # Compute the normal vector
         nx, ny = y1 - y0, x0 - x1
@@ -726,11 +729,11 @@ def compute_sampling_roi_bounding_box(geom_data):
         xmin, ymin = x0 - w0 * nx, y0 - w0 * ny 
         xmin, ymin = min(xmin, x0 + w0 * nx), min(ymin, y0 + w0 * ny)
         xmin, ymin = min(xmin, x1 - w1 * nx), min(ymin, y1 - w1 * ny)
-        xmin, ymin = min(xmin, x1 - w1 * nx), min(ymin, y1 - w1 * ny)
+        xmin, ymin = min(xmin, x1 + w1 * nx), min(ymin, y1 + w1 * ny)
         xmax, ymax = x0 - w0 * nx, y0 - w0 * ny 
         xmax, ymax = max(xmax, x0 + w0 * nx), max(ymax, y0 + w0 * ny)
         xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
-        xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
+        xmax, ymax = max(xmax, x1 + w1 * nx), max(ymax, y1 + w1 * ny)
 
         return [xmin, ymin, xmax, ymax]
     elif geom_data.get('type') == 'polygon':

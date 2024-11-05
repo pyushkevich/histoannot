@@ -207,6 +207,8 @@ class Slide:
         self.slide_id = slide_id
         r = self.client._get('slide', task_get_slide_info, task_id = self.task_id, slide_id=self.slide_id)
         self.detail = r.json()
+        self._header = None
+        self._fullpath = None
         
     def __str__(self):
         o = StringIO()
@@ -257,9 +259,9 @@ class Slide:
     @property
     def fullpath(self):
         """Full path or URL of the slide on the server."""
-        if self.fullpath is None:
-            self.fullpath = self.client._get('dzi', dzi_slide_filepath, project=self.project, slide_id=self.slide_id).json()['remote'] 
-        return self.fullpath        
+        if self._fullpath is None:
+            self._fullpath = self.client._get('dzi', dzi_slide_filepath, project=self.project, slide_id=self.slide_id).json()['remote'] 
+        return self._fullpath        
 
     @property
     def stain(self):

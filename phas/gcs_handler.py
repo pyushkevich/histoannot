@@ -165,26 +165,29 @@ class SelfManagedMultiFilePageCache(AbstractMultiFilePageCache):
 
     def __init__(self, page_size_mb=1, cache_max_size_mb=1024, purge_size_pct=0.25):
         AbstractMultiFilePageCache.__init__(self, page_size_mb)
-        self.cache_max_size_mb = cache_max_size_mb
-        self.purge_size = int(self.cache_max_size_mb * purge_size_pct)
+        self.cache_max_size = cache_max_size_mb * 1024**2
+        self.purge_size_pct = purge_size_pct
         self.total_size = 0
 
     def set_page(self, url, pageno, data):
-        if AbstractMultiFilePageCache.set_page(self, url, pageno, data):
+        page = AbstractMultiFilePageCache.set_page(self, url, pageno, data)
+        if page:
             self.total_size += self.page_size
         
-        if self.total_size >= self.cache_max_size_mb:
+        if self.total_size >= self.cache_max_size:
             # Time has come to purge the cache. For this we need to sort
             # all the pages by access time
-            l_purge = SortedKeyList(key=lambda x:x[2].t_access)
-            for url,pp in self.cache:
-                for index,page in pp:
-                    l_purge.add((url, index, page))
+            l_purge = SortedKeyList()
+            for _, pp in self.cache.items():
+                for _, page in pp.items():
+                    l_purge.add(page.t_access)
                     
             # Purge pages to free up space
-            n_purge = min(max(1,self.purge_size // self.page_size), len(l_purge))
-            t_purge = l_purge[n_purge].t_access
-            self.purge(t_purge)
+            n_purge = min(max(1, int(len(l_purge) * self.purge_size_pct)), len(l_purge)-1)
+            if n_purge > 0:
+                self.purge(l_purge[n_purge-1])
+                
+        return page
         
 
 class MultiprocessManagedMultiFilePageCache(AbstractMultiFilePageCache):

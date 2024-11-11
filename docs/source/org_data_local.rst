@@ -6,8 +6,6 @@ Organizing Histology Data
 
 This tutorial explains how to organize locally attached histology data for using the PICSL Histology Annotation Service (PHAS). It is also possible to do organize data on the Google Cloud Storage service (see :doc:`gcs`).
 
-**THIS TUTORIAL IS OUT OF DATE**
-
 Prerequisites
 =============
 

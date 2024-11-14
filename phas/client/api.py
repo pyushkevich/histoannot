@@ -8,7 +8,7 @@ from io import StringIO
 
 from ..auth import login_with_api_key
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
-from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task
+from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
 from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath
 
 from warnings import simplefilter
@@ -104,6 +104,26 @@ class Client:
         return r.json()
 
 
+class Labelset:
+    """A representation of a labelset in PHAS.
+    
+    Args:
+        client (Client): Connection to the PHAS server
+        project (str): Project associated with the labelset
+        labelset_id (int): Numeric id of the labelset
+    """
+    
+    def __init__(self, client: Client, project:str, labelset_id:int):
+        self.client = client
+        self.project = project
+        self.labelset_id = labelset_id
+        
+    def label_listing(self):
+        r = self.client._get('dltrain', get_labelset_label_listing, 
+                             project = self.project, lset=self.labelset_id)
+        return r.json()
+
+
 class Task:
     """A representation of a task on the remote server.
     
@@ -119,6 +139,7 @@ class Task:
         r = self.client._get('slide', task_get_info, task_id = self.task_id)
         self.detail = r.json()
         self.project = self.detail['project']
+        self._labelset = None
         
     def __str__(self):
         o = StringIO()
@@ -153,9 +174,14 @@ class Task:
     
     @property
     def labelset(self):
-        """Name of labelset associated with this task (or None if task has no labelset)"""
-        r = self.client._get('dltrain', get_labelset_for_task, task_id=self.task_id)
-        return r.text()
+        """`Labelset` associated with this task (or None if task has no labelset)"""
+        if self._labelset is None:
+            r = self.client._get('dltrain', get_labelset_for_task, task_id=self.task_id)
+            lsid = r.json().get('id', None)
+            if lsid:
+                self._labelset = Labelset(self.client, self.project, r.json()['id'])
+            
+        return self._labelset
 
 
 class SamplingROITask(Task):

@@ -429,10 +429,13 @@ def get_labelset_label_listing(project, lset):
     db = get_db()
 
     rc = db.execute("""
-        select L.id, L.name, L.description, L.color, STAT.N as n_samples
+        select L.id, L.name, L.description, L.color, TSSTAT.N as n_samples, SRSTAT.N as n_sampling_rois, 
         from label L left join (select L.id,count(TS.id) as N
                                 from label L left join training_sample TS on L.id=TS.label 
-                                group by L.id) STAT on L.id=STAT.id
+                                group by L.id) TSSTAT on L.id=TSSTAT.id
+                     left join (select L.id,count(SR.id) as N
+                                from label L left join sampling_roi SR on L.id=SR.label 
+                                group by L.id) SRSTAT on L.id=SRSTAT.id
         where L.labelset=? order by L.id""", (lset,))
 
     # Return the json dump of the listing

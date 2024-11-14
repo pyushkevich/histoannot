@@ -304,7 +304,7 @@ def get_label_id_in_task(task_id, label_name):
 
 
 # Return the name of the labelset in a task
-@bp.route('/api/task/<int:task_id>/labelset'):
+@bp.route('/api/task/<int:task_id>/labelset')
 def get_labelset_for_task(task_id):
     _,task = get_task_data(task_id)
     if task['mode'] in ('sampling', 'dltrain'):

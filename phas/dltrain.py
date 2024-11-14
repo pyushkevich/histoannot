@@ -306,11 +306,14 @@ def get_label_id_in_task(task_id, label_name):
 # Return the name of the labelset in a task
 @bp.route('/api/task/<int:task_id>/labelset')
 def get_labelset_for_task(task_id):
-    _,task = get_task_data(task_id)
+    db=get_db()
+    project,task = get_task_data(task_id)
+    labelset, lsid = None, None
     if task['mode'] in ('sampling', 'dltrain'):
-        return task.get(task['mode'], dict()).get('labelset', None)
-    else:
-        return None
+        labelset = task[task['mode']]['labelset']
+        lsid = db.execute('SELECT id FROM labelset_info WHERE name=? AND project=?',
+                          (labelset, project)).fetchone()['id']
+    return json.dumps({'name': labelset, 'id': lsid})
 
 
 @bp.route('/dltrain/<project>/add_labelset', methods=('POST',))

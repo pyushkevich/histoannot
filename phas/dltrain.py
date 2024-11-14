@@ -59,8 +59,10 @@ bp = Blueprint('dltrain', __name__)
 
 # Index
 
-# Get a table of labels in a labelset with counts for the current task/slide
 # TODO: labelsets are not exclusive to dltrain, so this should reside in its own py file
+
+
+# Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table/json', methods=('GET',))
 @access_task_read
 def get_labelset_labels_table_json(task_id, slide_id):
@@ -299,6 +301,16 @@ def get_label_id_in_task(task_id, label_name):
     label_id = db.execute('SELECT id FROM label WHERE name=? AND labelset=?', (label_name, ls_id)).fetchone()['id'];
 
     return label_id
+
+
+# Return the name of the labelset in a task
+@bp.route('/api/task/<int:task_id>/labelset'):
+def get_labelset_for_task(task_id):
+    _,task = get_task_data(task_id)
+    if task['mode'] in ('sampling', 'dltrain'):
+        return task.get(task['mode'], dict()).get('labelset', None)
+    else:
+        return None
 
 
 @bp.route('/dltrain/<project>/add_labelset', methods=('POST',))

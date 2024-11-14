@@ -432,7 +432,7 @@ def get_labelset_label_listing(project, lset):
     db = get_db()
 
     rc = db.execute("""
-        select L.id, L.name, L.description, L.color, TSSTAT.N as n_samples, SRSTAT.N as n_sampling_rois, 
+        select L.id, L.name, L.description, L.color, TSSTAT.N as n_samples, SRSTAT.N as n_sampling_rois
         from label L left join (select L.id,count(TS.id) as N
                                 from label L left join training_sample TS on L.id=TS.label 
                                 group by L.id) TSSTAT on L.id=TSSTAT.id

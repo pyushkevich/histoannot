@@ -6,9 +6,13 @@ import pandas as pd
 from urllib.parse import urlparse
 from io import StringIO
 
+from ..auth import login_with_api_key
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
-from ..dltrain import get_sampling_rois, make_sampling_roi_image
+from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
 from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath
+
+from warnings import simplefilter
+from urllib3.exceptions import InsecureRequestWarning
 
 class Client:
     """A connection to a remote PHAS server. 
@@ -43,17 +47,14 @@ class Client:
             api_key = api_key if api_key is not None else os.environ.get('PHAS_AUTH_KEY', None)
             with open(api_key, 'rt') as fk:
                 d = json.load(fk)
-                self.api_key_token = d['api_key']
+                api_key_token = d['api_key']
         except:
             print(f'Failed to load API key from {api_key}' if api_key is not None else f'API key was not provided')
             raise
         
-        # Compute the authentication URL
-        auth = self.flask.url_for('auth.login_with_api_key')
-        
         # Connect to the server with the API key
-        r = requests.post(auth, {'api_key': self.api_key_token}, verify=self.verify)
-        r.raise_for_status()
+        self.jar = None
+        r = self._post('auth', login_with_api_key, {'api_key': api_key_token})
         self.jar = r.cookies
         
     def __str__(self) -> str:
@@ -65,7 +66,17 @@ class Client:
     
     def _get(self, blueprint, endpoint, params=None, **kwargs):
         url = self.flask.url_for(f'{blueprint}.{endpoint.__name__}', **kwargs)
+        simplefilter('ignore', InsecureRequestWarning)
         r = requests.get(url, cookies=self.jar, params=params, verify=self.verify)
+        simplefilter('default', InsecureRequestWarning)
+        r.raise_for_status()
+        return r
+    
+    def _post(self, blueprint, endpoint, data=None, **kwargs):
+        url = self.flask.url_for(f'{blueprint}.{endpoint.__name__}', **kwargs)
+        simplefilter('ignore', InsecureRequestWarning)
+        r = requests.post(url, cookies=self.jar, data=data, verify=self.verify)
+        simplefilter('default', InsecureRequestWarning)
         r.raise_for_status()
         return r
                
@@ -93,6 +104,26 @@ class Client:
         return r.json()
 
 
+class Labelset:
+    """A representation of a labelset in PHAS.
+    
+    Args:
+        client (Client): Connection to the PHAS server
+        project (str): Project associated with the labelset
+        labelset_id (int): Numeric id of the labelset
+    """
+    
+    def __init__(self, client: Client, project:str, labelset_id:int):
+        self.client = client
+        self.project = project
+        self.labelset_id = labelset_id
+        
+    def label_listing(self):
+        r = self.client._get('dltrain', get_labelset_label_listing, 
+                             project = self.project, lset=self.labelset_id)
+        return r.json()
+
+
 class Task:
     """A representation of a task on the remote server.
     
@@ -108,6 +139,7 @@ class Task:
         r = self.client._get('slide', task_get_info, task_id = self.task_id)
         self.detail = r.json()
         self.project = self.detail['project']
+        self._labelset = None
         
     def __str__(self):
         o = StringIO()
@@ -139,6 +171,17 @@ class Task:
         
         # This is a bit lame to convert to pandas and back to dict, but best for API consistency
         return pd.read_csv(io).to_dict()
+    
+    @property
+    def labelset(self):
+        """`Labelset` associated with this task (or None if task has no labelset)"""
+        if self._labelset is None:
+            r = self.client._get('dltrain', get_labelset_for_task, task_id=self.task_id)
+            lsid = r.json().get('id', None)
+            if lsid:
+                self._labelset = Labelset(self.client, self.project, r.json()['id'])
+            
+        return self._labelset
 
 
 class SamplingROITask(Task):

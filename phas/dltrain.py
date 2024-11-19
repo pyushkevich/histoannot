@@ -59,8 +59,10 @@ bp = Blueprint('dltrain', __name__)
 
 # Index
 
-# Get a table of labels in a labelset with counts for the current task/slide
 # TODO: labelsets are not exclusive to dltrain, so this should reside in its own py file
+
+
+# Get a table of labels in a labelset with counts for the current task/slide
 @bp.route('/dltrain/task/<int:task_id>/slide/<int:slide_id>/labelset/table/json', methods=('GET',))
 @access_task_read
 def get_labelset_labels_table_json(task_id, slide_id):
@@ -301,6 +303,19 @@ def get_label_id_in_task(task_id, label_name):
     return label_id
 
 
+# Return the name of the labelset in a task
+@bp.route('/api/task/<int:task_id>/labelset')
+def get_labelset_for_task(task_id):
+    db=get_db()
+    project,task = get_task_data(task_id)
+    labelset, lsid = None, None
+    if task['mode'] in ('sampling', 'dltrain'):
+        labelset = task[task['mode']]['labelset']
+        lsid = db.execute('SELECT id FROM labelset_info WHERE name=? AND project=?',
+                          (labelset, project)).fetchone()['id']
+    return json.dumps({'name': labelset, 'id': lsid})
+
+
 @bp.route('/dltrain/<project>/add_labelset', methods=('POST',))
 @access_project_write
 def add_labelset(project):
@@ -417,10 +432,13 @@ def get_labelset_label_listing(project, lset):
     db = get_db()
 
     rc = db.execute("""
-        select L.id, L.name, L.description, L.color, STAT.N as n_samples
+        select L.id, L.name, L.description, L.color, TSSTAT.N as n_samples, SRSTAT.N as n_sampling_rois
         from label L left join (select L.id,count(TS.id) as N
                                 from label L left join training_sample TS on L.id=TS.label 
-                                group by L.id) STAT on L.id=STAT.id
+                                group by L.id) TSSTAT on L.id=TSSTAT.id
+                     left join (select L.id,count(SR.id) as N
+                                from label L left join sampling_roi SR on L.id=SR.label 
+                                group by L.id) SRSTAT on L.id=SRSTAT.id
         where L.labelset=? order by L.id""", (lset,))
 
     # Return the json dump of the listing
@@ -716,6 +734,9 @@ def compute_sampling_roi_bounding_box(geom_data):
     if geom_data.get('type') == 'trapezoid':
         # Read the coordinates
         [ [x0, y0, w0], [x1, y1, w1] ] = geom_data['data']
+        
+        # Compute the corner vertices
+        
 
         # Compute the normal vector
         nx, ny = y1 - y0, x0 - x1
@@ -726,11 +747,11 @@ def compute_sampling_roi_bounding_box(geom_data):
         xmin, ymin = x0 - w0 * nx, y0 - w0 * ny 
         xmin, ymin = min(xmin, x0 + w0 * nx), min(ymin, y0 + w0 * ny)
         xmin, ymin = min(xmin, x1 - w1 * nx), min(ymin, y1 - w1 * ny)
-        xmin, ymin = min(xmin, x1 - w1 * nx), min(ymin, y1 - w1 * ny)
+        xmin, ymin = min(xmin, x1 + w1 * nx), min(ymin, y1 + w1 * ny)
         xmax, ymax = x0 - w0 * nx, y0 - w0 * ny 
         xmax, ymax = max(xmax, x0 + w0 * nx), max(ymax, y0 + w0 * ny)
         xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
-        xmax, ymax = max(xmax, x1 - w1 * nx), max(ymax, y1 - w1 * ny)
+        xmax, ymax = max(xmax, x1 + w1 * nx), max(ymax, y1 + w1 * ny)
 
         return [xmin, ymin, xmax, ymax]
     elif geom_data.get('type') == 'polygon':

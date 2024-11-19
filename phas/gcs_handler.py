@@ -89,8 +89,6 @@ class GCSHandler:
 
         # Perform the download
         blob = self._get_blob(uri)
-        if uri.endswith('.tif') or uri.endswith('.tiff'):
-            raise Exception('No TIFF DL')
         with open(local_file, "wb") as file_obj:
             worker = threading.Thread(target=self.get_client().download_blob_to_file, args=(blob, file_obj))
             worker.start()

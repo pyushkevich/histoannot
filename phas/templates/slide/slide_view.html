@@ -1124,6 +1124,9 @@ $(document).ready(function()
                         overlay_layer.importJSON(JSON.stringify(d_proj[0]));
                         overlay_layer.children.forEach(function(item, index) {
                             item.selected = false;
+                            // Remove stray paths that cause layer to not display
+                            if(!(item.length > 0))
+                                item.remove();
                         });
                         adjust_paperjs_scaling(get_image_zoomlevel());
                         adjust_paperjs_text_rotation();

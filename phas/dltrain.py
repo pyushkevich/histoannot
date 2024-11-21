@@ -844,7 +844,7 @@ def affine_transform_roi(geom_data, M):
     
     # Extract matrix components
     (A,b) = (M[0:2,0:2], M[0:2,2])
-    fn_transform = lambda x,y : (np.dot(A, np.array((x,y))) + b).tolist()
+    fn_transform = lambda pos : (np.dot(A, np.array(pos)) + b).tolist()
     return spatial_transform_roi(geom_data, fn_transform)
         
 

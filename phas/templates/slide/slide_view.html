@@ -850,7 +850,7 @@ $(document).ready(function()
             $.ajax({
                 url: "{{url_tmpl_download_header}}".replace("XXXXX", "{{resolution}}"),
                 success: function(resp_text) {
-                    callback({data: parseJSONDictionary(JSON.parse(resp_text))['properties']});
+                    callback({data: parseJSONDictionary(JSON.parse(resp_text)['properties'])});
                 }
             });
         },
@@ -1122,12 +1122,16 @@ $(document).ready(function()
                         let overlay_layer = paper.project.layers.find(l => l.name === 'annot_overlay');
                         overlay_layer.removeChildren();
                         overlay_layer.importJSON(JSON.stringify(d_proj[0]));
+                        let bad_items = [];
                         overlay_layer.children.forEach(function(item, index) {
                             item.selected = false;
                             // Remove stray paths that cause layer to not display
-                            if(!(item.length > 0))
-                                item.remove();
+                            console.log(item._class, item.length);
+                            if(item._class == 'Path' && !(item.length > 0)) {
+                                bad_items.push(item);
+                            }
                         });
+                        bad_items.forEach(function(item, index) { item.remove(); });
                         adjust_paperjs_scaling(get_image_zoomlevel());
                         adjust_paperjs_text_rotation();
                     }

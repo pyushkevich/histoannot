@@ -815,10 +815,10 @@ def spatial_transform_roi(geom_data, fn_transform):
         u,v = math.cos(angle + math.pi / 2), math.sin(angle + math.pi / 2)
 
         # Calculate the four corners of the trapezoid and transform them
-        x3, y3 = fn_transform(x1 + w1 * u, y1 + w1 * v)
-        x4, y4 = fn_transform(x1 - w1 * u, y1 - w1 * v)
-        x5, y5 = fn_transform(x2 + w2 * u, y2 + w2 * v)
-        x6, y6 = fn_transform(x2 - w2 * u, y2 - w2 * v)
+        x3, y3 = fn_transform((x1 + w1 * u, y1 + w1 * v))
+        x4, y4 = fn_transform((x1 - w1 * u, y1 - w1 * v))
+        x5, y5 = fn_transform((x2 + w2 * u, y2 + w2 * v))
+        x6, y6 = fn_transform((x2 - w2 * u, y2 - w2 * v))
         
         # Compute the new center points
         x1_t, y1_t = (x4 + x3) / 2., (y4 + y3) / 2. 

@@ -4,12 +4,14 @@ import requests
 import json
 import pandas as pd
 from urllib.parse import urlparse
-from io import StringIO
+from io import StringIO, BytesIO
+from PIL import Image
 
 from ..auth import login_with_api_key
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
 from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
-from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath
+from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice
+from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath, get_patch_endpoint
 
 from warnings import simplefilter
 from urllib3.exceptions import InsecureRequestWarning
@@ -72,10 +74,10 @@ class Client:
         r.raise_for_status()
         return r
     
-    def _post(self, blueprint, endpoint, data=None, **kwargs):
+    def _post(self, blueprint, endpoint, data=None, json=None, **kwargs):
         url = self.flask.url_for(f'{blueprint}.{endpoint.__name__}', **kwargs)
         simplefilter('ignore', InsecureRequestWarning)
-        r = requests.post(url, cookies=self.jar, data=data, verify=self.verify)
+        r = requests.post(url, cookies=self.jar, data=data, json=json, verify=self.verify)
         simplefilter('default', InsecureRequestWarning)
         r.raise_for_status()
         return r
@@ -212,6 +214,36 @@ class SamplingROITask(Task):
                              mode='raw', resolution='raw')
         return r.json()
     
+    def create_sampling_roi(self, slide_id:int, label_id:int, geom_data: dict):
+        """Create a new sampling ROI on a slide.
+        
+        Args:
+            slide_id(int): Slide ID
+            label_id(int): Label to assign to the new sampling ROI
+            geom_data(dict): A dict describing the sampling ROI geometry, see `dltrain.sampling_roi_schema`
+            
+        Returns:
+            id of the newly created ROI
+        """
+        r = self.client._post('dltrain', create_sampling_roi, 
+                              task_id=self.task_id, slide_id=slide_id,
+                              mode='raw', resolution='raw',
+                              json={'label_id': label_id, 'geometry': geom_data})
+        return r.json()['id']
+    
+    def delete_sampling_rois_on_slide(self, slide_id:int):
+        """Delete all the sampling ROIs on a slide.
+
+        Args:
+            slide_id(int): Slide ID
+        
+        Returns:
+            True if request was successful
+        """
+        r = self.client._get('dltrain', sampling_roi_delete_on_slice, 
+                              task_id=self.task_id, slide_id=slide_id)
+        return r.text == "success"
+                                  
     def slide_sampling_roi_nifti_image(self, slide_id:int, filename:str=None, max_dim:int=1000):
         """Generate a NIFTI image of the sampling ROIs on a slide.
         
@@ -283,6 +315,21 @@ class Slide:
         else:
             return r.content
         
+    def get_patch(self, center, level, size):
+        """Read a region from the slide.
+        
+        Args:
+            center: Tuple of int indicating the center of the patch in full-resolution pixel units
+            level: Downsample level from which to retrieve the region.
+            size: Size of the image to retrieve.
+        Returns:
+            PIL Image containing the requested region
+        """
+        r = self.client._get('dzi', get_patch_endpoint, 
+                             project=self.project, slide_id=self.slide_id, resource='raw',
+                             level=level, ctrx=center[0], ctry=center[1], w=size[0], h=size[1], format='png')
+        return Image.open(BytesIO(r.content))
+        
     def _get_header(self):        
         if self._header is None:
             self._header = self.client._get('dzi', dzi_slide_dimensions, project=self.project, slide_id=self.slide_id).json()
@@ -297,6 +344,21 @@ class Slide:
     def spacing(self):
         """Slide pixel spacing in millimeters."""
         return self._get_header()['spacing']
+    
+    @property
+    def level_dimensions(self):
+        """Slide pixel spacing in millimeters."""
+        return self._get_header()['level_dimensions']
+    
+    @property
+    def level_downsamples(self):
+        """Slide pixel spacing in millimeters."""
+        return self._get_header()['level_downsamples']
+    
+    @property
+    def properties(self):
+        """Slide pixel spacing in millimeters."""
+        return self._get_header()['properties']
     
     # TODO: need to implement fine-grained permissions
     @property

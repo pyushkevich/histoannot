@@ -799,34 +799,53 @@ def create_sampling_roi_base(task_id, slide_id, label_id, geom_data, osl_level=0
     return json.dumps({ 'id' : roi_id })
 
 
-# Apply affine transform to sampling ROI payload
-def affine_transform_roi(geom_data, M):
+# Apply arbitrary transform (lambda function) to sampling ROI
+def spatial_transform_roi(geom_data, fn_transform):
     
-    # Extract matrix components
-    (A,b) = (M[0:2,0:2], M[0:2,2])
-    scale = np.sqrt(np.linalg.det(A))
-
     # Load the JSON
     if geom_data.get('type') == 'trapezoid':
         
         # Read the coordinates
         [ [x1, y1, w1], [x2, y2, w2] ] = geom_data['data']
         
-        # Transform the endpoints
-        p1, p2 = np.array([x1, y1]), np.array([x2, y2])
-        q1, q2 = np.dot(A, p1) + b, np.dot(A, p2) + b
+        # Calculate the angle and the distance between the midpoints
+        angle = math.atan2(y2 - y1, x2 - x1)
+
+        # Calculate the base direction
+        u,v = math.cos(angle + math.pi / 2), math.sin(angle + math.pi / 2)
+
+        # Calculate the four corners of the trapezoid and transform them
+        x3, y3 = fn_transform(x1 + w1 * u, y1 + w1 * v)
+        x4, y4 = fn_transform(x1 - w1 * u, y1 - w1 * v)
+        x5, y5 = fn_transform(x2 + w2 * u, y2 + w2 * v)
+        x6, y6 = fn_transform(x2 - w2 * u, y2 - w2 * v)
+        
+        # Compute the new center points
+        x1_t, y1_t = (x4 + x3) / 2., (y4 + y3) / 2. 
+        x2_t, y2_t = (x6 + x5) / 2., (y6 + y5) / 2.
+        
+        # Compute the new base widths
+        w1_t = math.sqrt((x4-x3)**2+(y4-y3)**2) / 2.
+        w2_t = math.sqrt((x6-x5)**2+(y6-y5)**2) / 2.
         
         # Recompute the widths using the determinant
-        geom_data['data'] = [ [ q1[0], q1[1], w1 * scale ], [ q2[0], q2[1], w2 * scale ] ]
+        geom_data['data'] = [ [ x1_t, y1_t, w1_t ], [ x2_t, y2_t, w2_t ] ]
         
     elif geom_data.get('type') == 'polygon':
         
         # Transform each vertex
-        p = [ np.array(v) for v in geom_data['data'] ]
-        q = [ np.dot(A, v) + b for v in p ]
-        geom_data['data'] = [ [v[0], v[1]] for v in q ]
+        geom_data['data'] = [ fn_transform(v) for v in geom_data['data'] ]
         
     return geom_data
+
+
+# Apply affine transform to sampling ROI payload
+def affine_transform_roi(geom_data, M):
+    
+    # Extract matrix components
+    (A,b) = (M[0:2,0:2], M[0:2,2])
+    fn_transform = lambda x,y : (np.dot(A, np.array((x,y))) + b).tolist()
+    return spatial_transform_roi(geom_data, fn_transform)
         
 
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/dltrain/sampling_roi/create', methods=('POST',))
@@ -1544,7 +1563,7 @@ def samples_random_from_annot_cmd(
 @click.argument('task', type=click.INT)
 @click.argument('slide_id', type=click.INT)
 @with_appcontext
-def sampling_roi_delete_on_slice(task, slide_id):
+def sampling_roi_delete_on_slice_cmd(task, slide_id):
     """Delete all the sampling ROIs on a selected slide."""
     do_delete_sampling_rois_on_slide(task, slide_id)
 
@@ -1652,5 +1671,5 @@ def init_app(app):
     app.cli.add_command(samples_delete_cmd)
     app.cli.add_command(samples_fix_patches_cmd)
     app.cli.add_command(samples_random_from_annot_cmd)
-    app.cli.add_command(sampling_roi_delete_on_slice)
+    app.cli.add_command(sampling_roi_delete_on_slice_cmd)
     app.cli.add_command(sampling_roi_export_csv_command)

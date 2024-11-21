@@ -30,8 +30,8 @@ import psutil
 
 from random import randint
 
-from openslide import OpenSlide
-from openslide.deepzoom import DeepZoomGenerator
+# from openslide import OpenSlide
+# from openslide.deepzoom import DeepZoomGenerator
 from .slideref import SlideRef,get_slide_ref
 from .project_ref import ProjectRef
 from .auth import access_project_read, access_project_admin
@@ -145,6 +145,7 @@ def dzi_slide_filepath(project, slide_id):
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
 @access_project_read
 def dzi(mode, project, slide_id, resource):
+    from openslide.deepzoom import DeepZoomGenerator
 
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
@@ -155,7 +156,6 @@ def dzi(mode, project, slide_id, resource):
     A = get_affine_matrix(sr, mode, resource, 'image')
 
     # Load the slide
-    # osa = AffineTransformedOpenSlide(tiff_file, A)
     osa = get_osl(slide_id, sr, resource)
     dz = DeepZoomGenerator(osa)
     dz.filename = os.path.basename(tiff_file)
@@ -293,6 +293,7 @@ def tile_db(mode, project, slide_id, resource, level, col, row, format):
     #else:
     #    os = OpenSlide(tiff_file)
 
+    from openslide.deepzoom import DeepZoomGenerator
     dz = DeepZoomGenerator(os)
     tile = dz.get_tile(level, (col, row))
 
@@ -339,10 +340,6 @@ def get_random_patch(project, slide_id, resource, level, w, format):
     # Get the raw SVS/tiff file for the slide (the resource should exist,
     # or else we will spend a minute here waiting with no response to user)
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-    tiff_file = sr.get_local_copy(resource)
-
-    # Read the region centered on the box of size 512x512
-    # os = OpenSlide(tiff_file)
     os = get_osl(slide_id, sr, resource)
 
     # Work out the offset
@@ -413,26 +410,17 @@ def dzi_download_macro_image(project, slide_id):
 def dzi_download_header(project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-
-    # os = OpenSlide(tiff_file)
+    _, sr = dzi_get_project_and_slide_ref(project, slide_id)
     os = get_osl(slide_id, sr, resource)
-    prop_dict = { k:v for k,v in os.properties.items() }
-    return json.dumps(prop_dict), 200, {'ContentType':'application/json'}
-
-
-class OpenSlidePickleableWrapper(OpenSlide):
     
-    def __init__(self, filename):
-        OpenSlide.__init__(self, filename)
-        
-    @property
-    def properties(self):
-        return dict({k:v for (k,v) in OpenSlide.properties.fget(self).items()})
-
-    @property
-    def associated_images(self):
-        return dict({k:v for (k,v) in OpenSlide.associated_images.fget(self).items()})
+    # Collect relevant properties
+    prop_dict = {
+        'properties': { k:v for k,v in os.properties.items() },
+        'level_dimensions': os.level_dimensions, 
+        'level_downsamples': os.level_downsamples 
+    }
+    
+    return json.dumps(prop_dict), 200, {'ContentType':'application/json'}
 
 
 class OpenSlideThinInterface:
@@ -542,6 +530,21 @@ class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
     client.
     """
     def handle(self):
+
+        from openslide import OpenSlide
+        class OpenSlidePickleableWrapper(OpenSlide):
+            
+            def __init__(self, filename):
+                OpenSlide.__init__(self, filename)
+                
+            @property
+            def properties(self):
+                return dict({k:v for (k,v) in OpenSlide.properties.fget(self).items()})
+
+            @property
+            def associated_images(self):
+                return dict({k:v for (k,v) in OpenSlide.associated_images.fget(self).items()})
+
         # Block to receive request
         self.data = pickle.loads(self.request.recv(4096))
         

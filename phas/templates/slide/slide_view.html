@@ -850,7 +850,7 @@ $(document).ready(function()
             $.ajax({
                 url: "{{url_tmpl_download_header}}".replace("XXXXX", "{{resolution}}"),
                 success: function(resp_text) {
-                    callback({data: parseJSONDictionary(JSON.parse(resp_text))});
+                    callback({data: parseJSONDictionary(JSON.parse(resp_text))['properties']});
                 }
             });
         },

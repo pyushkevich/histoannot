@@ -10,7 +10,7 @@ from PIL import Image
 from ..auth import login_with_api_key
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
 from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
-from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice
+from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice, get_samples, get_sample_png
 from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath, get_patch_endpoint
 
 from warnings import simplefilter
@@ -265,6 +265,44 @@ class SamplingROITask(Task):
             return r.content
         
         
+class DLTrainingTask(Task):
+    """A representation of a classifier training task on the remote server.
+    
+    Args:
+        client (Client): Connection to the PHAS server
+        task_id (int): Numerical id of the task    
+    """
+    
+    def __init__(self, client:Client, task_id:int):
+        Task.__init__(self, client, task_id)
+        if self.detail["mode"] != 'dltrain':
+            raise ValueError(f'DLTrainingTask cannot be used for task of mode {self.detail["mode"]}')
+        
+    def slide_training_samples(self, slide_id:int):
+        """Get all the training samples available on a slide.
+
+        Args:
+            slide_id(int): Slide ID
+        
+        Returns:
+            A ``dict`` containing the training samples
+        """
+        r = self.client._get('dltrain', get_samples, 
+                             task_id=self.task_id, slide_id=slide_id)
+        return r.json()
+    
+    def get_sample_image(self, sample_id:int):
+        """Download a PNG for a sample.
+        
+        Args:
+            sample_id(id): ID of the sample
+        Returns:
+            PIL Image containing the requested region
+        """
+        r = self.client._get('dltrain', get_sample_png, id=sample_id)
+        return Image.open(BytesIO(r.content))
+        
+                
 class Slide:
     """A representation of a slide on the remote server.
     

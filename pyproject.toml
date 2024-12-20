@@ -1,6 +1,6 @@
 [project]
 name = "phas"
-version = "0.98.6"
+version = "0.98.7"
 authors = [
   { name="Paul Yushkevich", email="pyushkevich@gmail.com" },
 ]
@@ -42,3 +42,4 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
+packages = ["phas", "phas.client"]

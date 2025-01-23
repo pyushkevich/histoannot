@@ -10,7 +10,7 @@ from PIL import Image
 from ..auth import login_with_api_key
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
 from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
-from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice, compute_sampling_roi_bounding_box, draw_sampling_roi, 
+from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice, compute_sampling_roi_bounding_box, draw_sampling_roi
 from ..dltrain import spatial_transform_roi, get_samples, get_sample_png
 from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath, get_patch_endpoint
 

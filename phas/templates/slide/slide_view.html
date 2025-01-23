@@ -222,6 +222,17 @@
         transform: translateY(-50%);
     }
 
+    #hovertooltip {
+        position: absolute;
+        background-color: rgba(0.6, 0.6, 0.6, 0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 5px;
+        pointer-events: none;
+        display: none;
+        left: 400px;
+        top: 400px;
+    }
 
 </style>
 
@@ -522,6 +533,8 @@
 {% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
 <button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
 {% endif %}
+
+<div id="hovertooltip">Hover text goes here</div>
 
 <script type="text/javascript">
 $(document).ready(function()
@@ -1144,6 +1157,36 @@ $(document).ready(function()
         overlay_layer.removeChildren();
     }
 
+    // A class to handle a hovering tooltip
+    class HoverTooltip {
+
+        // Tooltip object
+        tooltip = $('#hovertooltip');
+
+        // Show the tooltip with text at the cursor position
+        show(event, text) {
+            this.tooltip.text(text).show();
+            this.update_position(event);
+        }
+
+        // Update the position of the tooltip to follow the cursor
+        update_position(event) {
+            const offsetX = 10;
+            const offsetY = 10;
+            this.tooltip.parent().css({position: 'relative'});
+            this.tooltip.css({
+                top: event.position.y + offsetY + 'px',
+                left: event.position.x + offsetX + 'px',
+                position: 'absolute'
+            });
+        }
+
+        // Hide the tooltip
+        hide() {
+            this.tooltip.hide();
+        }
+    };
+
     // A class dealing with keeping track of training patches
     function SampleAPI() {
 
@@ -1392,6 +1435,9 @@ $(document).ready(function()
         c.setBlue(Math.min(b + delta, 1.0));
         return c;
     }
+
+    // Tooltip that chases the mouse
+    let hover_tooltip = new HoverTooltip();
 
     class SamplingObject {
 
@@ -1829,12 +1875,17 @@ $(document).ready(function()
         }
 
         // Select a trapezoid
-        on_hover(path_obj) {
+        on_hover(event, path_obj) {
             let hover_id = path_obj ? path_obj.data.id : undefined;
             let changes_made = false;
+            if(!path_obj) {
+                hover_tooltip.hide();
+            }
             this.roimap.forEach((T, key, map) => {
-                if(T.id === hover_id) 
+                if(T.id === hover_id) {
                     changes_made |= T.set_highlighted(true);
+                    hover_tooltip.show(event, 'Sampling ROI ' + T.id);
+                }
                 else
                     changes_made |= T.set_highlighted(false);
             });
@@ -2370,7 +2421,7 @@ $(document).ready(function()
             let hit = my_hit_test(ev_point(event));
             if(seg_mode === 'sampling') {
                 // Reset the opacity of every item
-                let need_redraw = sroi_api.on_hover(hit ? hit.item : undefined);
+                let need_redraw = sroi_api.on_hover(event, hit ? hit.item : undefined);
                 if(need_redraw)
                     paper.view.draw();
             }

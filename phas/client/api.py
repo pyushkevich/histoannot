@@ -548,6 +548,24 @@ class SamplingROIPatchExtractor:
 
         # Return the two images
         return patch, mask_canvas_padded
+    
+    def tile_patch_origin(self, tile_index):
+        """
+        Compute the origin (per ITK) of the patch returned by `get_tile_patch_and_mask`
+        
+        Args:
+            tile_index (tuple): Index of the tile, must be one of the rows of the array returned by `tiles()`
+
+        Returns:
+            `np.array` of size 2 containing the coordinate of the center of the (0,0) pixel in the patch returned
+            by `get_tile_patch_and_mask`. This can be used, together with `Slide.spacing` to set the header of
+            the patch image relative to the overall slide image.    
+        """
+        spacing = np.array(self.slide.spacing)
+        patch_xy = np.array((self.tx, self.ty)) + np.array(tile_index) * self.tile_size - self.padding
+        origin = spacing * (patch_xy + 0.5)
+        return origin
+        
 
     def tile_mask_density(self):
         """

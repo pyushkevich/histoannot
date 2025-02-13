@@ -19,7 +19,6 @@ PICSL Histology Annotation Server
 <div class="pure-g">
   <div class="pure-u-1 pure-u-md-7-24">
     <h3 align="center">{{disp_name}} Label Sets</h3>
-    <button class="pure-button pure-button-primary topbutton" id="lsnew_button">New LabelSet</button>
     <div id="d_labelset_table">
       <table id="labelset" class="compact stripe hover" style="width:100%">
         <thead>
@@ -33,17 +32,15 @@ PICSL Histology Annotation Server
         <tbody>
         </tbody>
       </table>
+      <div style="justify-content: center; display: flex;">
+        <button class="pure-button pure-button-primary topbutton" id="lsnew_button">New LabelSet</button>
+      </div>
     </div>
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
   <div class="pure-u-1 pure-u-md-7-24" id="d_labels_table" style="display:none;">
-    <div style="display: flex; justify-content: center; position: relative;">
-      <h3 style="text-align: center;">Labels</h3>
-      <form method="post" id="form_lnew">
-        <button type="submit" class="pure-button pure-button-primary" id="lnew_button" class="topbutton">New Label</button>
-      </form>
-    </div>
+    <h3 style="text-align: center;">Labels</h3>
     <table id="labels" class="compact stripe hover" style="width:100%">
       <thead>
       <tr>
@@ -57,6 +54,9 @@ PICSL Histology Annotation Server
       <tbody>
       </tbody>
     </table>
+    <div style="justify-content: center; display: flex;">
+      <button class="pure-button pure-button-primary topbutton" id="lnew_button">New Label</button>
+    </div>
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
@@ -80,11 +80,13 @@ PICSL Histology Annotation Server
   </div>
 </div>
 
-<div id="labelset-form" title="Create New Label Set">
-  <form>
+<div id="dlg-new-labelset" title="Create New Label Set">
+  <form id="labelset-form" class="pure-form pure-form-stacked">
     <fieldset>
       <label for="name">Name</label>
-      <input type="text" name="name" id="new-labelset-name" value="New LabelSet" class="text ui-widget-content ui-corner-all">
+      <input type="text" name="name" id="new-labelset-name" value="" class="text ui-widget-content ui-corner-all">
+      <label for="desc">Description</label>
+      <input type="text" name="desc" id="new-labelset-desc" value="" class="text ui-widget-content ui-corner-all">
 
       <!-- Allow form submission with keyboard without duplicating the dialog button -->
       <input type="submit" tabindex="-1" style="position:absolute; top:-1000px">
@@ -246,10 +248,9 @@ PICSL Histology Annotation Server
       return false;
     });
 
-    var dlg_lsnew = $( "#labelset-form" ).dialog({
+    var dlg_lsnew = $( "#dlg-new-labelset" ).dialog({
       autoOpen: false,
-      height: 200,
-      width: 350,
+      autoResize: true,
       modal: true,
       buttons: {
         "Create LabelSet": function() {
@@ -260,6 +261,7 @@ PICSL Histology Annotation Server
                   function(result) {
                     selected_labelset = JSON.parse(result).id;
                     fn_reload_labelsets();
+		    dlg_lsnew.dialog( "close" );
                   });
         },
         Cancel: function() {
@@ -273,10 +275,9 @@ PICSL Histology Annotation Server
       return false;
     });
 
-    $('#form_lnew').on('submit', function() {
+    $('#lnew_button').on('click', function() {
       $.post(
               url_label_new.replace('999999',selected_labelset),
-              $('#lnew_form').serialize(),
               function(result) {
                 selected_label = JSON.parse(result).id;
                 fn_reload_labels();

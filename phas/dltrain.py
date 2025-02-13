@@ -322,11 +322,13 @@ def add_labelset(project):
 
     # Read form
     print(request.form)
+
     ls_name = request.form['name']
     ls_desc = request.form.get('desc', None)
-    print('Hello world')
+    print(f'Adding labelset {ls_name} with description {ls_desc} to project {project}')
 
     # Create a new labelset
+    db=get_db()
     lsid = db.execute('INSERT INTO labelset(name,description) VALUES (?,?)',
                       (ls_name, ls_desc)).lastrowid
 
@@ -334,6 +336,7 @@ def add_labelset(project):
     db.execute('INSERT INTO project_labelset(project,labelset_name,labelset_id) VALUES(?,?,?)',
                (project,ls_name,lsid))
 
+    db.commit()
     return json.dumps({"id": lsid})
 
 

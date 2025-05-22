@@ -1380,10 +1380,8 @@ def delete_samples(
          ('t_create < ?', time.mktime(older.timetuple()) if older is not None else None)]
 
     # Filter out the missing entries
-    w = filter(lambda a,b: b is not None, w)
-
-    # Get the pieces 
-    (w_sql,w_prm) = zip(*w)
+    w_sql = [x[0] for x in w if x[1] is not None]
+    w_prm = [x[1] for x in w if x[1] is not None]
 
     # List the ids we would select
     rc=db.execute('SELECT * FROM %s WHERE %s' % (viewname,' AND '.join(w_sql)), w_prm)
@@ -1392,7 +1390,7 @@ def delete_samples(
         print('No entries can be deleted')
         return
 
-    ids = zip(*result)[0]
+    ids = [ x[0] for x in result ]
 
     # Prompt for confirmation
     if not yes:
@@ -1578,7 +1576,7 @@ def sampling_roi_generate_csv(task, fout,
     pr = ProjectRef(project)
 
     # Select keys to export
-    keys = ('slide_name', 'label_name', 'x0', 'x1', 'y0', 'y1')
+    keys = ('slide_name', 'slide', 'label_name', 'x0', 'x1', 'y0', 'y1')
     if list_metadata:
         keys = keys + ('t_create', 'creator', 't_edit', 'editor')
     if list_block:

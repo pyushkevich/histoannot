@@ -12,7 +12,7 @@ from ..slide import project_listing, task_listing, get_slide_detailed_manifest, 
 from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
 from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice, compute_sampling_roi_bounding_box, draw_sampling_roi
 from ..dltrain import spatial_transform_roi, get_samples, get_sample_png
-from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath, get_patch_endpoint
+from ..dzi import dzi_download_nii_gz, dzi_slide_dimensions, dzi_slide_filepath, get_patch_endpoint, dzi_download_header
 
 from warnings import simplefilter
 from urllib3.exceptions import InsecureRequestWarning
@@ -322,6 +322,7 @@ class Slide:
         r = self.client._get('slide', task_get_slide_info, task_id = self.task_id, slide_id=self.slide_id)
         self.detail = r.json()
         self._header = None
+        self._osl_header = None
         self._fullpath = None
         
     def __str__(self):
@@ -396,6 +397,11 @@ class Slide:
             self._header = self.client._get('dzi', dzi_slide_dimensions, project=self.project, slide_id=self.slide_id).json()
         return self._header
         
+    def _get_openslide_header(self):        
+        if self._osl_header is None:
+            self._osl_header = self.client._get('dzi', dzi_download_header, project=self.project, slide_id=self.slide_id, resource='raw').json()
+        return self._osl_header
+        
     @property
     def dimensions(self):
         """Slide dimensions in pixels (tuple of int)."""
@@ -409,17 +415,17 @@ class Slide:
     @property
     def level_dimensions(self):
         """Slide pixel spacing in millimeters."""
-        return self._get_header()['level_dimensions']
+        return self._get_openslide_header()['level_dimensions']
     
     @property
     def level_downsamples(self):
         """Slide pixel spacing in millimeters."""
-        return self._get_header()['level_downsamples']
+        return self._get_openslide_header()['level_downsamples']
     
     @property
     def properties(self):
         """Slide pixel spacing in millimeters."""
-        return self._get_header()['properties']
+        return self._get_openslide_header()['properties']
     
     # TODO: need to implement fine-grained permissions
     @property

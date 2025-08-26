@@ -868,7 +868,15 @@ $(document).ready(function()
             });
         },
         columns: [
-            { data: "key" },
+            { 
+                data: "key",
+                render: function (data, type, row, meta) {
+                    if(type === 'display')
+                        return data.replace('tiff.ImageDescription.','');
+                    else
+                        return data;
+                }
+            },
             { 
                 data: "value", 
                 render: function (data, type, row, meta) {
@@ -879,7 +887,24 @@ $(document).ready(function()
         paging: false,
         select: 'none',
         searching: false,
-        scrollY: '400px'
+        scrollY: '400px',
+        rowGroup: {
+            dataSrc: function(row) {
+                // If starts with tiff.ImageDescription, group as 'ImageDescription'
+                if(row.key.startsWith('tiff.ImageDescription.')) {
+                    return 'TIFF Image Description';
+                }
+                else if(row.key.startsWith('tiff.')) {
+                    return 'TIFF Tags';
+                }
+                else if(row.key.startsWith('openslide.')) {
+                    return 'OpenSlide Properties';
+                }
+                else {
+                    return 'Other Properties';
+                }
+            }
+        }
       } );
 
     // Initialize the viewer

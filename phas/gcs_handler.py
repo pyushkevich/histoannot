@@ -497,15 +497,41 @@ class GoogleCloudOpenSlideWrapper:
     # TODO: add all the TIFF properties 
     @property
     def properties(self):
-        ppm_x, ppm_y = self.tiled_pages[0].get_resolution(unit=tifffile.RESUNIT.MICROMETER)
-        return dict({
+
+        # Start with resolution properties
+        page = self.tiled_pages[0]
+        ppm_x, ppm_y = page.get_resolution(unit=tifffile.RESUNIT.MICROMETER)
+        props = {
             'openslide.mpp-x': 1.0 / ppm_x,
             'openslide.mpp-y': 1.0 / ppm_y            
-        })
-    
+        }
+        
+        # Extract the tiff resolution tags
+        for res in ['XResolution', 'YResolution']:
+            if res in page.tags:
+                props[f'tiff.{res}'] = page.tags[res].value[0] * 1.0 / page.tags[res].value[1]
+                
+        # Extract the resolution unit
+        if 'ResolutionUnit' in page.tags:
+            val = page.tags['ResolutionUnit'].value
+            if val == tifffile.RESUNIT.INCH:
+                props['tiff.ResolutionUnit'] = 'inch'
+            elif val == tifffile.RESUNIT.CENTIMETER:
+                props['tiff.ResolutionUnit'] = 'centimeter'
+            if val == tifffile.RESUNIT.MILLIMETER:
+                props['tiff.ResolutionUnit'] = 'millimeter'
+            elif val == tifffile.RESUNIT.MICROMETER:
+                props['tiff.ResolutionUnit'] = 'micrometer'
+                        
+        # Extract the properties from the ImageDescription tag. This appears to be set for SVS files.
+        if 'ImageDescription' in page.tags:
+            props['tiff.ImageDescription'] = page.tags['ImageDescription'].value
+                    
+        return props        
+
     def get_best_level_for_downsample(self, downsample):
         ds = self.level_downsamples
         for (i, ds_i) in enumerate(ds):
             if downsample < ds_i:
                 return max(i-1, 0)
-        return len(ds)-1        
+        return len(ds)-1

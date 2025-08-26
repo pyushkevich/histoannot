@@ -404,6 +404,20 @@ def dzi_download_macro_image(project, slide_id):
     return dzi_download_thumblike_image(project, slide_id, 'macro', 'png')
 
 
+# Present properties for better client-side display
+def format_properties(prop_dict):
+    result = {}
+    for k,v in prop_dict.items():
+        if(k == 'tiff.ImageDescription'):
+            for line in v.split('\n'):
+                if '=' in line:
+                    kl, vl = (x.strip() for x in line.split('=', 1))
+                    result[f'tiff.ImageDescription.{kl}'] = vl
+        else:
+            result[k] = v
+    return result
+
+
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_header.json', methods=('GET', 'POST'))
 @access_project_read
@@ -415,7 +429,7 @@ def dzi_download_header(project, slide_id, resource):
     
     # Collect relevant properties
     prop_dict = {
-        'properties': { k:v for k,v in os.properties.items() },
+        'properties': format_properties(os.properties),
         'level_dimensions': os.level_dimensions, 
         'level_downsamples': os.level_downsamples 
     }

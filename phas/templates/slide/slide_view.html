@@ -20,6 +20,7 @@
 <script type="text/javascript" src="{{ url_for('static', filename='paper-full.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='js.cookie.js') }}"></script>
 <script type="text/javascript" src="{{ url_for('static', filename='colormaps.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='phas_common.js') }}"></script>
 <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='DataTables/datatables.min.js') }}"></script>
 
 
@@ -868,55 +869,9 @@ $(document).ready(function()
 
 
     // Slide header table
-    let slide_header_table = $("#slide_header").DataTable( {
-        ajax: function(data, callback, settings) {
-            $.ajax({
-                url: "{{url_tmpl_download_header}}".replace("XXXXX", "{{resolution}}"),
-                success: function(resp_text) {
-                    callback({data: parseJSONDictionary(JSON.parse(resp_text)['properties'])});
-                }
-            });
-        },
-        columns: [
-            { 
-                data: "key",
-                render: function (data, type, row, meta) {
-                    if(type === 'display')
-                        return data.replace('tiff.ImageDescription.','');
-                    else
-                        return data;
-                }
-            },
-            { 
-                data: "value", 
-                render: function (data, type, row, meta) {
-                    return typeof(data) == 'string' ? data.replaceAll('\n','<br>') : data;
-                }
-            }
-        ],
-        paging: false,
-        select: 'none',
-        searching: false,
-        scrollY: '400px',
-        rowGroup: {
-            dataSrc: function(row) {
-                // If starts with tiff.ImageDescription, group as 'ImageDescription'
-                if(row.key.startsWith('tiff.ImageDescription.')) {
-                    return 'TIFF Image Description';
-                }
-                else if(row.key.startsWith('tiff.')) {
-                    return 'TIFF Tags';
-                }
-                else if(row.key.startsWith('openslide.')) {
-                    return 'OpenSlide Properties';
-                }
-                else {
-                    return 'Other Properties';
-                }
-            }
-        }
-      } );
-
+    let slide_header_table = make_slide_properties_table($("#slide_header"));
+    slide_header_table.ajax.url("{{url_tmpl_download_header}}".replace("XXXXX", "{{resolution}}")).load();
+    
     // Initialize the viewer
     init_viewer();
 

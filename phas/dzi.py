@@ -407,13 +407,24 @@ def dzi_download_macro_image(project, slide_id):
 # Present properties for better client-side display
 def format_properties(prop_dict):
     result = {}
+    filter_prefixes = [
+        'mirax.DATAFILE.FILE', 'mirax.HIERARCHICAL', 'mirax.LAYER', 'mirax.NONHIERLAYER', 
+        'openslide.level', 'openslide.quickhash', 'aperio.Filename', 'aperio.User'
+    ]
     for k,v in prop_dict.items():
-        if(k == 'tiff.ImageDescription'):
-            splitchar = '|' if prop_dict['openslide.vendor'] == 'aperio' else '\n'
+        if k == 'tiff.ImageDescription':
+            print('Properties: ', v)
+            # Count occurences of | and \n in the text
+            splitchar = '|' if v.count('|') > v.count('\n') else '\n'
             for line in v.split(splitchar):
                 if '=' in line:
                     kl, vl = (x.strip() for x in line.split('=', 1))
-                    result[f'tiff.ImageDescription.{kl}'] = vl
+                    if kl not in ('Filename','User'):
+                        result[f'tiff.ImageDescription.{kl}'] = vl
+        elif any(k.startswith(x) for x in filter_prefixes):
+            pass
+        elif k.startswith('openslide.comment') and v == prop_dict['tiff.ImageDescription']:
+            pass
         else:
             result[k] = v
     return result

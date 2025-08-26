@@ -409,7 +409,8 @@ def format_properties(prop_dict):
     result = {}
     for k,v in prop_dict.items():
         if(k == 'tiff.ImageDescription'):
-            for line in v.split('\n'):
+            splitchar = '|' if prop_dict['openslide.vendor'] == 'aperio' else '\n'
+            for line in v.split(splitchar):
                 if '=' in line:
                     kl, vl = (x.strip() for x in line.split('=', 1))
                     result[f'tiff.ImageDescription.{kl}'] = vl

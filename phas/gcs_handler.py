@@ -501,13 +501,14 @@ class GoogleCloudOpenSlideWrapper:
 
         # Read MPP. For Aperio files, this information is not stored in the Tiff tags but can be
         # read from the image header. For more regular TIFF we can use the get_resolution method
-        is_svs = page.description is not None and page.description.startswith('Aperio Image Library')
+        pdesc = page.description
+        is_svs = pdesc is not None and pdesc.startswith('Aperio Image Library')
         has_res = all([t in page.tags for t in ('XResolution','YResolution','ResolutionUnit')])
         
         # If this is an Aperio image, first try reading MPP from there
         mpp_x, mpp_y = None, None
         if is_svs:
-            svsmeta = tifffile.tifffile.svs_description_metadata(page.description)
+            svsmeta = tifffile.tifffile.svs_description_metadata(pdesc)
             mpp_x = svsmeta.get('MPP', None)
             mpp_y = mpp_x
         if (mpp_x is None or mpp_y is None) and has_res:
@@ -516,7 +517,8 @@ class GoogleCloudOpenSlideWrapper:
                 
         props = {
             'openslide.mpp-x': mpp_x,
-            'openslide.mpp-y': mpp_y            
+            'openslide.mpp-y': mpp_y,
+            'openslide.vendor': 'aperio' if is_svs else 'generic-tiff'
         }
         
         # Extract the tiff resolution tags

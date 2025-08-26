@@ -341,6 +341,10 @@
                                     <div class="pure-u-1 pure-u-md-1-2"> 
                                         <input id="form_info_dims" class="pure-input-1-1" value="{{dims_str}}" readonly>
                                     </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> <label>Center of current viewport (pixels):</label> </div>
+                                    <div class="pure-u-1 pure-u-md-1-2"> 
+                                        <input id="form_info_bounds" class="pure-input-1-1" value="{{dims_str}}" readonly>
+                                    </div>
                                     <div class="pure-u-1 pure-u-md-1-2"> <label>Pixel spacing (µm):</label> </div>
                                     <div class="pure-u-1 pure-u-md-1-2"> 
                                         <input id="form_info_spacing" class="pure-input-1-1" value="{{spacing_str}}" readonly>
@@ -691,6 +695,12 @@ $(document).ready(function()
             }
         }
         last_zoom = viewportZoom;
+
+	// Report bounds
+	var center = viewer.viewport.getCenter();  // Center in viewport coordinates
+	var pc = viewer.viewport.viewportToImageCoordinates(center);
+	var center_str = `${Math.round(pc.x)} x ${Math.round(pc.y)}`;
+	$("#form_info_bounds").val(center_str);
     });
 
     // Set the strokewidth of a Path element

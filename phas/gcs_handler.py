@@ -433,8 +433,8 @@ class GoogleCloudOpenSlideWrapper:
             stx, sty = 1+tx1-tx0, 1+ty1-ty0
             
             image = np.zeros((sty * th, stx * tw, page.samplesperpixel), dtype=page.dtype)
-            for ty in range(ty0, ty1 + 1):
-                for tx in range(tx0, tx1 + 1):
+            for ty in range(ty0, np.minimum(ty1 + 1, nty)):
+                for tx in range(tx0, np.minimum(tx1 + 1, ntx)):
                     i_tile = ty * ntx + tx
                     fh.seek(page.dataoffsets[i_tile])
                     data = fh.read(page.databytecounts[i_tile])
@@ -497,13 +497,26 @@ class GoogleCloudOpenSlideWrapper:
     # TODO: add all the TIFF properties 
     @property
     def properties(self):
-
-        # Start with resolution properties
         page = self.tiled_pages[0]
-        ppm_x, ppm_y = page.get_resolution(unit=tifffile.RESUNIT.MICROMETER)
+
+        # Read MPP. For Aperio files, this information is not stored in the Tiff tags but can be
+        # read from the image header. For more regular TIFF we can use the get_resolution method
+        is_svs = page.description is not None and d.startswith('Aperio Image Library')
+        has_res = all([t in page.tags for t in ('XResolution','YResolution','ResolutionUnit')])
+        
+        # If this is an Aperio image, first try reading MPP from there
+        mpp_x, mpp_y = None, None
+        if is_svs:
+            svsmeta = tifffile.tifffile.svs_description_metadata(page.description)
+            mpp_x = svsmeta.get('MPP', None)
+            mpp_y = mpp_x
+        if (mpp_x is None or mpp_y is None) and has_res:
+            ppm_x, ppm_y = page.get_resolution(unit=tifffile.RESUNIT.MICROMETER)
+            mpp_x, mpp_y = 1.0 / ppm_x, 1.0 / ppm_y
+                
         props = {
-            'openslide.mpp-x': 1.0 / ppm_x,
-            'openslide.mpp-y': 1.0 / ppm_y            
+            'openslide.mpp-x': mpp_x,
+            'openslide.mpp-y': mpp_y            
         }
         
         # Extract the tiff resolution tags

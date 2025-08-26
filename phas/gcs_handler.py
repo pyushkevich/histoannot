@@ -501,7 +501,7 @@ class GoogleCloudOpenSlideWrapper:
 
         # Read MPP. For Aperio files, this information is not stored in the Tiff tags but can be
         # read from the image header. For more regular TIFF we can use the get_resolution method
-        is_svs = page.description is not None and d.startswith('Aperio Image Library')
+        is_svs = page.description is not None and page.description.startswith('Aperio Image Library')
         has_res = all([t in page.tags for t in ('XResolution','YResolution','ResolutionUnit')])
         
         # If this is an Aperio image, first try reading MPP from there

@@ -315,7 +315,7 @@ class ProjectRef:
 
         return rc['id'] if rc is not None else None
 
-    def user_set_access_level(self, user, access_level):
+    def user_set_access_level(self, user, access_level, anon_permission=0, api_permission=0):
         """Provide access to a user with level (none,read,write,admin) """
         db=get_db()
         if not AccessLevel.is_valid(access_level):
@@ -327,8 +327,8 @@ class ProjectRef:
                          'WHERE TI.project=? and TA.user=?', (self.name, user))
 
         # Set the access level for the project
-        rc2 = db.execute('INSERT OR REPLACE INTO project_access (user,project,access) VALUES (?,?,?)',
-                        (user, self.name, access_level))
+        rc2 = db.execute('INSERT OR REPLACE INTO project_access (user,project,access,anon_permission,api_permission) VALUES (?,?,?,?,?)',
+                        (user, self.name, access_level, anon_permission, api_permission))
 
         # For each task, make sure its access level is <= that of the project access level
         for row in rc1.fetchall():
@@ -369,12 +369,17 @@ class ProjectRef:
         db.execute('INSERT OR REPLACE INTO task_access (user,task,access) VALUES (?,?,?)',
                    (user, task, access_level))
 
-        # Make sure the project access is at least as high as the
+        # Make sure the project access is at least as high as the task access
         row = db.execute('SELECT * FROM project_access WHERE project=? AND user=?',
                          (self.name, user)).fetchone()
-        if row is None or AccessLevel.to_int(row['access']) < AccessLevel.to_int(access_level):
-            db.execute('INSERT OR REPLACE INTO project_access (user,project,access) VALUES (?,?,?)',
+        if row is None:
+            db.execute('INSERT INTO project_access (user,project,access,anon_permission,api_permission) VALUES (?,?,?,0,0)',
                        (user, self.name, access_level))
+        else:
+            val_project = AccessLevel.to_int(row['access'])
+            if val_project < val_new:
+                db.execute('UPDATE project_access SET access=? WHERE project=? AND user=?',
+                        (access_level, self.name, user))
 
         # Commit
         db.commit()

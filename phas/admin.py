@@ -179,7 +179,7 @@ def user_delete(user_id):
 
 
 def user_project_access_row_to_json(row):
-    d = {x: row[x] for x in ('project', 'access')}
+    d = {x: row[x] for x in ('project', 'access', 'anon_permission', 'api_permission')}
     return d
 
 
@@ -188,7 +188,7 @@ def user_project_access_row_to_json(row):
 @site_admin_access_required
 def user_get_project_access_listing(user_id):
     db = get_db()
-    rc = db.execute('SELECT P.id as project, IFNULL(PA.access, "none") access '
+    rc = db.execute('SELECT P.id as project, IFNULL(PA.access, "none") access, PA.anon_permission, PA.api_permission '
                     'FROM project P LEFT JOIN '
                     '  (SELECT * FROM project_access WHERE user=?) PA '
                     '  ON P.id = PA.project '
@@ -223,17 +223,17 @@ def user_get_task_access_listing(user_id, project):
 
 
 # Set access for a project
-@bp.route('/api/admin/user/<int:user_id>/project/<project>/access/<access_level>', methods=('GET',))
+@bp.route('/api/admin/user/<int:user_id>/project/<project>/access/<access_level>/anon/<int:anon_permission>/api/<int:api_permission>', methods=('GET',))
 @site_admin_access_required
-def user_set_project_access(user_id, project, access_level):
+def user_set_project_access(user_id, project, access_level, anon_permission=0, api_permission=0):
     try:
         # Use the project API to change access level
         pr = ProjectRef(project)
-        pr.user_set_access_level(user_id, access_level)
+        pr.user_set_access_level(user_id, access_level, anon_permission, api_permission)
 
         # Get the updated project access level
         db = get_db()
-        rc = db.execute('SELECT P.id as project, IFNULL(PA.access, "none") access '
+        rc = db.execute('SELECT P.id as project, IFNULL(PA.access, "none") access, anon_permission, api_permission '
                         'FROM project P LEFT JOIN '
                         '  (SELECT * FROM project_access WHERE user=?) PA '
                         '  ON P.id = PA.project '
@@ -262,7 +262,7 @@ def user_set_task_access(user_id, project, task_id, access_level):
         d_task = user_task_access_row_to_json(rc.fetchone())
 
         # Get the updated project access level
-        rc = db.execute('SELECT P.id as project, IFNULL(PA.access, "none") access '
+        rc = db.execute('SELECT P.id as project, IFNULL(PA.access, "none") access, anon_permission, api_permission '
                         'FROM project P LEFT JOIN '
                         '  (SELECT * FROM project_access WHERE user=?) PA '
                         '  ON P.id = PA.project '

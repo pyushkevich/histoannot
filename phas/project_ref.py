@@ -318,25 +318,36 @@ class ProjectRef:
     def user_set_access_level(self, user, access_level, anon_permission=0, api_permission=0):
         """Provide access to a user with level (none,read,write,admin) """
         db=get_db()
-        if not AccessLevel.is_valid(access_level):
+        if access_level is not None and not AccessLevel.is_valid(access_level):
             raise ValueError("Invalid access level %s" % access_level)
 
         # Get the list of tasks in this project with access for this user
         rc1 = db.execute('SELECT TA.* FROM task_info TI '
                          '  LEFT JOIN task_access TA on TI.id = TA.task '
                          'WHERE TI.project=? and TA.user=?', (self.name, user))
-
-        # Set the access level for the project
-        rc2 = db.execute('INSERT OR REPLACE INTO project_access (user,project,access,anon_permission,api_permission) VALUES (?,?,?,?,?)',
-                        (user, self.name, access_level, anon_permission, api_permission))
-
+        
+        # Update the access level and permissions
+        row = db.execute('SELECT * FROM project_access WHERE user=? AND project=?', (user, self.name)).fetchone()        
+        if row is None:
+            db.execute('INSERT INTO project_access (user,project,access,anon_permission,api_permission) VALUES (?,?,?,?,?)',
+                       (user, self.name, 
+                        access_level if access_level is not None else "none",
+                        anon_permission if anon_permission >= 0 else 0,
+                        api_permission if api_permission >= 0 else 0))
+        else:
+            db.execute('REPLACE INTO project_access (user,project,access,anon_permission,api_permission) VALUES (?,?,?,?,?)',
+                       (user, self.name, 
+                        access_level if access_level is not None else row['access'],
+                        anon_permission if anon_permission >= 0 else row['anon_permission'],
+                        api_permission if api_permission >= 0 else row['api_permission']))
+            
         # For each task, make sure its access level is <= that of the project access level
-        for row in rc1.fetchall():
-            print(row['task'], row['access'], access_level)
-            if AccessLevel.to_int(row['access']) > AccessLevel.to_int(access_level):
-                print("Lowering access ", access_level, row['task'], user)
-                db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
-                           (access_level, row['task'], user))
+        if access_level is not None:
+            for row in rc1.fetchall():
+                if AccessLevel.to_int(row['access']) > AccessLevel.to_int(access_level):
+                    print("Lowering access ", access_level, row['task'], user)
+                    db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
+                            (access_level, row['task'], user))
 
         db.commit()
 

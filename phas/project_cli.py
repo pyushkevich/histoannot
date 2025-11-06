@@ -23,7 +23,7 @@ import traceback
 import pandas
 import glob
 import pathlib
-
+import pandas as pd 
 import click
 from flask import current_app, g
 from flask.cli import with_appcontext
@@ -42,6 +42,7 @@ from .db import get_db
 from .gcs_handler import GCSHandler
 from .auth import get_user_id
 from .common import AccessLevel
+from .gspread_support import GoogleSheetManifest
 
 def init_db_dltrain():
     db = get_db()
@@ -230,18 +231,22 @@ def project_get_json_command(project):
     db = get_db()
     row = db.execute('SELECT * FROM project WHERE id=?', (project,)).fetchone()
     if row is not None:
-        print(json.dumps(row['json'], indent=2))
+        print(json.dumps(json.loads(row['json']), indent=2))
     else:
         print('Project %s not found' % (project,))
 
 
 # Find existing block or create if it does not exist
-def db_get_or_create_block(project, specimen, block):
+def db_get_or_create_block(project, specimen, block, specimen_anon=None):
     db = get_db()
 
     # Create the specimen record if not already present
-    db.execute('INSERT OR IGNORE INTO specimen(private_name,project) VALUES (?,?)',
-               (specimen, project))
+    if specimen_anon is not None:
+        db.execute('INSERT OR IGNORE INTO specimen(private_name,project,public_name) VALUES (?,?,?)',
+                   (specimen, project, specimen_anon))
+    else:
+        db.execute('INSERT OR IGNORE INTO specimen(private_name,project) VALUES (?,?)',
+                (specimen, project))
 
     # Create the block record if not already present
     db.execute('INSERT OR IGNORE INTO block(specimen, block_name) '
@@ -260,11 +265,11 @@ def db_get_or_create_block(project, specimen, block):
 
 
 # Generic function to insert a slide, creating a block descriptor of needed
-def db_create_slide(project, specimen, block, section, slide, stain, slice_name, slice_ext, tags):
+def db_create_slide(project, specimen, block, section, slide, stain, slice_name, slice_ext, tags, specimen_anon=None):
     db = get_db()
 
     # Find the block within the current project.
-    bid = db_get_or_create_block(project, specimen, block)
+    bid = db_get_or_create_block(project, specimen, block, specimen_anon=specimen_anon)
 
     # Create a slide
     sid = db.execute('INSERT INTO slide (block_id, section, slide, stain, slide_name, slide_ext) '
@@ -428,7 +433,7 @@ slide_json_schema = {
 
 # Imports a single slide into the database
 def refresh_slide(pr, sr, slide_name, specimen, stain, block,
-                  section=0, slide_number=0, cert="", tags=[], check_hash = True,
+                  section=0, slide_number=0, cert="", tags=[], check_hash = True, specimen_anon=None,
                   **kwargs):
 
     # Database cursor
@@ -473,7 +478,7 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
         # Update the specimen/block for this slide
         if t1 is None:
             print('UPDATING specimen/block for slide %s to %s/%s' % (slide_name,specimen,block))
-            bid = db_get_or_create_block(pr.name, specimen, block)
+            bid = db_get_or_create_block(pr.name, specimen, block, specimen_anon=specimen_anon)
             db.execute('UPDATE slide SET block_id=? WHERE id=?', (bid, slide_id))
             db.commit()
 
@@ -507,7 +512,7 @@ def refresh_slide(pr, sr, slide_name, specimen, stain, block,
 
             # The raw slide has been found, so the slide will be entered into the database.
             sid = db_create_slide(pr.name, specimen, block, section, slide_number, stain,
-                                  slide_name, slide_ext, tags)
+                                  slide_name, slide_ext, tags, specimen_anon=specimen_anon)
 
             print('Slide %s located with url %s and assigned new id %d' %
                   (slide_name, sr.get_resource_url('raw', False), sid))
@@ -587,7 +592,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                         print(traceback.format_exc())
                         pass
 
-    else:
+    elif mm == 'specimen_csv':
 
         # Load the manifest file
         manifest_contents = load_url(manifest)
@@ -648,7 +653,65 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
 
                 # Update this slide
                 refresh_slide(pr, sr, specimen=specimen, check_hash=check_hash, **data)
+                
+    elif mm == 'google_sheet':
+        
+        # Read the spreadsheet and the worksheets in it
+        gs = GoogleSheetManifest(manifest)
+        
+        # Iterate over the worksheets
+        for ws_title in gs.worksheets():
+            
+            # Parse specimen and its anonymizatin from the worksheet title
+            if '_' in ws_title:
+                specimen, anon = ws_title.split('_')
+            else:
+                specimen = anon = ws_title
+                
+            # Skip specimens that are not selected
+            if single_specimen is not None and single_specimen != specimen:
+                continue
+            
+            # Get the worksheet
+            df = gs.get_worksheet(ws_title) 
+            if df is None:
+                print(f'Worksheet {ws_title} is empty, skipping')
+                continue
+            
+            print(f'Parsing specimen {specimen}')
+            
+            # Iterate over the rows in the worksheet
+            for _, row in df.iterrows():
+                
+                # Skip rows without slide names
+                if pd.isna(row.Slide) or len(row.Slide.strip()) == 0:
+                    continue
+                           
+                # Create a slideref for this object. The way we have set all of this up,
+                # the extension is not coded anywhere in the manifests, so we dynamically
+                # check for multiple extensions
+                sr = None
+                for slide_ext in ext_list:
+                    sr_test = SlideRef(pr, specimen, row.Block, row.Slide, slide_ext)
+                    if sr_test.resource_exists('raw', False):
+                        sr = sr_test
+                        break
 
+                # Show warining if a slide has not been found
+                if sr is None:
+                    print('Raw image was not found for slide {Slide}'.format(**row))
+                
+                # Prepare tags as a set
+                tags = set() if pd.isna(row.Tags) else set([ t.strip() for t in row.Tags.split(';') ])
+                
+                # Update this slide
+                refresh_slide(pr, sr, specimen=specimen, check_hash=check_hash,
+                              slide_name=row.Slide, stain=row.Stain, block=row.Block,
+                              section=row.Section if not pd.isna(row.Section) else 0,
+                              slide_number=row.Slice if not pd.isna(row.Slice) else 0,
+                              cert=row.Certainty if not pd.isna(row.Certainty) else "",
+                              tags=tags, specimen_anon=anon)
+ 
     # Refresh slice index for all tasks in this project
     rebuild_project_slice_indices(project)
 
@@ -664,8 +727,8 @@ def load_raw_slide_to_cache(slide_id, resource):
 
 @click.command('refresh-slides')
 @click.argument('project')
-@click.option('-m', '--manifest', default=None, type=click.Path(exists=True),
-              help='CSV manifest file for projects that require them')
+@click.option('-m', '--manifest', default=None, type=str,
+              help='CSV manifest file for projects that require them, or Google Sheet name/URL')
 @click.option('-s', '--specimen', default=None, multiple=True,
               help='Only refresh slides for a single specimen')
 @click.option('-f', '--fast', is_flag=True,

@@ -702,7 +702,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                     print('Raw image was not found for slide {Slide}'.format(**row))
                 
                 # Prepare tags as a set
-                tags = set() if pd.isna(row.Tags) else set([ t.strip() for t in row.Tags.split(';') ])
+                tags = set() if pd.isna(row.Tags) or len(row.Tags)==0 else set([ t.strip() for t in row.Tags.split(';') ])
                 
                 # Update this slide
                 refresh_slide(pr, sr, specimen=specimen, check_hash=check_hash,

@@ -58,13 +58,16 @@ Specimen Listing - {{task['name']}}
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
-  <div class="pure-u-1 pure-u-md-7-24">
+  <div class="pure-u-1 pure-u-md-7-24" id="right_pane" style="display:none;">
     <div id="thumb_div">
         
-        <img id="thumb_img" src="" alt="selected slide thumbnail" style="display:none; width:100%; max-height: 540px; object-fit: contain;">
+        <img id="thumb_img" src="" alt="selected slide thumbnail" style="width:100%; max-height: 540px; object-fit: contain;">
     </div>
-    <div id="tabs-header" style="display:none;">
-      <table id="slide_header" class="compact stripe hover" style="width:100%">
+    <div>
+      <h3 id="slide_name" style="text-align: center;"></h3>
+    </div>
+    <div id="tabs-header" style="font-size: 75%;">
+      <table id="slide_header" class="compact stripe hover" style="width:100%;">
         <thead>
           <tr>
             <th>Property</th>
@@ -82,6 +85,7 @@ Specimen Listing - {{task['name']}}
 <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='DataTables/datatables.min.css') }}"/>
 <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='jquery-3.6.4.min.js') }}"></script>
 <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='DataTables/datatables.min.js') }}"></script>
+<script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='phas_common.js') }}"></script>
 
 <script type="text/javascript" charset="utf8">
 $(document).ready(function() {
@@ -164,89 +168,22 @@ $(document).ready(function() {
     stateSave: true
   } );
 
-
-  // TODO: duplication of code in slide_view.html
-  // This function reformats the header json into something I can display in a table
-  let parseJSONDictionary = function(jsonDict) {
-      const jsonArray = [];
-      // Iterate over the keys of the JSON object
-      for (const key in jsonDict) {
-          if (jsonDict.hasOwnProperty(key)) {
-              // Create a dictionary with 'key' and 'value' entries
-              const dictEntry = {
-                  "key": key,
-                  "value": jsonDict[key]
-              };
-              // Push the dictionary to the array
-              jsonArray.push(dictEntry);
-          }
-      }
-      return jsonArray;
-  }
-
   // Slide header table
-  let slide_header_table = $("#slide_header").DataTable( {
-    data: [],
-    ajax: {
-        url: "",
-        dataSrc: function(resp_text) {
-          console.log('Response text:', resp_text);
-          if(!jQuery.isEmptyObject(resp_text))
-            return parseJSONDictionary(resp_text['properties'])
-          else
-            return [];
-        },
-    },
-    columns: [
-        { 
-            data: "key",
-            render: function (data, type, row, meta) {
-                if(type === 'display')
-                    return data.replace('tiff.ImageDescription.','');
-                else
-                    return data;
-            }
-        },
-        { 
-            data: "value", 
-            render: function (data, type, row, meta) {
-                return typeof(data) == 'string' ? data.replaceAll('\n','<br>') : data;
-            }
-        }
-    ],
-    paging: false,
-    select: 'none',
-    scrollY: '400px',
-    rowGroup: {
-        dataSrc: function(row) {
-            // If starts with tiff.ImageDescription, group as 'ImageDescription'
-            if(row.key.startsWith('tiff.ImageDescription.')) {
-                return 'TIFF Image Description';
-            }
-            else if(row.key.startsWith('tiff.')) {
-                return 'TIFF Tags';
-            }
-            else if(row.key.startsWith('openslide.')) {
-                return 'OpenSlide Properties';
-            }
-            else {
-                return 'Other Properties';
-            }
-        }
-    }
-  } );
+  let slide_header_table = make_slide_properties_table($("#slide_header"));
 
   t_slide.on('select', function(e,dt,type,indexes) {
     if(type==='row') {
       // Set the target url
       var selected_id = t_slide.rows(indexes).data().pluck('id')[0];
       $('#thumb_img').attr("src", url_tmb.replace('999999', selected_id));
-      $('#thumb_img').css('display','block')
+
+      // Set the slide name
+      $('#slide_name').text("SLIDE " + selected_id);
 
       // Update the slide header table
       url = url_prp.replace("999999", '' + selected_id);
       slide_header_table.ajax.url(url).load();
-      $('#tabs-header').css('display','block');
+      $('#right_pane').css('display','block')
     }
   });
 
@@ -254,10 +191,9 @@ $(document).ready(function() {
     if(type==='row') {
       // Set the target url
       $('#thumb_img').attr("src", "");
-      $('#thumb_img').css('display','none')
+      $('#right_pane').css('display','none')
 
       slide_header_table.ajax.url("").load();
-      $('#tabs-header').css('display','none');
     }
   });
 

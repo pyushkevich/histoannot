@@ -274,7 +274,6 @@ def send_user_resetlink(user_id, email=None, expiry=86400):
 
 
 def send_user_invitation(user_id, url, is_new: bool):
-    print(f'#### send_user_invitation {user_id}, {url}, {is_new}')
     # Get user record
     db=get_db()
     rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()

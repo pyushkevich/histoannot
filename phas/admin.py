@@ -73,7 +73,6 @@ def user_listing():
 @bp.route('/api/admin/user/<int:user_id>/get_reset_link/<int:notify>')
 @site_admin_access_required
 def user_get_reset_link(user_id, notify):
-    print(f'#### user_get_reset_link {user_id} with notify={notify}')
     # Default to a one-week expiry
     url = create_password_reset_link(user_id, 3600*24*7)
     if notify > 0:

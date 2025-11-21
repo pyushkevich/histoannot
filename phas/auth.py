@@ -567,8 +567,9 @@ def user_add_command(username, expiry, email, notify):
 @click.argument('username')
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
 @click.option('--csv', is_flag=True, help="Read usernames from CSV file with field 'username'")
+@click.option('--notify', '-n', is_flag=True, help='Send the user a notification email')
 @with_appcontext
-def user_get_reset_link_command(username, expiry, csv=False):
+def user_get_reset_link_command(username, expiry, csv=False, notify=False):
     
     # Read one or more user ids from file
     if csv is True:
@@ -583,6 +584,8 @@ def user_get_reset_link_command(username, expiry, csv=False):
         if id is not None:
             url = create_password_reset_link(id, expiry)
             print("%s: %s" % (u, url))
+            if notify is True:
+                send_user_invitation(id, url)
         else:
             print('User %s is not in the system' % (u,))
             continue

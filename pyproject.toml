@@ -21,7 +21,8 @@ dependencies = [
     'nibabel',
     'tifffile',
     'sortedcontainers',
-    'imagecodecs'
+    'imagecodecs',
+    'gspread'
 ]
 readme = "README.md"
 requires-python = ">=3.8"

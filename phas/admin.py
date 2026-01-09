@@ -20,7 +20,7 @@ from flask import(
     current_app, send_from_directory, session, send_file
 )
 
-from .auth import site_admin_access_required, create_password_reset_link, add_user
+from .auth import site_admin_access_required, create_password_reset_link, add_user, send_user_invitation
 from .db import get_db
 from .common import abort_json, success_json
 from .project_ref import ProjectRef
@@ -70,11 +70,13 @@ def user_listing():
 
 
 # Get reset link for a user
-@bp.route('/api/admin/user/<int:user_id>/get_reset_link')
+@bp.route('/api/admin/user/<int:user_id>/get_reset_link/<int:notify>')
 @site_admin_access_required
-def user_get_reset_link(user_id):
+def user_get_reset_link(user_id, notify):
     # Default to a one-week expiry
     url = create_password_reset_link(user_id, 3600*24*7)
+    if notify > 0:
+        send_user_invitation(user_id, url, False)
     return json.dumps({"reset_link": url})
 
 
@@ -136,7 +138,7 @@ def user_create():
         return abort_json("Email address fails validation")
 
     # Try to create the user
-    d = add_user(username, 7*24*3600, email, False)
+    d = add_user(username, 7*24*3600, email, True)
     if d is None or 'id' not in d:
         return abort_json("Failed to add user")
 

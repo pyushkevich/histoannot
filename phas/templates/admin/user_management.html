@@ -199,7 +199,7 @@ $(document).ready(function() {
 
   // AJAX url templates
   let url_user_listing="{{url_for('admin.user_listing')}}";
-  let url_user_reset_link="{{url_for('admin.user_get_reset_link', user_id='999999')}}";
+  let url_user_reset_link="{{url_for('admin.user_get_reset_link', user_id='999999', notify=1)}}";
   let url_user_update_profile="{{url_for('admin.user_update_profile', user_id='999999')}}";
   let url_user_project_listing="{{url_for('admin.user_get_project_access_listing', user_id='999999')}}";
   let url_user_project_task_listing="{{url_for('admin.user_get_task_access_listing', user_id='999999', project='XXXXXX')}}";

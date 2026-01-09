@@ -334,7 +334,7 @@ def send_user_resetlink(user_id, email=None, expiry=86400):
     mail.send(msg)
 
 
-def send_user_invitation(user_id, url):
+def send_user_invitation(user_id, url, is_new: bool):
     # Get user record
     db=get_db()
     rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
@@ -342,12 +342,20 @@ def send_user_invitation(user_id, url):
         # Send the email
         mail = get_mail()
         server_name = current_app.config['HISTOANNOT_PUBLIC_NAME']
-        msg = Message("Account created on %s" % (server_name,) )
+        if is_new:
+            msg = Message("Account created on %s" % (server_name,) )
+            msg.html = """
+                <p>A new account with username <b>%s</b> was created for you on %s.</p> 
+                <p>Please follow the link below to activate your account and create a password:</p>
+                <a href="%s">%s</a>""" % (rc['username'], server_name, url, url)
+        else:
+            msg = Message("Account updated on %s" % (server_name,) )
+            msg.html = """
+                <p>The account with username <b>%s</b> on %s was updated.</p> 
+                <p>Please follow the link below to activate your account and create/reset your password:</p>
+                <a href="%s">%s</a>""" % (rc['username'], server_name, url, url)
+
         msg.add_recipient(rc['email'])
-        msg.html = """
-            <p>A new account with username <b>%s</b> was created for you on %s.</p> 
-            <p>Please follow the link below to activate your account and create a password:</p>
-            <a href="%s">%s</a>""" % (rc['username'], server_name, url, url)
         mail.send(msg)
 
         print('Password link sent to %s at %s' % (rc['username'],rc['email']))
@@ -654,7 +662,7 @@ def add_user(username, expiry, email, notify):
     # Generate a password reset link for the user.
     url = create_password_reset_link(row['id'], expiry)
     if notify is True and email is not None:
-        send_user_invitation(row['id'], url)
+        send_user_invitation(row['id'], url, True)
 
     # Return user details as a dict
     d = { x : row[x] for x in ('id', 'username', 'email') }
@@ -678,8 +686,9 @@ def user_add_command(username, expiry, email, notify):
 @click.argument('username')
 @click.option('-x', '--expiry', type=click.INT, help='Expiration time for the password reset link, in seconds', default=86400)
 @click.option('--csv', is_flag=True, help="Read usernames from CSV file with field 'username'")
+@click.option('--notify', '-n', is_flag=True, help='Send the user a notification email')
 @with_appcontext
-def user_get_reset_link_command(username, expiry, csv=False):
+def user_get_reset_link_command(username, expiry, csv=False, notify=False):
     
     # Read one or more user ids from file
     if csv is True:
@@ -694,6 +703,8 @@ def user_get_reset_link_command(username, expiry, csv=False):
         if id is not None:
             url = create_password_reset_link(id, expiry)
             print("%s: %s" % (u, url))
+            if notify is True:
+                send_user_invitation(id, url, False)
         else:
             print('User %s is not in the system' % (u,))
             continue

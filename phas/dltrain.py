@@ -19,9 +19,7 @@ from flask import (
     Blueprint, g, redirect, render_template, request, make_response, current_app, send_file, abort, Response, url_for, session
 )
 from werkzeug.exceptions import abort
-from .auth import \
-    access_project_read, access_project_write, access_project_admin, \
-    access_task_read, access_task_write
+from .auth import *
 from .db import get_db
 
 # TODO: these should be moved to another module
@@ -29,7 +27,7 @@ from .project_cli import get_task_data, create_edit_meta, update_edit_meta_to_cu
 from .project_ref import ProjectRef
 from .delegate import find_delegate_for_slide
 from .dzi import get_osl, get_patch, pil_to_nifti_gz
-from .slide import make_slide_dbview, annot_sample_path_curves, get_affine_matrix_by_slideid
+from .slide import make_slide_dbview, annot_sample_path_curves, get_affine_matrix_by_slideid, get_table_slide_info_view
 from .slideref import get_slide_ref
 
 import json
@@ -190,9 +188,13 @@ def task_sample_listing(task_id):
 
     # Map the request to json
     r = json.loads(request.get_data().decode('UTF-8'))
+    
+    # Get the right table to use based on anonymization
+    project, _ = get_task_data(task_id)
+    db_view = 'training_sample_info_anon' if check_anon(project) else 'training_sample_info'
 
     # Call helper function
-    return server_side_object_listing(task_id, 'training_sample_info', r)
+    return server_side_object_listing(task_id, db_view, r)
 
 
 
@@ -214,6 +216,10 @@ def task_all_samples(task_id):
 @access_task_read
 def get_samples_for_label(task_id, slide_id, label_id):
     db = get_db()
+
+    # Get the right table to use based on anonymization
+    project, _ = get_task_data(task_id)
+    tsi_view = get_table_slide_info_view(project)
 
     # Which order to use
     order = {"newest":"M.t_edit ASC", 
@@ -238,18 +244,18 @@ def get_samples_for_label(task_id, slide_id, label_id):
         where_arg = (label_id, task_id)
 
     # Run query
-    query = '''SELECT T.id,T.have_patch,x0,y0,x1,y1,
-                      UC.username as creator, t_create,
-                      UE.username as editor, t_edit,
-                      datetime(t_create,'unixepoch','localtime') as dt_create,
-                      datetime(t_edit,'unixepoch','localtime') as dt_edit,
-                      S.specimen_display as specimen_name,S.block_name,S.section,S.slide,S.stain,S.id as slide_id
-               FROM training_sample T LEFT JOIN edit_meta M on T.meta_id = M.id 
-                                      LEFT JOIN task_slide_info S on S.id = T.slide and S.task_id = T.task
-                                      LEFT JOIN user UC on UC.id = M.creator 
-                                      LEFT JOIN user UE on UE.id = M.editor 
-               WHERE %s 
-               ORDER BY %s LIMIT 48''' % (where_clause, order)
+    query = f'''SELECT T.id,T.have_patch,x0,y0,x1,y1,
+                       UC.username as creator, t_create,
+                       UE.username as editor, t_edit,
+                       datetime(t_create,'unixepoch','localtime') as dt_create,
+                       datetime(t_edit,'unixepoch','localtime') as dt_edit,
+                       S.specimen_display as specimen_name,S.block_name,S.section,S.slide,S.stain,S.id as slide_id
+                FROM training_sample T LEFT JOIN edit_meta M on T.meta_id = M.id 
+                                       LEFT JOIN {tsi_view} S on S.id = T.slide and S.task_id = T.task
+                                       LEFT JOIN user UC on UC.id = M.creator 
+                                       LEFT JOIN user UE on UE.id = M.editor 
+                WHERE {where_clause} 
+                ORDER BY {order} LIMIT 48'''
     rc = db.execute(query, where_arg)
     return json.dumps([dict(row) for row in rc.fetchall()])
 
@@ -1127,18 +1133,22 @@ def labelset_editor(project):
 # --------------------------------
 
 # A function to create a temporary view of the samples
-def make_dbview_full(view_name):
+def make_dbview_full(task_id, view_name):
     db=get_db()
-    db.execute("""CREATE TEMP VIEW %s AS
-                  SELECT T.*, S.specimen_private, S.block_name, L.name as label_name,
-                         UC.username as creator, UE.username as editor,
-                         EM.t_create, EM.t_edit, S.slide_name, S.stain
-                  FROM training_sample T
-                      INNER JOIN edit_meta EM on EM.id = T.meta_id
-                      INNER JOIN user UC on UC.id = EM.creator
-                      INNER JOIN user UE on UE.id = EM.editor
-                      INNER JOIN task_slide_info S on T.slide = S.id and T.task = S.task_id
-                      INNER JOIN label L on T.label = L.id""" % (view_name,))
+
+    project, _ = get_task_data(task_id)
+    tsi_view = get_table_slide_info_view(project)
+    
+    db.execute(f"""CREATE TEMP VIEW %s AS
+                   SELECT T.*, S.specimen_private, S.block_name, L.name as label_name,
+                          UC.username as creator, UE.username as editor,
+                          EM.t_create, EM.t_edit, S.slide_name, S.stain
+                   FROM training_sample T
+                       INNER JOIN edit_meta EM on EM.id = T.meta_id
+                       INNER JOIN user UC on UC.id = EM.creator
+                       INNER JOIN user UE on UE.id = EM.editor
+                       INNER JOIN {tsi_view} S on T.slide = S.id and T.task = S.task_id
+                       INNER JOIN label L on T.label = L.id""" % (view_name,))
     
 
 # Cache slide metadata for CSV operations
@@ -1183,7 +1193,7 @@ def samples_generate_csv(task, fout, list_metadata = False, list_ids = False, li
     pr = ProjectRef(project)
 
     # Create the full view
-    make_dbview_full('v_full')
+    make_dbview_full(task, 'v_full')
 
     # Select keys to export
     keys = ('slide_name', 'label_name', 'x', 'y', 'w', 'h')
@@ -1369,7 +1379,7 @@ def delete_samples(
 
     # Create a temporary view of the big join table
     db=get_db()
-    make_dbview_full(viewname)
+    make_dbview_full(task, viewname)
 
     # Build up a where clause
     w = [('creator LIKE ?', creator),
@@ -1450,7 +1460,7 @@ def samples_fix_patches_cmd(task):
 
     # Get a list of all patches relevant to us, sorted by slide so we don't have to
     # sample slides out of order
-    make_dbview_full('v_full')
+    make_dbview_full(task, 'v_full')
     db=get_db()
     rc = db.execute(
             'SELECT * FROM v_full '
@@ -1662,8 +1672,12 @@ def task_sampling_roi_listing(task_id):
     # Map the request to json
     r = json.loads(request.get_data().decode('UTF-8'))
 
+    # Get the right table to use based on anonymization
+    project, _ = get_task_data(task_id)
+    db_view = 'sampling_roi_info_anon' if check_anon(project) else 'sampling_roi_info'
+
     # Call helper function
-    return server_side_object_listing(task_id, 'sampling_roi_info', r)
+    return server_side_object_listing(task_id, db_view, r)
 
 
 def init_app(app):

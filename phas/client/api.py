@@ -30,7 +30,7 @@ class Client:
         verify (bool, optional): Whether to perform SSL verification (see ``requests`` package)
     """
     
-    def __init__(self, url, api_key=None, verify=True):
+    def __init__(self, url, api_key:str|None=None, verify=True):
         # Create a Flask application, which will allow us to use url_for
         self.flask = create_app()
         self.verify = verify
@@ -46,13 +46,16 @@ class Client:
             raise
         
         # Load the API key
+        
+        api_key = api_key if api_key is not None else os.environ.get('PHAS_AUTH_KEY', None)
+        if api_key is None:
+            raise ValueError('API key was not provided and PHAS_AUTH_KEY environment variable is not set')
         try:
-            api_key = api_key if api_key is not None else os.environ.get('PHAS_AUTH_KEY', None)
             with open(api_key, 'rt') as fk:
                 d = json.load(fk)
                 api_key_token = d['api_key']
         except:
-            print(f'Failed to load API key from {api_key}' if api_key is not None else f'API key was not provided')
+            print(f'Failed to load API key from {api_key}')
             raise
         
         # Connect to the server with the API key
@@ -81,6 +84,7 @@ class Client:
         r = requests.post(url, cookies=self.jar, data=data, json=json, verify=self.verify)
         simplefilter('default', InsecureRequestWarning)
         r.raise_for_status()
+        self.jar = r.cookies
         return r
                
     def project_listing(self):
@@ -105,6 +109,39 @@ class Client:
         """
         r = self._get('slide', task_listing, project=project)
         return r.json()
+    
+    @property
+    def anonymize(self):
+        """
+        Whether the client is connected in anonymized mode (bool). In anonymized mode,
+        all personally identifying information such as specimen private names are hidden.
+        Even if anonymized mode is off, unless the user has been granted explicit access to
+        private information on a project, such information will still be hidden.
+        """
+        r = self._get('auth', get_anonymize_setting)
+        return r.json().get('anonymize', False)
+    
+    @anonymize.setter
+    def anonymize(self, value:bool):
+        """Set whether the client is connected in anonymized mode.
+        
+        Args:
+            value (bool): True to enable anonymized mode, False to disable it.
+        """
+        r = self._post('auth', set_anonymize_setting, anon=int(value))
+        return r.json().get('anonymize', False)
+    
+    def get_project_private_access(self, project:str):
+        """Check whether the user has access to private information on a project. 
+        If not, such information will be hidden even if anonymized mode is off.
+                
+        Args:
+            project(str): Id of the project        
+        Returns:
+            True if the user has access to private information on the project, False otherwise.
+        """
+        r = self._get('auth', get_project_private_access, project=project)
+        return r.json().get('private_access', False)
 
 
 class Labelset:

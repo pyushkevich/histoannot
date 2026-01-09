@@ -1,0 +1,66 @@
+/* Create a view for quick access to slide extended information */
+DROP VIEW IF EXISTS slide_info;
+CREATE VIEW slide_info AS
+   SELECT S.id, block_id, section, S.slide, stain, slide_name, slide_ext, project, specimen, block_name, private_name AS specimen_private, 
+          CASE WHEN public_name IS NULL THEN printf('Anon %04d', specimen) ELSE public_name END AS specimen_public
+   FROM slide S LEFT JOIN block B on S.block_id = B.id
+                LEFT JOIN specimen SP on B.specimen = SP.id;
+
+/* An anonymized slide info view */
+DROP VIEW IF EXISTS slide_info_anon;
+CREATE VIEW slide_info_anon AS
+   SELECT S.id, block_id, section, S.slide, stain, NULL as slide_name, slide_ext, project, specimen, block_name, NULL AS specimen_private, 
+          CASE WHEN public_name IS NULL THEN printf('Anon %04d', specimen) ELSE public_name END AS specimen_public
+   FROM slide S LEFT JOIN block B on S.block_id = B.id
+                LEFT JOIN specimen SP on B.specimen = SP.id;
+
+/* Create a view for quick access to block extended information */
+DROP VIEW IF EXISTS block_info;
+CREATE VIEW block_info AS
+   SELECT B.*, project, private_name as specimen_private, 
+          CASE WHEN public_name IS NULL THEN printf('Anon %04d', specimen) ELSE public_name END AS specimen_public
+   FROM block B LEFT JOIN specimen S on B.specimen = S.id;
+
+/* Create a view for quick access to block extended information */
+DROP VIEW IF EXISTS block_info_anon;
+CREATE VIEW block_info_anon AS
+   SELECT B.*, project, NULL as specimen_private, 
+          CASE WHEN public_name IS NULL THEN printf('Anon %04d', specimen) ELSE public_name END AS specimen_public
+   FROM block B LEFT JOIN specimen S on B.specimen = S.id;
+
+/* Create a view for quick access to tasks */
+DROP VIEW IF EXISTS task_info;
+CREATE VIEW task_info AS
+   SELECT T.*, PT.project as project
+   FROM task T LEFT JOIN project_task PT on T.id = PT.task_id;
+
+DROP VIEW IF EXISTS labelset_info;
+CREATE VIEW labelset_info AS
+   SELECT L.*, PL.project as project
+   FROM labelset L LEFT JOIN project_labelset PL on L.id = PL.labelset_id;
+
+/* A slide info view with task and display name */
+DROP VIEW IF EXISTS task_slide_info;
+CREATE VIEW task_slide_info AS
+    SELECT S.*, TSI.task_id, specimen_private AS specimen_display
+    FROM task_slide_index TSI
+    LEFT JOIN slide_info S on S.id = TSI.slide
+    LEFT JOIN task T on TSI.task_id = T.id;
+
+/* A slide info view with task and display name */
+DROP VIEW IF EXISTS task_slide_info_anon;
+CREATE VIEW task_slide_info_anon AS
+    SELECT S.*, TSI.task_id, specimen_public AS specimen_display
+    FROM task_slide_index TSI
+    LEFT JOIN slide_info_anon S on S.id = TSI.slide
+    LEFT JOIN task T on TSI.task_id = T.id;
+
+/* A combined view of task and project access */
+DROP VIEW IF EXISTS task_project_access;
+CREATE VIEW task_project_access AS
+   SELECT PA.project as project, TI.id as task, PA.user as user, 
+          PA.access as project_access, api_permission, anon_permission, 
+          TI.restrict_access, TA.access as task_access 
+   FROM project_access PA 
+   LEFT JOIN task_info TI on PA.project=TI.project 
+   LEFT JOIN task_access TA on PA.user=TA.user and TI.id=TA.task;

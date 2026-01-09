@@ -92,7 +92,7 @@ def dzi_get_project_and_slide_ref(project, slide_id):
     else:
         pdata = json.loads(request.form.get('project_data'))
         sdata = json.loads(request.form.get('slide_data'))
-        ProjectRef(project, pdata), SlideRef(project, **sdata)
+        return ProjectRef(project, pdata), SlideRef(project, **sdata)
 
 
 # Get affine matrix corresponding to affine mode and resolution

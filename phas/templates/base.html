@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='pure/grids-responsive-min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='pure/layouts/marketing.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='ellipsis_button.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='toggle_checkbox.css') }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
   <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='ellipsis_button.js') }}"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -32,11 +33,13 @@
              alt="Microscope icon" style="vertical-align:middle"></img>
         PICSL Histology Annotator
       </a>
+      <!-- Add a toggle button to the left of the next menu item -->
+      
       <ul class="pure-menu-list" style="position:absolute; top:50%; left:100%; transform: translate(-100%,-50%);">
         {% if g.user %}
           <li class="pure-menu-item pure-menu-has-children pure-menu-allow-hover">
             <a href="#" class="pure-menu-link">{{ g.user['username'] }}</a>
-            <ul class="pure-menu-children">
+            <ul class="pure-menu-children" style="background-color: rgb(250, 250, 255);">
                 <li class="pure-menu-item">
                     <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Edit profile</a>
                 </li>
@@ -48,6 +51,16 @@
                 <li class="pure-menu-item">
                   <a href="{{ url_for('auth.generate_api_key') }}" class="pure-menu-link">Generate API key</a>
                 </li>
+                <li class="pure-menu-item">
+                  <form method="get" action="{{ url_for('auth.toggle_anonymize') }}">
+                    <label class="toggle" style="padding: 8px 16px 8px 16px;">
+                      <input class="toggle-checkbox" type="checkbox" {% if g.anonymize %}checked{% endif %} onChange="this.form.submit()">
+                      <div class="toggle-switch"></div>
+                      <span class="toggle-label" style="color: #6FBEF3;">Anonymize</span>
+                    </label>
+                  </form>
+                </li>
+        
           </ul>
           </li>
           <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Log Out</a>

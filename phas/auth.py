@@ -36,6 +36,9 @@ import pandas
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
+# Interval for caching user data in the session (in seconds)
+_USER_CACHE_TTL = 300 # 5 minutes
+
 # Landing page
 @bp.route('/login', methods=('GET', 'POST'))
 def login():
@@ -75,16 +78,47 @@ def logout():
     return redirect(url_for('index'))
 
 
+# A decorator to cache function results in the session
+def cache_in_session(fetch_function):
+    def wrapper(*args, **kwargs):
+        # A key must be provided to identify the cached data
+        key = kwargs.get('key', None)
+        if key is None:
+            raise ValueError('A cache key must be provided to cache_in_session decorator')
+        
+        # Check the session cache first
+        user_data, timestamp = session.get(key, (None, None))
+        
+        # If the user data are missing or expired, fetch from DB
+        if user_data is None or timestamp is None or (time.time() - timestamp) > _USER_CACHE_TTL:
+            user_data = fetch_function(*args, **kwargs)
+            session[key] = (user_data, time.time())
+        
+        return user_data
+    return wrapper
+        
+@cache_in_session
+def fetch_user_info(user_id, key):
+    row = get_db().execute('SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)).fetchone()
+    if row:
+        return dict(row)
+    else:
+        return None
+
 # Run before every page to know who the user is
 @bp.before_app_request
 def load_logged_in_user():
+    g.in_request = True
     user_id = session.get('user_id')
 
     if user_id is None:
         g.user = None
     else:
-        g.user = get_db().execute('SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)).fetchone()
+        g.user = fetch_user_info(user_id, key='user_data')
         g.login_via_api_key = session.get('user_api_key', False)
+        g.anonymize = session.get('anonymize', False)
+        if g.user is not None:
+            print(f'User {g.user["username"]} loaded, anonymize={g.anonymize}')
 
 
 def _login_required(view, site_admin=False):
@@ -125,8 +159,16 @@ def login_required(view):
 def site_admin_access_required(view):
     return _login_required(view, True)
 
+# Load project access level (cached in session)
+@cache_in_session
+def fetch_project_access(user_id, project, key):
+    db = get_db()
+    rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
+                    (user_id, project)).fetchone()
+    print(f'Fetched project access for user {user_id} project {project}: {rc}')
+    return dict(rc) if rc is not None else None
 
-def _project_access_required(view, min_access_level):
+def _project_access_required(view, min_access_level, api_access_required=False):
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
@@ -140,14 +182,19 @@ def _project_access_required(view, min_access_level):
             abort(404, "Project not specified")
 
         project = kwargs['project']
-        db = get_db()
-        rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
-                        (g.user['id'], project)).fetchone()
+        pa = fetch_project_access(g.user['id'], project, key=f'project_access_{project}')
 
-        if rc is None or AccessLevel.check_access(rc['access'], min_access_level) is False:
-            current_app.logger.warning('Unauthorized %s access to project %s at URL %s'
-                                       % (min_access_level, project, request.url if request is not None else None))
-            abort(403, "You do not have %s privileges on project %s" % (min_access_level, project))
+        error = None
+        if pa is None:
+            error = "No privileges on parent project"
+        elif AccessLevel.check_access(pa['access'], min_access_level) is False:
+            error = "Insufficient privileges on parent project"
+        elif api_access_required and pa['api_permission'] < 1:
+            error = "Missing API access permission"
+        if error is not None:
+            url = request.url if request is not None else None
+            current_app.logger.warning(f'Unauthorized {min_access_level} access to project {project} at URL {url}: {error}')
+            abort(403, "Insufficient privileges on project {project}")
         else:
             return view(**kwargs)
 
@@ -157,16 +204,31 @@ def _project_access_required(view, min_access_level):
 def access_project_read(view):
     return _project_access_required(view, 'read')
 
-
 def access_project_write(view):
     return _project_access_required(view, 'write')
-
 
 def access_project_admin(view):
     return _project_access_required(view, 'admin')
 
+def api_access_project_read(view):
+    return _project_access_required(view, 'read', api_access_required=True)
 
-def _task_access_required(view, min_access_level):
+def api_access_project_write(view):
+    return _project_access_required(view, 'write', api_access_required=True)
+
+def api_access_project_admin(view):
+    return _project_access_required(view, 'admin', api_access_required=True)
+
+# Load task/project access level (cached in session)
+@cache_in_session
+def fetch_task_access(user_id, task, key):
+    db = get_db()
+    rc = db.execute('SELECT * FROM task_project_access WHERE user=? AND task=?',
+                    (user_id, task)).fetchone()
+    print(f'Fetched task access for user {user_id} task {task}: {rc}')
+    return dict(rc) if rc is not None else None
+
+def _task_access_required(view, min_access_level, api_access_required=False):
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
@@ -176,46 +238,45 @@ def _task_access_required(view, min_access_level):
             abort(404, "Task ID not specified")
 
         task_id = kwargs['task_id']
+        tpa = fetch_task_access(g.user['id'], task_id, key=f'task_access_{task_id}')
 
-        db = get_db()
+        error = None
+        if tpa is None:
+            error = "No privileges on parent project"
+        elif AccessLevel.check_access(tpa['project_access'], min_access_level) is False:
+            error = "Insufficient privileges on parent project"
+        elif api_access_required and tpa['api_permission'] < 1:
+            error = "Missing API access permission"
+        elif tpa['restrict_access'] > 0 and AccessLevel.check_access(tpa['task_access'], min_access_level) is False:
+            error = "Insufficient privileges on task"
 
-        # Make sure the user has access to the parent project
-        rc = db.execute('SELECT * FROM project_access PA '
-                        '         LEFT JOIN task_info TI on PA.project = TI.project '
-                        'WHERE PA.user=? AND TI.id=?',
-                        (g.user['id'], task_id)).fetchone()
-
-        failed = False
-        if rc is None or AccessLevel.check_access(rc['access'], min_access_level) is False:
-            failed = True
-        elif rc['restrict_access'] > 0:
-            rc2 = db.execute('SELECT * FROM task_access WHERE user=? and task=?',
-                             (g.user['id'], task_id)).fetchone()
-            if rc2 is None or AccessLevel.check_access(rc2['access'], min_access_level) is False:
-                failed = True
-
-        if failed is True:
-            current_app.logger.warning('Unauthorized %s access to task %d at URL %s'
-                                       % (min_access_level, task_id, request.url if request is not None else None))
-            abort(403, "You do not have %s privileges on task %d" % (min_access_level, task_id))
+        if error is not None:
+            url = request.url if request is not None else None
+            current_app.logger.warning(f'Unauthorized {min_access_level} access to task {task_id} at URL {url}: {error}')
+            abort(403, "Insufficient privileges on task {task_id}")
 
         else:
             return view(**kwargs)
 
     return wrapped_view
 
-
 def access_task_read(view):
     return _task_access_required(view, 'read')
-
 
 def access_task_write(view):
     return _task_access_required(view, 'write')
 
-
 def access_task_admin(view):
     return _task_access_required(view, 'admin')
 
+def api_access_task_read(view):
+    return _task_access_required(view, 'read', api_access_required=True)
+
+def api_access_task_write(view):
+    return _task_access_required(view, 'write', api_access_required=True)
+
+def api_access_task_admin(view):
+    return _task_access_required(view, 'admin', api_access_required=True)
 
 def get_mail():
     if 'mail' not in g:
@@ -420,6 +481,9 @@ def edit_user_profile():
         # If the user is missing some part of the profile, flash that
         if rc['email'] is None:
             error = "Please update your email address before proceeding to the site."
+            
+    # Reset the user cache in the session
+    session.pop('user_data', (None, None))
 
     # Render the page again
     if error is not None:
@@ -487,6 +551,53 @@ def list_api_routes():
     links.sort()
 
     return jsonify(links)
+
+
+@bp.route('/api/anonymize/toggle', methods=('GET',))
+def toggle_anonymize():
+    anonymize = session.get('anonymize', False)
+    session['anonymize'] = not anonymize
+    return redirect(request.referrer or url_for('index'))
+
+@bp.route('/api/anonymize', methods=('GET',))
+def get_anonymize_setting():
+    anonymize = session.get('anonymize', False)
+    return jsonify({'anonymize': anonymize})
+
+@bp.route('/api/set_anonymize/<int:anon>', methods=('POST',))
+def set_anonymize_setting(anon):
+    session['anonymize'] = bool(anon)
+    return jsonify({'anonymize': session['anonymize']})
+
+@bp.route('/api/project/<project>/private_access', methods=('GET',))
+def get_project_private_access(project:str):
+    if g.user is not None:
+        # Check if the user has access to the project
+        pa = fetch_project_access(g.user['id'], project, key=f'project_access_{project}')
+        if pa is not None and pa['anon_permission'] > 0:
+            return jsonify({'private_access': True})
+    return jsonify({'private_access': False})
+    
+
+def check_anon(project):
+    """
+    This method checks the user's anonymization setting, access to the current project
+    and returns True of the user should see anonymized data
+    
+    Parameters:
+    - project: project name
+    """
+    if g.get('in_request', False) is False:
+        # Not in a request context, CLI command, private access is allowed
+        return False
+    
+    elif g.anonymize is False:
+        if g.user is not None:
+            # Check if the user has access to the project
+            pa = fetch_project_access(g.user['id'], project, key=f'project_access_{project}')
+            if pa is not None and pa['anon_permission'] > 0:
+                return False
+    return True
 
 
 def get_user_id(username):

@@ -1127,6 +1127,8 @@ def users_set_site_admin_command(username, revoke):
 
 
 def user_set_access_level(username, project, project_and_tasks, task):
+    rep_map = {'N': 'N00', 'R': 'R00', 'W': 'W01', 'A': 'A11'}
+    read_flag_abbrv = lambda a: 1 if a == '1' else -1 if a == '.' else 0
     db=get_db()
 
     # Check that the user is in the system
@@ -1138,17 +1140,25 @@ def user_set_access_level(username, project, project_and_tasks, task):
     for i, project_set in enumerate([project, project_and_tasks]):
         for (p_k, abbrv) in project_set:
             pr = ProjectRef(p_k)
-            access_level = AccessLevel.from_abbrv(abbrv)
-            pr.user_set_access_level(user_id, access_level)
-            if i > 0:
+            
+            # Apply replacements
+            abbrv = rep_map[abbrv] if abbrv in rep_map else abbrv
+            
+            # Split into components
+            abbrv_access, phi, api = abbrv[0], read_flag_abbrv(abbrv[1]), read_flag_abbrv(abbrv[2])
+            access_level = AccessLevel.from_abbrv(abbrv_access) if abbrv_access != '.' else None
+            pr.user_set_access_level(user_id, access_level, phi, api)
+            if i > 0 and access_level is not None:
                 pr.user_set_all_tasks_access_level(user_id, access_level)
 
     # Provide access to all requested tasks
     for (t_k, abbrv) in task:
-        access_level = AccessLevel.from_abbrv(abbrv)
-        rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
-        pr = ProjectRef(rc['project'])
-        pr.user_set_task_access_level(t_k, user_id, access_level)
+        abbrv_access, phi, api = abbrv[0], read_flag_abbrv(abbrv[1]), read_flag_abbrv(abbrv[2])
+        access_level = AccessLevel.from_abbrv(abbrv_access) if abbrv_access != '.' else None
+        if access_level is not None:
+            rc = db.execute('SELECT * FROM task_info WHERE id=?', (t_k,)).fetchone()
+            pr = ProjectRef(rc['project'])
+            pr.user_set_task_access_level(t_k,user_id, access_level)
 
 
 @click.command('users-set-access-level')
@@ -1161,15 +1171,38 @@ def user_set_access_level(username, project, project_and_tasks, task):
 def users_set_access_level_command(username, project, project_and_tasks, task, csv):
     """
     Set project/task access permissions for a user or list of users.
+    
+    Typical use of this function is to provide a list of project and/or tasks with access 
+    levels that the user will be given access to. Access levels are:
+        none (N): no access
+        read (R): can view images and annotations
+        write (W): can view and edit annotations
+        admin (A): can view, edit and delete annotations, manage users for the project/task
+    Additional project-level permissions are:
+        PHI access (1/0): whether the user can view non-anonymized metadata for the project
+        API access (1/0): whether the user can access the project via the API
+        
+    The permission signature for projects consists of three characters:
+      Access level: N (none), R (read), W (write), A (admin), . (no change)
+      PHI access: 1 (yes), 0 (no), - (no change)
+      API access: 1 (yes), 0 (no), - (no change)
+      
+    For backward compatibility, if access level is specified as a single character,
+    the following translations are applied:
+        N -> N00, R -> R00, W -> W01, A -> A11
 
-    Typical use of this function is to provide a list of project and/or tasks with access levels that
-    the user will be given access to. Access levels are 'none', 'read', 'write', 'admin', abbreviated
-    by 'N', 'R', 'W' and 'A'.
-
+    Setting permissions on a task will ensure that the upstream project has at least
+    the same access level. Setting permissions on a project will not affect existing 
+    task permissions unless --project-and-tasks is used, in which case all tasks will be
+    set to the same access level as the project.
+    
+    PHI and API permissions apply to projects only and setting them on a task has no effect.
+        
     Example usage:
 
-    flask users-set-access-level -p proj1 R -t 22 R -P proj2 W username
-    flask users-set-access-level -p proj1 R -t 22 R -P proj2 W --csv users.csv
+    flask users-set-access-level -p proj1 R11 -t 22 R01 -P proj2 W11 username
+    flask users-set-access-level -p proj1 R01 -t 22 R01 -P proj2 W11 --csv users.csv
+    flask users-set-access-level -p proj1 ..1 --csv users.csv
     """
     db=get_db()
 
@@ -1315,10 +1348,10 @@ def users_list_permissions(username):
     print('User:    %20s   Access level: %s' % (username, 'Site Admin' if site_admin > 0 else 'Regular'))
 
     # List all projects that the user has access to
-    rc = db.execute('SELECT project, access FROM project_access WHERE user=? AND access != "none"', (user_id,))
+    rc = db.execute('SELECT project, access, anon_permission, api_permission FROM project_access WHERE user=? AND access != "none"', (user_id,))
     for row in rc.fetchall():
         prj = row['project']
-        print('Project: %20s   Access level: %s ' % (prj, row['access']))
+        print('Project: %20s   Access level: %5s   PHI: %d   API: %d' % (prj, row['access'], row['anon_permission'], row['api_permission']))
         rc2 = db.execute('SELECT TI.name, TI.id, TA.access '
                          'FROM task_info TI left join task_access TA on TI.id = TA.task '
                          'WHERE TI.project = ? '

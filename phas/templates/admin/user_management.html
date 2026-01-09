@@ -39,14 +39,17 @@ PICSL Histology Annotation Server User Admin
 
 .global_access_select {
   font-size: 80%;
+  color: #7f8c8d;
 }
 
 .project_access_select {
   font-size: 80%;
+  color: #7f8c8d;
 }
 
 .task_access_select {
   font-size: 80%;
+  color: #7f8c8d;
 }
 
 .access_read {
@@ -85,7 +88,7 @@ PICSL Histology Annotation Server User Admin
 <!-- DataTable support -->
 <div class="pure-g">
   <!-- User table -->
-  <div class="pure-u-1 pure-u-md-9-24">
+  <div class="pure-u-1 pure-u-md-8-24">
     <h3 align="center">USERS</h3>
     <div id="d_users_table">
       <table id="users" class="compact stripe hover" style="width:100%">
@@ -108,7 +111,7 @@ PICSL Histology Annotation Server User Admin
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
-  <div class="pure-u-1 pure-u-md-5-24" id="d_project_area" style="display:none;">
+  <div class="pure-u-1 pure-u-md-7-24" id="d_project_area" style="display:none;">
     <h3 align="center">PROJECT ACCESS</h3>
     <div id="d_project_table">
       <table id="projects" class="compact stripe hover" style="width:100%">
@@ -116,6 +119,8 @@ PICSL Histology Annotation Server User Admin
           <tr>
             <th>Project</th>
             <th>Access</th>
+            <th title="Allow to view private (deanonymized) data">Private</th>
+            <th title="Allow API access">API</th>
           </tr>
         </thead>
         <tbody>
@@ -128,7 +133,7 @@ PICSL Histology Annotation Server User Admin
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
-  <div class="pure-u-1 pure-u-md-8-24" id="d_task_area" style="display:none;">
+  <div class="pure-u-1 pure-u-md-7-24" id="d_task_area" style="display:none;">
     <h3 align="center">TASK ACCESS</h3>
     <div id="d_task_table">
       <table id="tasks" class="compact stripe hover" style="width:100%">
@@ -198,7 +203,7 @@ $(document).ready(function() {
   let url_user_update_profile="{{url_for('admin.user_update_profile', user_id='999999')}}";
   let url_user_project_listing="{{url_for('admin.user_get_project_access_listing', user_id='999999')}}";
   let url_user_project_task_listing="{{url_for('admin.user_get_task_access_listing', user_id='999999', project='XXXXXX')}}";
-  let url_user_set_project_access="{{url_for('admin.user_set_project_access', user_id='999999', project='XXXXXX', access_level='YYYYYY')}}";
+  let url_user_set_project_access="{{url_for('admin.user_set_project_access', user_id='999999', project='XXXXXX', access_level='YYYYYY', anon_permission='888888', api_permission='777777')}}";
   let url_user_set_task_access="{{url_for('admin.user_set_task_access', user_id='999999', project='XXXXXX', task_id='888888', access_level='YYYYYY')}}";
   let url_user_create="{{url_for('admin.user_create')}}";
   let url_user_delete="{{url_for('admin.user_delete', user_id='999999')}}";
@@ -231,6 +236,12 @@ $(document).ready(function() {
     });
     return select.prop("outerHTML");
   };
+
+  // Render a checkbox for datatables
+  function fn_render_datatable_checkbox(data, type, row, id_string, class_name) {
+    checked = (data == 1 || data === true) ? "checked" : "";
+    return `<input id="${id_string}" type="checkbox" class="${class_name}" ${checked}>`;
+  }
 
   // An ellipsis renderer for long text
   let fn_render_ellipsis = function(data, type, row, npos) {
@@ -445,27 +456,48 @@ $(document).ready(function() {
       render: function (data, type, row) {
         return fn_render_access_select(data, type, access_opts_project, "project_access_" + row.project, "project_access_select");
       }
+    },
+    {
+      data: "anon_permission",
+      className: "dt-center",
+      render: function (data, type, row) {
+        return fn_render_datatable_checkbox(data, type, row, 'project_anon_' + row.project, "project_access_select");
+      }
+    },
+    {
+      data: "api_permission",
+      className: "dt-center",
+      render: function (data, type, row) {
+        return fn_render_datatable_checkbox(data, type, row, 'project_api_' + row.project, "project_access_select");
+      }
     }
   ];
 
   // A function to update a single row in the project table
   let fn_update_project_row = function(row_data, user) {
-    row = t_projects.row("#" + row_data.project);
+    let row = t_projects.row("#" + row_data.project);
     row.data(row_data);
-    $("#project_access_" + row_data.project).on('change', function(e) {
-      fn_project_access_select_onchange(e, user);
-    });
+    let project = row_data.project;
+
+    $(`#project_access_${project}`).on('change', (e) => fn_project_access_select_onchange(e, user));
+    $(`#project_anon_${project}`).on('change', (e) => fn_project_access_select_onchange(e, user));
+    $(`#project_api_${project}`).on('change', (e) => fn_project_access_select_onchange(e, user));
   };
 
   // A callback for the project access select element
   let fn_project_access_select_onchange = function(event, user) {
-    let select = event.target;
-    let project_id = select.id.substr('project_access_'.length);
+    let control = event.target;
+    let project_id = control.id.match('project_(access|anon|api)_(.*)')[2];
+    let select = $(`#project_access_${project_id}`);
+    let chk_anon = $(`#project_anon_${project_id}`);
+    let chk_api = $(`#project_api_${project_id}`);
     $.ajax({
       url: url_user_set_project_access
               .replace('999999', user)
               .replace('XXXXXX', project_id)
-              .replace('YYYYYY', $(select).val()),
+              .replace('YYYYYY', select.val())
+              .replace('888888', chk_anon.is(':checked') ? '1' : '0')
+              .replace('777777', chk_api.is(':checked') ? '1' : '0'),
       success: function (resp_text) {
         resp_data = JSON.parse(resp_text);
         fn_update_project_row(resp_data, user);
@@ -625,6 +657,9 @@ $(document).ready(function() {
 
   // This prevents from clicks on the access selector from activating row selection
   t_projects.on('click', 'select', function(e) { e.stopPropagation(); });
+  t_projects.on('click', 'input', function(e) { e.stopPropagation(); });
+
+
   t_tasks.on('click', 'select', function(e) { e.stopPropagation(); });
 
   // Set up the reset link message dialog

@@ -184,6 +184,8 @@ CREATE TABLE project_access (
   user INTEGER NOT NULL,
   project TEXT NOT NULL,
   access TEXT CHECK(access in ('none','read','write','admin')) NOT NULL DEFAULT 'none',
+  anon_permission BOOLEAN DEFAULT(0) NOT NULL,
+  api_permission BOOLEAN DEFAULT(0) NOT NULL,
   PRIMARY KEY(user, project),
   FOREIGN KEY(project) REFERENCES project(id),
   FOREIGN KEY (user) REFERENCES user (id)

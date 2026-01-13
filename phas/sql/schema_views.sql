@@ -97,7 +97,7 @@ CREATE VIEW effective_task_project_access AS
    FROM (
       SELECT TPA.project, TPA.task, TPA.restrict_access, GM.user_id,
              MAX(CASE TPA.project_access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_project, 
-             MAX(CASE TPA.task_access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_task, 
+             MAX(CASE IFNULL(TPA.task_access,'none') WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_task, 
              MAX(api_permission) AS api_permission, MAX(anon_permission) AS anon_permission 
       FROM task_project_access TPA 
       LEFT JOIN effective_group_membership GM ON GM.group_id = TPA.user 

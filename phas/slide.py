@@ -111,10 +111,10 @@ def task_listing(project):
     db=get_db()
     user = session['user_id']
 
-    # List the available tasks (TODO: check user access to task)
+    # List the available tasks
     rc = db.execute("""
-                    SELECT DISTINCT TI.* from task_info TI left join task_access TA on TI.id=TA.task 
-                    where project=? and (restrict_access=0 or (user=? and access != "none"))
+                    SELECT DISTINCT TI.* from task_info TI left join effective_task_project_access TA on TI.id=TA.task 
+                    where project=? and user=? and (restrict_access=0 or access != "none")
                     """, (project, user))
 
     listing = []
@@ -744,10 +744,10 @@ def get_available_tasks_for_slide(project, slide_id):
     # All tasks that the user has access to on this slide
     rc = db.execute(
         "SELECT DISTINCT TI.* FROM task_info TI "
-        "       LEFT JOIN task_access TA ON TI.id=TA.task "
+        "       LEFT JOIN effective_task_project_access TA ON TI.id=TA.task "
         "       LEFT JOIN task_slide_index TSI on TSI.task_id = TI.id "
-        "WHERE project=? AND TSI.slide = ? "
-        "       AND (restrict_access=0 OR (user=? and access != 'none')) ",
+        "WHERE project=? AND TSI.slide = ? AND user=? "
+        "       AND (restrict_access=0 OR access != 'none') ",
         (project, slide_id, user))
     
     # For each task, designate its mode

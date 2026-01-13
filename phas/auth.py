@@ -163,7 +163,7 @@ def site_admin_access_required(view):
 @cache_in_session
 def fetch_project_access(user_id, project, key):
     db = get_db()
-    rc = db.execute('SELECT * FROM project_access WHERE user=? AND project=?',
+    rc = db.execute('SELECT * FROM effective_project_access WHERE user=? AND project=?',
                     (user_id, project)).fetchone()
     print(f'Fetched project access for user {user_id} project {project}: {rc}')
     return dict(rc) if rc is not None else None
@@ -223,7 +223,7 @@ def api_access_project_admin(view):
 @cache_in_session
 def fetch_task_access(user_id, task, key):
     db = get_db()
-    rc = db.execute('SELECT * FROM task_project_access WHERE user=? AND task=?',
+    rc = db.execute('SELECT * FROM effective_task_project_access WHERE user=? AND task=?',
                     (user_id, task)).fetchone()
     print(f'Fetched task access for user {user_id} task {task}: {rc}')
     return dict(rc) if rc is not None else None
@@ -514,31 +514,30 @@ def generate_api_key():
 
 @bp.route('/api/login', methods=('POST',))
 def login_with_api_key():
-    if request.method == 'POST':
-        api_key = request.form['api_key']
-        error = None
+    api_key = request.form['api_key']
+    error = None
 
-        db = get_db()
-        user = db.execute("""
-            SELECT U.*, AK.t_expires 
-            FROM user_api_key AK LEFT JOIN user U on AK.user = U.id
-            WHERE AK.api_key = ?""", (api_key,)).fetchone()
-        
-        if user is None:
-            error = 'Invalid API key'
-        elif user['disabled'] > 0:
-            error = 'User account is disabled'
-        elif user['t_expires'] < time.time():
-            error = 'API key has expired'
+    db = get_db()
+    user = db.execute("""
+        SELECT U.*, AK.t_expires 
+        FROM user_api_key AK LEFT JOIN user U on AK.user = U.id
+        WHERE AK.api_key = ?""", (api_key,)).fetchone()
+    
+    if user is None:
+        error = 'Invalid API key'
+    elif user['disabled'] > 0:
+        error = 'User account is disabled'
+    elif user['t_expires'] < time.time():
+        error = 'API key has expired'
 
-        if error is None:
-            session.clear()
-            session['user_id'] = user['id']
-            session['user_is_site_admin'] = user['site_admin']
-            session['user_api_key'] = True
-            return make_response({"status": "ok"}, 200)
+    if error is None:
+        session.clear()
+        session['user_id'] = user['id']
+        session['user_is_site_admin'] = user['site_admin']
+        session['user_api_key'] = True
+        return make_response({"status": "ok"}, 200)
 
-        return make_response({"status": "failed", "error": error}, 401)
+    return make_response({"status": "failed", "error": error}, 401)
 
 
 @bp.route('/sitemap', methods=('GET',))
@@ -635,7 +634,7 @@ class DuplicateEmailException(UserException):
     pass
 
 
-def add_user(username, expiry, email, notify):
+def add_user(username, expiry, email, is_group, notify):
 
     # Check if the user is already in the system
     if get_user_id(username) is not None:
@@ -650,22 +649,24 @@ def add_user(username, expiry, email, notify):
         raise UserExistsException('User %s is already in the system' % (username,))
 
     # Create the username with an unguessable password
-    dummy_password = str(uuid.uuid4())
-    db.execute('INSERT INTO user(username, email, password) VALUES (?,?,?)',
-               (username,email,dummy_password))
+    dummy_password = str(uuid.uuid4()) if is_group is False else None
+    db.execute('INSERT INTO user(username, email, password, is_group) VALUES (?,?,?,?)',
+               (username,email,dummy_password,is_group))
     db.commit()
 
     # Extract the user record from the database
     row = db.execute('SELECT * FROM user WHERE username=?', (username,)).fetchone()
-    user_id = row['id']
 
     # Generate a password reset link for the user.
-    url = create_password_reset_link(row['id'], expiry)
-    if notify is True and email is not None:
-        send_user_invitation(row['id'], url, True)
+    if not is_group:
+        url = create_password_reset_link(row['id'], expiry)
+        if notify is True and email is not None:
+            send_user_invitation(row['id'], url, True)
+    else:
+        url = None
 
     # Return user details as a dict
-    d = { x : row[x] for x in ('id', 'username', 'email') }
+    d = { x : row[x] for x in ('id', 'username', 'email', is_group) }
     d['url'] = url
     return d
 
@@ -678,7 +679,7 @@ def add_user(username, expiry, email, notify):
 @with_appcontext
 def user_add_command(username, expiry, email, notify):
     """Create a new user and generate a password reset link"""
-    d = add_user(username, expiry, email, notify)
+    d = add_user(username, expiry, email, False, notify)
     print("User: %d  Email: %s  ResetLink: %s" % (d['id'], d['email'], d['url']))
 
 

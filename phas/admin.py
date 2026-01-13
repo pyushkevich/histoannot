@@ -49,6 +49,15 @@ def user_row_to_json(row):
         d['access'] = 'active'
     return d
 
+def group_row_to_json(row):
+    d = {x: row[x] for x in ('id', 'username', 'disabled', 'site_admin')}
+    if row['disabled'] > 0:
+        d['access'] = 'inactive'
+    elif row['site_admin'] > 0:
+        d['access'] = 'site_admin'
+    else:
+        d['access'] = 'active'
+    return d
 
 # List users with access level
 @bp.route('/api/admin/users')
@@ -61,9 +70,28 @@ def user_listing():
     # Result array
     listing = []
 
-    rc = db.execute('SELECT * FROM user')
+    rc = db.execute('SELECT * FROM user WHERE is_group=FALSE ORDER BY id')
     for row in rc.fetchall():
         listing.append(user_row_to_json(row))
+
+    # Generate a bunch of json
+    return json.dumps(listing)
+
+
+# List users with access level
+@bp.route('/api/admin/groups')
+@site_admin_access_required
+def group_listing():
+
+    # Get the current user
+    db = get_db()
+
+    # Result array
+    listing = []
+
+    rc = db.execute('SELECT * FROM user WHERE is_group=TRUE ORDER BY id')
+    for row in rc.fetchall():
+        listing.append(group_row_to_json(row))
 
     # Generate a bunch of json
     return json.dumps(listing)
@@ -96,24 +124,29 @@ def user_update_profile(user_id):
     # Validate requested access
     access = data.get("access", None)
     email = data.get("email", None)
+    is_group = data.get("is_group", None)
+    
     if access not in ('active', 'inactive', 'site_admin'):
         return abort_json("Invalid JSON in request")
 
-    if not validate_email(email):
-        return abort_json("Email address fails validation")
+    if is_group is None:
+        return abort_json("Invalid JSON in request")
 
+    if not is_group and (email is None or not validate_email(email)):
+        return abort_json("Email address fails validation")
+    
     # Block user from revoking their own site-admin access
     if g.user['id'] == user_id and access != 'site_admin':
         return abort_json("Attempt to revoke sysadmin privilege of active user")
 
     # Update the access of the user
     db = get_db()
-    db.execute('UPDATE user SET disabled=?, site_admin=?, email=? WHERE id=?',
-               (access=='inactive', access=='site_admin', email, user_id))
+    db.execute('UPDATE user SET disabled=?, site_admin=?, email=? WHERE id=? and is_group=?',
+               (access=='inactive', access=='site_admin', email if not is_group else None, user_id, is_group))
     db.commit()
 
     # Get an updated JSON for the user
-    row = db.execute('SELECT * FROM user WHERE id=?', (user_id,)).fetchone()
+    row = db.execute('SELECT * FROM user WHERE id=? and is_group=?', (user_id,is_group)).fetchone()
     return json.dumps(user_row_to_json(row))
 
 
@@ -128,17 +161,22 @@ def user_create():
     username = data.get("username", None)
     access = data.get("access", None)
     email = data.get("email", None)
+    is_group = data.get("is_group", None)
+
     if access not in ('active', 'inactive', 'site_admin'):
         return abort_json("Invalid JSON in request")
 
     if username is None or len(username) < 1:
         return abort_json("Missing user or email")
 
-    if email is None or not validate_email(email):
+    if is_group is None:
+        return abort_json("Invalid JSON in request")
+
+    if not is_group and (email is None or not validate_email(email)):
         return abort_json("Email address fails validation")
 
     # Try to create the user
-    d = add_user(username, 7*24*3600, email, True)
+    d = add_user(username, 7*24*3600, email, is_group, True)
     if d is None or 'id' not in d:
         return abort_json("Failed to add user")
 
@@ -201,6 +239,7 @@ def user_get_project_access_listing(user_id):
         listing.append(user_project_access_row_to_json(row))
     print(listing)
     return json.dumps(listing)
+
 
 
 def user_task_access_row_to_json(row):
@@ -277,4 +316,42 @@ def user_set_task_access(user_id, project, task_id, access_level):
         return abort_json('Unable to change task access')
 
 
+def group_membership_row_to_json(row):
+    d = {x: row[x] for x in ('group_id', 'group_name', 'member')}
+    return d
 
+@bp.route('/api/admin/user/<int:user_id>/group_membership', methods=('GET',))
+@site_admin_access_required
+def user_get_user_group_membership_listing(user_id):
+    db = get_db()
+    rc = db.execute(
+        'SELECT G.id as group_id, G.username as group_name, IFNULL(GM.user_id>=0,0) as member '
+        'FROM user G LEFT JOIN '
+        '  (SELECT * FROM group_membership WHERE user_id=?) GM ON G.id=GM.group_id '
+        'WHERE G.is_group = TRUE '
+        'ORDER BY group_name', (user_id,))
+    listing = []
+    for row in rc.fetchall():
+        listing.append(group_membership_row_to_json(row))
+    return json.dumps(listing)
+
+
+@bp.route('/api/admin/user/<int:user_id>/set_group_membership/group/<int:group_id>/membership/<int:membership>', methods=('GET',))
+@site_admin_access_required
+def user_set_user_group_membership(user_id, group_id, membership):
+    db = get_db()
+    if membership > 0:
+        # Add membership
+        db.execute('INSERT OR IGNORE INTO group_membership (group_id, user_id) VALUES (?, ?)', (group_id, user_id))
+    else:
+        # Remove membership
+        db.execute('DELETE FROM group_membership WHERE group_id=? AND user_id=?', (group_id, user_id))
+    db.commit()
+    
+    row = db.execute(
+        'SELECT G.id as group_id, G.username as group_name, IFNULL(GM.user_id>=0,0) as member '
+        'FROM user G LEFT JOIN '
+        '  (SELECT * FROM group_membership WHERE user_id=?) GM ON G.id=GM.group_id '
+        'WHERE G.is_group = TRUE AND G.id=? ',
+        (user_id, group_id)).fetchone()
+    return json.dumps(group_membership_row_to_json(row))

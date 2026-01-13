@@ -7,6 +7,11 @@ CREATE TABLE PROJECT (
     json TEXT NOT NULL
 );
 
+/* 
+  User table. 'disabled' indicates whether the user can log in.
+  'site_admin' indicates whether the user is a site administrator.
+  'is_group' indicates whether the user is a group account (no login)
+*/
 DROP TABLE IF EXISTS user;
 CREATE TABLE user (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14,7 +19,17 @@ CREATE TABLE user (
   password TEXT,
   email TEXT,
   disabled BOOLEAN NOT NULL DEFAULT (0),
-  site_admin BOOLEAN NOT NULL DEFAULT(0)
+  site_admin BOOLEAN NOT NULL DEFAULT(0),
+  is_group BOOLEAN NOT NULL DEFAULT(0),
+);
+
+DROP TABLE IF EXISTS group_membership;
+CREATE TABLE group_membership (
+  group_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  PRIMARY KEY(group_id, user_id),
+  FOREIGN KEY(group_id) REFERENCES user(id),
+  FOREIGN KEY(user_id) REFERENCES user(id)
 );
 
 DROP TABLE IF EXISTS password_reset;

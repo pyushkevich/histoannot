@@ -64,3 +64,41 @@ CREATE VIEW task_project_access AS
    FROM project_access PA 
    LEFT JOIN task_info TI on PA.project=TI.project 
    LEFT JOIN task_access TA on PA.user=TA.user and TI.id=TA.task;
+
+/* A view of group membership that includes each user as their own group */
+DROP VIEW IF EXISTS effective_group_membership;
+CREATE VIEW effective_group_membership AS
+   SELECT user_id, group_id FROM group_membership 
+   UNION ALL 
+   SELECT U.id AS user_id, U.id AS group_id FROM user U WHERE is_group=0 
+   ORDER BY user_id, group_id;
+
+/* A view of project access that includes group memberships */
+DROP VIEW IF EXISTS effective_project_access;
+CREATE VIEW effective_project_access AS
+   SELECT user_id AS user, project, 
+          CASE max_num_acc WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS access, 
+          anon_permission, api_permission 
+   FROM (
+      SELECT PA.project, GM.user_id,
+             MAX(CASE PA.access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS max_num_acc, 
+             MAX(api_permission) AS api_permission, MAX(anon_permission) AS anon_permission 
+      FROM effective_group_membership GM 
+      RIGHT JOIN project_access PA ON GM.group_id = PA.user 
+      GROUP BY PA.project, GM.user_id);
+
+/* A view of task access that includes group memberships */
+DROP VIEW IF EXISTS effective_task_project_access;
+CREATE VIEW effective_task_project_access AS
+   SELECT project, task, user_id AS user,  
+          CASE mna_project WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS project_access, 
+          anon_permission, api_permission, restrict_access,
+          CASE mna_task WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS task_access
+   FROM (
+      SELECT TPA.project, TPA.task, TPA.restrict_access, GM.user_id,
+             MAX(CASE TPA.project_access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_project, 
+             MAX(CASE TPA.task_access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_task, 
+             MAX(api_permission) AS api_permission, MAX(anon_permission) AS anon_permission 
+      FROM effective_group_membership GM 
+      RIGHT JOIN task_project_access TPA ON GM.group_id = TPA.user 
+      GROUP BY TPA.task, GM.user_id);

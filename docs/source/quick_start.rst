@@ -152,6 +152,9 @@ In your instance directory (``/home/foo/phas/instance``), create a file ``config
     # URL for your PHAS installation
     HISTOANNOT_PUBLIC_URL="http://127.0.0.1:8888"
 
+    # Optionally, enable a guest user account (comment out if not needed)
+    HISTOANNOT_GUEST_USER="guest"
+
 
 Database Creation
 -----------------

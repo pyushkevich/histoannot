@@ -81,6 +81,12 @@ PICSL Histology Annotation Server User Admin
   bottom: 10px;
   left: 50%;
   transform: translate(-50%, 0);
+  display: flex; /* Use flexbox for spacing */
+  gap: 10px;    /* Space between buttons */
+}
+
+.ui-tabs {
+    margin: 5px;
 }
 
 </style>
@@ -89,73 +95,129 @@ PICSL Histology Annotation Server User Admin
 <div class="pure-g">
   <!-- User table -->
   <div class="pure-u-1 pure-u-md-8-24">
-    <h3 align="center">USERS</h3>
-    <div id="d_users_table">
-      <table id="users" class="compact stripe hover" style="width:100%">
-        <thead class="text-left">
-          <tr>
-            <th>Id</th>
-            <th>User</th>
-            <th>Email</th>
-            <th>Access</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-        </tbody>
-      </table>
-    </div>
-    <div id="no_users_message" style="display:none; text-align:center;">
-      No users have been configured for this installation.
+    <div id="tabs-users-groups">
+      <ul>
+        <li><a href="#tabs-users-groups-users">Users</a></li>
+        <li><a href="#tabs-users-groups-groups">Groups</a></li>
+      </ul>
+      <div id="tabs-users-groups-users">
+        <div id="d_users_table">
+          <table id="users" class="compact stripe hover" style="width:100%">
+            <thead class="text-left">
+              <tr>
+                <th>Id</th>
+                <th>User</th>
+                <th>Email</th>
+                <th>Access</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div id="no_users_message" style="display:none; text-align:center;">
+          No users have been configured for this installation.
+        </div>
+      </div>  
+      <div id="tabs-users-groups-groups">
+        <div id="d_groups_table">
+          <table id="groups" class="compact stripe hover" style="width:100%">
+            <thead class="text-left">
+              <tr>
+                <th>Id</th>
+                <th>Group</th>
+                <th>Access</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div id="no_groups_message" style="display:none; text-align:center;">
+          No groups have been configured for this installation.
+        </div>
+      </div>
     </div>
   </div>
-  <div class="pure-u-1 pure-u-md-1-24">
+  <div class="pure-u-1 pure-u-md-8-24" id="d_project_area" style="display:none;">
+    <div id="tabs-project-group-access">
+      <ul>
+        <li><a href="#tabs-project-group-access-projects">Project Access</a></li>
+        <li><a href="#tabs-project-group-access-groups">Group Membership</a></li>
+      </ul>
+      <div id="tabs-project-group-access-projects">
+        <div id="d_project_table">
+          <table id="projects" class="compact stripe hover" style="width:100%">
+            <thead class="text-left">
+              <tr>
+                <th>Project</th>
+                <th>Access</th>
+                <th title="Allow to view private (deanonymized) data">Private</th>
+                <th title="Allow API access">API</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div id="no_projects_message" style="display:none; text-align:center;">
+          No projects have been configured for this installation.
+        </div>
+      </div>
+      <div id="tabs-project-group-access-groups">
+        <div id="d_group_member_table">
+          <table id="group_member" class="compact stripe hover" style="width:100%">
+            <thead class="text-left">
+              <tr>
+                <th>Group</th>
+                <th>Membership</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div id="no_group_member_message" style="display:none; text-align:center;">
+          No groups have been configured for this installation.
+        </div>
+        <div id="no_nested_groups_message" style="display:none; text-align:center;">
+          Only users can be assigned to groups.
+        </div>
+      </div>
+    </div>  
   </div>
-  <div class="pure-u-1 pure-u-md-7-24" id="d_project_area" style="display:none;">
-    <h3 align="center">PROJECT ACCESS</h3>
-    <div id="d_project_table">
-      <table id="projects" class="compact stripe hover" style="width:100%">
-        <thead class="text-left">
-          <tr>
-            <th>Project</th>
-            <th>Access</th>
-            <th title="Allow to view private (deanonymized) data">Private</th>
-            <th title="Allow API access">API</th>
-          </tr>
-        </thead>
-        <tbody>
-        </tbody>
-      </table>
-    </div>
-    <div id="no_projects_message" style="display:none; text-align:center;">
-      No projects have been configured for this installation.
-    </div>
-  </div>
-  <div class="pure-u-1 pure-u-md-1-24">
-  </div>
-  <div class="pure-u-1 pure-u-md-7-24" id="d_task_area" style="display:none;">
-    <h3 align="center">TASK ACCESS</h3>
-    <div id="d_task_table">
-      <table id="tasks" class="compact stripe hover" style="width:100%">
-        <thead class="text-left">
-          <tr>
-            <th>Task Id</th>
-            <th>Task Name</th>
-            <th>Access</th>
-          </tr>
-        </thead>
-        <tbody>
-        </tbody>
-      </table>
-    </div>
-    <div id="no_task_message" style="display:none; text-align:center;">
-      There are no privileged tasks in this project.
+  <div class="pure-u-1 pure-u-md-8-24" id="d_task_area" style="display:none;">
+    <div id="tabs-task-access">
+      <ul>
+        <li><a href="#tabs-tabs-task-access-tasks">Task Access</a></li>
+      </ul>
+      <div id="tabs-tabs-task-access-tasks">
+        <div id="d_task_table">
+          <table id="tasks" class="compact stripe hover" style="width:100%">
+            <thead class="text-left">
+              <tr>
+                <th>Task Id</th>
+                <th>Task Name</th>
+                <th>Access</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div id="no_task_message" style="display:none; text-align:center;">
+          There are no privileged tasks in this project.
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="pure-g button_bar" id="button_bar">
   <button class="pure-button pure-button-primary topbutton" id="new_user_button">New User</button>
+  <button class="pure-button pure-button-primary topbutton" id="new_group_button">New Group</button>
 </div>
 
 <!-- Reset password dialog -->
@@ -180,7 +242,7 @@ PICSL Histology Annotation Server User Admin
 
       <label for="form-user-edit-email">Email:</label>
       <input name="email" type="email" id="form-user-edit-email" style="width:100%">
-
+      <input type="hidden" name="is_group" id="form-user-edit-is-group" value="0">
       <label for="form-user-edit-access-level">Access level:</label>
       <select name="accesslevel" id="form-user-edit-access-level" style="width:100%">
         <option value="active">Active</option>
@@ -199,14 +261,17 @@ $(document).ready(function() {
 
   // AJAX url templates
   let url_user_listing="{{url_for('admin.user_listing')}}";
+  let url_group_listing="{{url_for('admin.group_listing')}}";
   let url_user_reset_link="{{url_for('admin.user_get_reset_link', user_id='999999', notify=1)}}";
   let url_user_update_profile="{{url_for('admin.user_update_profile', user_id='999999')}}";
   let url_user_project_listing="{{url_for('admin.user_get_project_access_listing', user_id='999999')}}";
   let url_user_project_task_listing="{{url_for('admin.user_get_task_access_listing', user_id='999999', project='XXXXXX')}}";
+  let url_user_group_membership_listing="{{url_for('admin.user_get_user_group_membership_listing', user_id='999999')}}";
   let url_user_set_project_access="{{url_for('admin.user_set_project_access', user_id='999999', project='XXXXXX', access_level='YYYYYY', anon_permission='888888', api_permission='777777')}}";
   let url_user_set_task_access="{{url_for('admin.user_set_task_access', user_id='999999', project='XXXXXX', task_id='888888', access_level='YYYYYY')}}";
   let url_user_create="{{url_for('admin.user_create')}}";
   let url_user_delete="{{url_for('admin.user_delete', user_id='999999')}}";
+  let url_user_set_group_membership="{{url_for('admin.user_set_user_group_membership', user_id='999999', group_id='888888', membership='777777')}}";
   // var url_task="{{url_for('slide.task_listing', project='XXXX')}}";
   // var url_action="{{url_for('slide.task_detail', task_id='999999')}}";
   // var url_labelset_edt="{{url_for('dltrain.labelset_editor', project='XXXX')}}";
@@ -215,6 +280,16 @@ $(document).ready(function() {
   let fn_ajax_error_handler = function (xhr, ajaxOptions, thrownError) {
     alert(JSON.parse(xhr.responseText).error)
   };
+
+  // Set up the jQuery tabs widgets
+  $("#tabs-users-groups").tabs({
+    activate: function(event, ui) {
+      deselect_user_or_group();
+    }
+  });
+
+  $("#tabs-project-group-access").tabs();
+  $("#tabs-task-access").tabs();
 
   // Render callback for global access level selectors
   let access_opts_user = ["active", "inactive", "site_admin"];
@@ -265,7 +340,7 @@ $(document).ready(function() {
     {
       data: "access",
       render: function (data, type, row) {
-        return fn_render_access_select(data, type, access_opts_user, "global_access_" + row.id, "global_access_select");
+        return fn_render_access_select(data, type, access_opts_user, "global_access_usr_" + row.id, "global_access_select");
       }
     },
     {
@@ -276,11 +351,31 @@ $(document).ready(function() {
     }
   ];
 
+  // Column descriptions for the user table. Note the last column
+  // sets up the context menu
+  let group_listing_col_desc = [
+    { data: "id", visible: false },
+    { data: "username", render: function(d,t,r) { return fn_render_ellipsis(d,t,r,12); } },
+    {
+      data: "access",
+      render: function (data, type, row) {
+        return fn_render_access_select(data, type, access_opts_user, "global_access_grp_" + row.id, "global_access_select");
+      }
+    },
+    {
+      data: null,
+      className: "dt-center context-menu-group ellipsis",
+      defaultContent: fn_make_ellipsis_button(),
+      orderable: false
+    }
+  ];
+
   // A function to update a single row in the project table
-  let fn_update_users_row = function(row_data) {
-    row = t_users.row("#" + row_data.id);
+  let fn_update_users_row = function(is_group, row_data) {
+    let table = is_group ? t_groups : t_users;
+    row = table.row("#" + row_data.id);
     row.data(row_data);
-    $("#global_access_" + row_data.id).on('change', function(e) {
+    $(`#global_access_${is_group ? 'grp' : 'usr'}_${row_data.id}`).on('change', function(e) {
       fn_global_access_select_onchange(e);
     });
   };
@@ -288,59 +383,107 @@ $(document).ready(function() {
   // A callback for the project access select element
   let fn_global_access_select_onchange = function(event) {
     let select = event.target;
-    let user_id = select.id.substr('global_access_'.length);
+    let is_group = select.id.startsWith('global_access_grp_');
+    let user_id = select.id.substr('global_access_grp_'.length);
+    let table = is_group ? t_groups : t_users;
+    if(is_group)
+      console.log(`Global access change for group ${user_id} to ${$(select).val()}`);
+    else
+      console.log(`Global access change for user ${user_id} to ${$(select).val()}`);
+    
     $.ajax({
       url: url_user_update_profile.replace('999999', user_id),
       method: "post",
-      data: JSON.stringify({access: $(select).val(), email: t_users.row("#" + user_id).data().email}),
+      data: JSON.stringify({
+        access: $(select).val(), 
+        email: is_group ? null : table.row("#" + user_id).data().email, 
+        is_group: is_group}),
       success: function (resp_text) {
         var resp_json = JSON.parse(resp_text);
         if (resp_json.id == user_id) {
-          fn_update_users_row(resp_json);
+          fn_update_users_row(is_group, resp_json);
         }
       },
       error: function (xhr, ajaxOptions, thrownError) {
         fn_ajax_error_handler(xhr, ajaxOptions, thrownError);
-        t_users.ajax.reload();
+        table.ajax.reload();
       }
     });
   };
 
-  // Set up the users table
-  let t_users = $('#users').DataTable( {
-    "ajax": function(data, callback, settings) {
-      $.ajax({
-        url: url_user_listing,
-        success: function(resp_text) {
-          resp_data = JSON.parse(resp_text);
-          callback({data: resp_data});
-          if(resp_data.length === 0) {
-            $('#d_users_table').css('display', 'none');
-            $('#no_users_message').css('display', 'block');
-          }
-          else {
-            $('#d_users_table').css('display', 'block');
-            $('#no_users_message').css('display', 'none');
-          }
-          $(".global_access_select").on('change', function(e) {
-            fn_global_access_select_onchange(e);
-          });
-        },
-        error: fn_ajax_error_handler
-      });
-    },
-    columns: user_listing_col_desc,
-    rowId: 'id',
-    paging: false,
-    scrollY: "65vh",
-    scrollCollapse: true,
-    info: false,
-    select: 'single',
-    searching: true
-  } );
+  let setup_user_or_group_table = function(id, url, col_desc, parent_table, empty_message_id) {
+    // Set up the users table
+    let table = $(id).DataTable( {
+      "ajax": function(data, callback, settings) {
+        $.ajax({
+          url: url,
+          success: function(resp_text) {
+            resp_data = JSON.parse(resp_text);
+            callback({data: resp_data});
+            if(resp_data.length === 0) {
+              $(parent_table).css('display', 'none');
+              $(empty_message_id).css('display', 'block');
+            }
+            else {
+              $(parent_table).css('display', 'block');
+              $(empty_message_id).css('display', 'none');
+            }
+            $(".global_access_select").on('change', function(e) {
+              fn_global_access_select_onchange(e);
+            });
+          },
+          error: fn_ajax_error_handler
+        });
+      },
+      columns: col_desc,
+      rowId: 'id',
+      paging: false,
+      scrollY: "65vh",
+      scrollCollapse: true,
+      info: false,
+      select: 'single',
+      searching: true
+    } );
 
-  // This prevents from clicks on the access selector from activating row selection
-  t_users.on('click', 'select', function(e) { e.stopPropagation(); });
+    // This prevents from clicks on the access selector from activating row selection
+    table.on('click', 'select', function(e) { e.stopPropagation(); });
+
+    // Handle row selection
+    table.on('select', function(e,dt,type,indexes) {
+      if(type === 'row') {
+        user_or_group_selected();
+      }
+    });
+
+    table.on('deselect', function(e,dt,type,indexes) {
+      user_or_group_deselected();
+    });
+
+    return table;
+  }
+
+  // Set up the users table
+  let t_users = setup_user_or_group_table('#users', url_user_listing, user_listing_col_desc, '#d_users_table', '#no_users_message');
+  let t_groups = setup_user_or_group_table('#groups', url_group_listing, group_listing_col_desc, '#d_groups_table', '#no_groups_message');
+
+  // Function to read currently selected user or group
+  let fn_selected_user_or_group = function() {
+    // Check what tab is selected
+    let is_group = ($("#tabs-users-groups").tabs("option", "active") == 1);
+    let table = is_group ? t_groups : t_users;
+    let s_rows = table.rows('.selected').data();
+    if(s_rows.length == 1) {
+      return s_rows[0];
+    }
+    else {
+      return null;
+    }
+  };
+
+  // Check if currently selected user is a group
+  let fn_selected_is_group = function() {
+    return ($("#tabs-users-groups").tabs("option", "active") == 1);
+  };
 
   // Function to populate and show the reset link dialog
   let fn_show_reset_dialog = function(user, reset_link) {
@@ -363,7 +506,7 @@ $(document).ready(function() {
   };
 
   // Function to delete a user
-  let fn_delete_user = function(user) {
+  let fn_delete_user = function(user, is_group) {
     $.ajax({
       url: url_user_delete.replace('999999',user.id),
       success: function(resp_text) {
@@ -373,7 +516,70 @@ $(document).ready(function() {
     });
   };
 
+  let setup_user_or_group_context_menu = function(selector, table, is_group) 
+  {
+    // Set up the user context menu, including actions when the menu items are clicked
+    noun = is_group ? "group" : "user";
+
+    items = []
+    items.push({ 
+          name: "Edit profile...", 
+          icon: "edit",
+          callback: function(itemKey, opt, e) {
+            let row = table.row($(this).closest('tr'));
+            fn_edit_profile(row, is_group);
+          }
+        })
+    if(!is_group) {
+      items.push({ 
+        name: "Reset password...",
+        icon: "password",
+        callback: function(itemKey, opt, e) { 
+          let row = table.row($(this).closest('tr'));
+          fn_reset_password(row.data());
+        }
+      })
+    }
+    items.push("---")
+    items.push({ name: `Delete ${noun}`,
+      icon: "delete",
+      items: [
+              { name: "Never mind", icon: "quit", },
+              { 
+                name: `Really delete ${noun}`, icon: "delete",
+                items: [
+                      { name: "Never mind", icon: "quit", },
+                      { name: "---" },
+                      { 
+                        name: `Delete ${noun}, REALLY!`, icon: "delete",
+                        callback: function(itemKey, opt, e) {
+                          let row = table.row($(this).closest('tr'));
+                          fn_delete_user(row.data(), is_group);
+                        }
+                      }
+                ] }
+              ]
+    })
+    
+    $(document).contextMenu({
+      selector: selector,
+      trigger: "left",
+      zIndex: 10,
+      items: items,
+      events: {
+        preShow: function(options) {
+          row = table.row(options.closest('tr'));
+          row.select();
+        }
+      }
+    });
+  }
+
   // Set up the user context menu, including actions when the menu items are clicked
+  setup_user_or_group_context_menu(".context-menu-user", t_users, false);
+  setup_user_or_group_context_menu(".context-menu-group", t_groups, true);
+
+  /*
   $(document).contextMenu({
     selector: ".context-menu-user",
     trigger: "left",
@@ -424,6 +630,7 @@ $(document).ready(function() {
       }
     }
   });
+  */
 
   /*
 ,
@@ -512,9 +719,9 @@ $(document).ready(function() {
   let t_projects = $('#projects').DataTable( {
     "ajax": function(data, callback, settings) {
       // Get the selected user
-      let s_rows = t_users.rows('.selected').data();
-      if(s_rows.length == 1) {
-        selected_user = s_rows[0].id;
+      let sel_row = fn_selected_user_or_group();
+      if(sel_row != null) {
+        selected_user = sel_row.id;
         // user_id = t_users.data("selected_row").data().id;
         $.ajax({
           url: url_user_project_listing.replace('999999', selected_user),
@@ -546,19 +753,126 @@ $(document).ready(function() {
     searching: true
   } );
 
-  // Handle row selection
-  t_users.on('select', function(e,dt,type,indexes) {
-    if(type === 'row') {
-      // Set the selected row as an attached data value
-      t_projects.ajax.reload();
-      $('#d_project_area').css('display','block');
+  // Group membership table column descriptor
+  let group_member_col_desc = [
+    { data: "group_name" },
+    {
+      data: "member",
+      className: "dt-center",
+      render: function (data, type, row) {
+        return fn_render_datatable_checkbox(data, type, row, 'group_member_' + row.group_id, "group_member_select");
+      }
     }
-  });
+  ];
 
-  t_users.on('deselect', function(e,dt,type,indexes) {
+  // A callback for the project access select element
+  let fn_group_membership_select_onchange = function(event, user) {
+    let control = event.target;
+    let group_id = control.id.match('group_member_(.*)')[1];
+    let chk_member = $(`#group_member_${group_id}`);
+    $.ajax({
+      url: url_user_set_group_membership
+              .replace('999999', user)
+              .replace('888888', group_id)
+              .replace('777777', chk_member.is(':checked') ? '1' : '0'),
+      success: function (resp_text) {
+        resp_data = JSON.parse(resp_text);
+        fn_update_group_membership_row(resp_data, user);
+      },
+      error: fn_ajax_error_handler
+    });
+  };
+
+  let fn_update_group_membership_row = function(row_data, user) {
+    let row = t_group_member.row("#" + row_data.group_id);
+    row.data(row_data);
+    let group_id = row_data.group_id;
+
+    $(`#group_member_${group_id}`).on('change', (e) => fn_group_membership_select_onchange(e, user));
+  };
+
+
+  // Set up the user group membership table
+  let t_group_member = $('#group_member').DataTable( {
+    "ajax": function(data, callback, settings) {
+      // Get the selected user
+      let sel_row = fn_selected_user_or_group();
+      let is_group = fn_selected_is_group();
+      if(sel_row != null) {
+        if(!is_group) {
+          $('#no_nested_groups_message').css('display', 'none');
+          selected_user = sel_row.id;
+          $.ajax({
+            url: url_user_group_membership_listing.replace('999999', selected_user),
+            success: function (resp_text) {
+              resp_data = JSON.parse(resp_text);
+              callback({data: resp_data});
+              if (resp_data.length === 0) {
+                $('#d_group_member_table').css('display', 'none');
+                $('#no_group_member_message').css('display', 'block');
+              } else {
+                $('#d_group_member_table').css('display', 'block');
+                $('#no_group_member_message').css('display', 'none');
+              }
+              $(".group_member_select").on('change', function(e) {
+                fn_group_membership_select_onchange(e, selected_user);
+              });
+            },
+            error: fn_ajax_error_handler
+          });
+        }
+        else {
+          callback({data: []});
+          $('#d_group_member_table').css('display', 'none');
+          $('#no_group_member_message').css('display', 'none');
+          $('#no_nested_groups_message').css('display', 'block');
+        }
+      }
+    },
+    columns: group_member_col_desc,
+    rowId: 'group_id',
+    paging: false,
+    scrollY: "600px",
+    scrollCollapse: true,
+    info: false,
+    select: 'single',
+    searching: true
+  } );
+
+
+  // This prevents from clicks on the access selector from activating row selection
+  t_group_member.on('click', 'input', function(e) { e.stopPropagation(); });
+
+
+  // Functions to handle row selection/deselection
+  let user_or_group_selected = function() {
+    t_projects.ajax.reload();
+    t_group_member.ajax.reload();
+    /*
+    let is_group = fn_selected_is_group();
+    if(is_group) {
+      // Disable group membership tab for groups
+      $("#tabs-project-group-access").tabs("disable", 2);
+      t_group_member.clear();
+    }
+    else {
+      // Disable group membership tab for groups
+      $("#tabs-project-group-access").tabs("enable", 2);
+      t_group_member.ajax.reload();
+    }
+      */
+    $('#d_project_area').css('display','block');
+  };
+
+  let user_or_group_deselected = function() {
     $('#d_project_area').css('display','none');
     $('#d_task_area').css('display','none');
-  });
+  };
+
+  let deselect_user_or_group = function() {
+    t_users.rows('.selected').deselect();
+    t_groups.rows('.selected').deselect();
+  };
 
   // Task table column descriptor
   let task_listing_col_desc = [
@@ -605,10 +919,10 @@ $(document).ready(function() {
   let t_tasks = $('#tasks').DataTable( {
     "ajax": function(data, callback, settings) {
       // Get the selected user
-      let s_rows_user = t_users.rows('.selected').data();
+      let sel_row = fn_selected_user_or_group();
       let s_rows_proj = t_projects.rows('.selected').data();
-      if(s_rows_user.length == 1 && s_rows_proj.length == 1) {
-        selected_user = s_rows_user[0].id;
+      if(sel_row != null && s_rows_proj.length == 1) {
+        selected_user = sel_row.id;
         selected_proj = s_rows_proj[0].project;
         $.ajax({
           url: url_user_project_task_listing.replace('999999', selected_user).replace('XXXXXX', selected_proj),
@@ -709,15 +1023,16 @@ $(document).ready(function() {
           text: "Update User",
           click: function () {
             email = $("#form-user-edit-email").val();
+            is_group = parseInt($("#form-user-edit-is-group").val());
             access = $("#form-user-edit-access-level").val();
             row = $("#form-user-edit").data("row");
             $.ajax({
               url: url_user_update_profile.replace('999999', row.data().id),
               method: "post",
-              data: JSON.stringify({access: access, email: email}),
+              data: JSON.stringify({access: access, email: email, is_group: is_group}),
               success: function (resp_text) {
                 var resp_json = JSON.parse(resp_text);
-                fn_update_users_row(resp_json);
+                fn_update_users_row(is_group, resp_json);
               },
               error: fn_ajax_error_handler
             });
@@ -728,13 +1043,14 @@ $(document).ready(function() {
           id: "duep-button-create",
           text: "Create User",
           click: function () {
+            is_group = parseInt($("#form-user-edit-is-group").val());
             username = $("#form-user-edit-username").val();
             email = $("#form-user-edit-email").val();
             access = $("#form-user-edit-access-level").val();
             $.ajax({
               url: url_user_create,
               method: "post",
-              data: JSON.stringify({username: username, access: access, email: email}),
+              data: JSON.stringify({username: username, access: access, email: email, is_group: is_group}),
               success: function (resp_text) {
                 let resp_json = JSON.parse(resp_text);
                 let user_id = resp_json.user.id
@@ -760,35 +1076,47 @@ $(document).ready(function() {
         }]
   });
 
-  // Function to display edit user dialog
-  let fn_edit_profile = function(row) {
+  // Function to display edit user/group dialog
+  let fn_edit_profile = function(row, is_group) {
+    noun = is_group ? "Group" : "User"
     $("#form-user-edit-username").prop("disabled", true);
     $("#form-user-edit-username").val(row.data().username);
+    $("#form-user-edit-is-group").val(is_group ? "1" : "0");
     $("#form-user-edit-email").val(row.data().email);
+    $("#form-user-edit-email").prop("disabled", is_group);
     $("#form-user-edit-access-level").val(row.data().access);
     $("#form-user-edit").data("row", row);
     $("#duep-button-create").button().hide();
     $("#duep-button-update").button().show();
-    $("#dialog-user-edit-profile").dialog("option", "title", "Edit User");
+    $("#duep-button-update").html(`Update ${noun}`);
+    $("#dialog-user-edit-profile").dialog("option", "title", `Edit ${noun} Profile`);
     $("#dialog-user-edit-profile").dialog("open");
   };
 
-  // Function to display edit user dialog
-  let fn_add_new_user = function(row) {
+  // Function to create a new user/group dialog
+  let fn_add_new_user_or_group = function(is_group) {
+    noun = is_group ? "Group" : "User"
     $("#form-user-edit-username").prop("disabled", false);
     $("#form-user-edit-username").val("");
+    $("#form-user-edit-is-group").val(is_group ? "1" : "0");
     $("#form-user-edit-email").val("");
+    $("#form-user-edit-email").prop("disabled", is_group);
     $("#form-user-edit-access-level").val("active");
     $("#form-user-edit").data("row", null);
-    $("#dialog-user-edit-profile").dialog("option", "title", "Add New User");
     $("#duep-button-create").button().show();
+    $("#duep-button-create").html(`Create ${noun}`);
     $("#duep-button-update").button().hide();
+    $("#dialog-user-edit-profile").dialog("option", "title", `Add New ${noun}`);
     $("#dialog-user-edit-profile").dialog("open");
   };
 
-
   $('#new_user_button').on('click', function() {
-    fn_add_new_user();
+    fn_add_new_user_or_group(false);
+    return false;
+  });
+
+  $('#new_group_button').on('click', function() {
+    fn_add_new_user_or_group(true);
     return false;
   });
 

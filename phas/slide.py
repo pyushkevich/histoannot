@@ -82,8 +82,8 @@ def project_listing():
     # List all projects for the current user
     if session.get('user_is_site_admin', False) is not True:
         rc = db.execute('SELECT P.*, PA.access="admin" as admin FROM project P '
-                        'LEFT JOIN project_access PA ON PA.project=P.id '
-                        'WHERE PA.user = ?'
+                        'LEFT JOIN effective_project_access PA ON PA.project=P.id '
+                        'WHERE PA.user = ? AND PA.access != "none" '
                         'ORDER BY P.disp_name', (user,))
     else:
         rc = db.execute('SELECT P.*, 1 as admin FROM project P ORDER BY P.disp_name ')

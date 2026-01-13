@@ -3,7 +3,7 @@ svg.ellipsis {
     width: 1.2em;
     position: absolute;
     top: 50%;
-    left: 0%;
+    left: 50%;
     transform: translate(-50%, -50%);
 }
 
@@ -27,5 +27,6 @@ svg.ellipsis_circle:hover {
 
 td.ellipsis {
     position: relative;
+    width: 2em;
 }
   

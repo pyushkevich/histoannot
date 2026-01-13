@@ -19,12 +19,20 @@ class AccessLevel:
 
     @staticmethod
     def from_int(access_level):
-        return ["none", "read", "write", "admin"][value]
+        return ["none", "read", "write", "admin"][access_level]
 
     @staticmethod
     def check_access(test_level, min_level):
         """Check access level against minimum required level"""
         return AccessLevel.to_int(test_level) >= AccessLevel.to_int(min_level)
+    
+    @staticmethod
+    def max(level_1, level_2):
+        """Return the highest of two access levels"""
+        if AccessLevel.to_int(level_1) >= AccessLevel.to_int(level_2):
+            return level_1
+        else:
+            return level_2
 
 
 # A function to return an error code from JSON-based REST API

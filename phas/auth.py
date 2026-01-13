@@ -648,8 +648,8 @@ def add_user(username, expiry, email, is_group, notify):
     if rc.rowcount > 0:
         raise UserExistsException('User %s is already in the system' % (username,))
 
-    # Create the username with an unguessable password
-    dummy_password = str(uuid.uuid4()) if is_group is False else None
+    # Create the username with an unguessable password (even for groups, because of NOT NULL constraint)
+    dummy_password = str(uuid.uuid4())
     db.execute('INSERT INTO user(username, email, password, is_group) VALUES (?,?,?,?)',
                (username,email,dummy_password,is_group))
     db.commit()

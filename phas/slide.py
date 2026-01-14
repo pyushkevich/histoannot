@@ -114,7 +114,7 @@ def task_listing(project):
     # List the available tasks
     rc = db.execute("""
                     SELECT DISTINCT TI.* from task_info TI left join effective_task_project_access TA on TI.id=TA.task 
-                    where project=? and user=? and (restrict_access=0 or access != "none")
+                    where TA.project=? and user=? and (TA.restrict_access=0 or TA.task_access != "none")
                     """, (project, user))
 
     listing = []
@@ -746,8 +746,8 @@ def get_available_tasks_for_slide(project, slide_id):
         "SELECT DISTINCT TI.* FROM task_info TI "
         "       LEFT JOIN effective_task_project_access TA ON TI.id=TA.task "
         "       LEFT JOIN task_slide_index TSI on TSI.task_id = TI.id "
-        "WHERE project=? AND TSI.slide = ? AND user=? "
-        "       AND (restrict_access=0 OR access != 'none') ",
+        "WHERE TA.project=? AND TSI.slide = ? AND user=? "
+        "       AND (TA.restrict_access=0 OR TA.task_access != 'none') ",
         (project, slide_id, user))
     
     # For each task, designate its mode

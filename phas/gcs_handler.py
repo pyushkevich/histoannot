@@ -393,12 +393,11 @@ class GoogleCloudTiffHandle(io.RawIOBase):
 
     
 # OpenSlide wrapper for GCS
-class GoogleCloudOpenSlideWrapper:
+class AbstractStreamOpenSlideWrapper:
     
-    def __init__(self, client, gs_url, cache=None):
+    def __init__(self, stream):
         # Load the tiff file
-        self.h = GoogleCloudTiffHandle(client, gs_url, cache)
-        self.tf = tifffile.TiffFile(self.h)
+        self.tf = tifffile.TiffFile(stream)
         
         # Collect the tiled pages
         self.tiled_pages = [ p for p in self.tf.pages if p.is_tiled ]
@@ -550,3 +549,10 @@ class GoogleCloudOpenSlideWrapper:
             if downsample < ds_i:
                 return max(i-1, 0)
         return len(ds)-1
+
+
+class GoogleCloudOpenSlideWrapper(AbstractStreamOpenSlideWrapper):
+     
+    def __init__(self, client, gs_url, cache=None):
+        AbstractStreamOpenSlideWrapper.__init__(self,
+             GoogleCloudTiffHandle(client, gs_url, cache))

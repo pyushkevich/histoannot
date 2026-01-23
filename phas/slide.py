@@ -30,6 +30,7 @@ from .slideref import SlideRef, get_slide_ref
 from .project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from .delegate import find_delegate_for_slide
 from .dzi import get_affine_matrix, get_random_patch, get_osl
+from .common import cache
 from io import BytesIO, StringIO
 from PIL import Image
 from threading import Thread
@@ -67,13 +68,16 @@ def project_detail(project):
     return render_template('slide/projects_tasks.html', project_name=project)
 
 
-# Project listing for the current user
-@bp.route('/api/projects')
-@login_required
-def project_listing():
+@bp.route('/api/project/<project>/info', methods=['GET'])
+@access_project_read
+def project_get_info(project):
+    pr = ProjectRef(project)
+    return json.dumps({'description': pr.desc})
 
-    # Get the current user
-    user = session['user_id']
+
+# Allow caching the project listing
+@cache.memoize(timeout=300)
+def cached_project_listing(user_id):
     db = get_db()
 
     # Result array
@@ -84,7 +88,7 @@ def project_listing():
         rc = db.execute('SELECT P.*, PA.access="admin" as admin FROM project P '
                         'LEFT JOIN effective_project_access PA ON PA.project=P.id '
                         'WHERE PA.user = ? AND PA.access != "none" '
-                        'ORDER BY P.disp_name', (user,))
+                        'ORDER BY P.disp_name', (user_id,))
     else:
         rc = db.execute('SELECT P.*, 1 as admin FROM project P ORDER BY P.disp_name ')
 
@@ -100,22 +104,31 @@ def project_listing():
         # Create a dictionary
         listing.append({'id':row['id'],'admin':row['admin'],'disp_name':row['disp_name'],'desc':row['desc'],
                         'nslides':stat['nslides'], 'nblocks':stat['nblocks'], 'nspecimens':stat['nspecimens']})
+    
+    return listing    
+
+
+# Project listing for the current user
+@bp.route('/api/projects')
+@login_required
+def project_listing():
+
+    # Get the current user
+    user_id = session['user_id']
 
     # Generate a bunch of json
-    return json.dumps([x for x in listing])
+    return json.dumps([x for x in cached_project_listing(user_id)])
 
 
-@bp.route('/api/project/<project>/tasks')
-@access_project_read
-def task_listing(project):
+@cache.memoize(timeout=300)
+def cached_project_task_listing(user_id, project):
     db=get_db()
-    user = session['user_id']
 
     # List the available tasks
     rc = db.execute("""
                     SELECT DISTINCT TI.* from task_info TI left join effective_task_project_access TA on TI.id=TA.task 
                     where TA.project=? and user=? and (TA.restrict_access=0 or TA.task_access != "none")
-                    """, (project, user))
+                    """, (project, user_id))
 
     listing = []
     for row in rc.fetchall():
@@ -138,7 +151,15 @@ def task_listing(project):
 
         listing.append(d)
 
-    return json.dumps([x for x in listing])
+    return listing
+
+
+@bp.route('/api/project/<project>/tasks')
+@access_project_read
+def task_listing(project):
+    user_id = session['user_id']
+    print(f'Cache info: {cache.cache}')
+    return json.dumps([x for x in cached_project_task_listing(user_id, project)])
 
 
 # Get basic information about a task

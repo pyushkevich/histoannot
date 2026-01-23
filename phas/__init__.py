@@ -18,6 +18,7 @@
 import os
 from flask import Flask, request, current_app
 from flask_pure import Pure
+from .common import cache
 from . import db
 from . import auth
 from . import slide
@@ -38,7 +39,7 @@ def create_app(test_config = None):
 
     # create and configure the app
     app = Flask(__name__, instance_path=instance_path, instance_relative_config=True)
-
+    
     # Handle configuration
     app.config.from_object('phas.default_settings')
     if test_config is None:
@@ -51,6 +52,17 @@ def create_app(test_config = None):
         os.makedirs(app.instance_path)
     except OSError:
         pass
+
+    # Create an configure a cache
+    uwsgi_cache_name = app.config.get('HISTOANNOT_UWSGI_CACHE_NAME', None)
+    if uwsgi_cache_name is not None:
+        print(f"#### USING UWSGI CACHE {uwsgi_cache_name} ####")
+        cache_config = {'CACHE_TYPE': 'UWSGICache', 
+                        'CACHE_UWSGI_NAME': f'{uwsgi_cache_name}'}
+    else:
+        print(f"#### USING SIMPLE CACHE ####")
+        cache_config = {'CACHE_TYPE': 'SimpleCache'}
+    cache.init_app(app, config=cache_config)
 
     # DZI blueprint used in every mode
     app.register_blueprint(dzi.bp)
@@ -118,7 +130,7 @@ def flask_info():
     rc = mydb.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
     for row in rc:
         print(f'    {row[0]}')
-        
-        
+
+
 
 

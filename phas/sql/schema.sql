@@ -50,6 +50,17 @@ CREATE TABLE user_api_key (
   FOREIGN KEY(user) REFERENCES user(id)
 );
 
+DROP TABLE IF EXISTS oauth_token;
+CREATE TABLE oauth_token (
+  user INTEGER NOT NULL,
+  authority TEXT NOT NULL,
+  oauth_id TEXT NOT NULL,
+  access_token TEXT,
+  refresh_token TEXT,
+  PRIMARY KEY(user, authority),
+  FOREIGN KEY(user) REFERENCES user(id)
+);
+
 /*
 DROP TABLE IF EXISTS block;
 CREATE TABLE block (

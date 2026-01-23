@@ -41,16 +41,17 @@
             <a href="#" class="pure-menu-link">{{ g.user['username'] }}</a>
             <ul class="pure-menu-children" style="background-color: rgb(250, 250, 255);">
                 <li class="pure-menu-item">
-                    <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Edit profile</a>
+                    <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Account Settings ...</a>
                 </li>
                 {% if g.user['site_admin'] > 0 %}
                   <li class="pure-menu-item">
-                      <a href="{{ url_for('admin.user_management') }}" class="pure-menu-link">Manage users</a>
+                      <a href="{{ url_for('admin.user_management') }}" class="pure-menu-link">Manage Users ...</a>
                   </li>
                 {% endif %}
                 <li class="pure-menu-item">
                   <a href="{{ url_for('auth.generate_api_key') }}" class="pure-menu-link">Generate API key</a>
                 </li>
+                {% if not config.HISTOANNOT_DISABLE_ANONYMIZATION %}
                 <li class="pure-menu-item">
                   <form method="get" action="{{ url_for('auth.toggle_anonymize') }}">
                     <label class="toggle" style="padding: 8px 16px 8px 16px;">
@@ -60,12 +61,13 @@
                     </label>
                   </form>
                 </li>
+                {% endif %}
         
           </ul>
           </li>
-          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Log Out</a>
+          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.logout') }}">Sign Out</a>
         {% else %}
-          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Log In</a>
+          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Sign In</a>
         {% endif %}
       </ul>
     </div>

@@ -16,7 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from flask import (
-    Blueprint, request, url_for, make_response, current_app, send_file, jsonify
+    Blueprint, request, url_for, make_response, current_app, send_file, jsonify, g
 )
 from werkzeug.exceptions import abort
 
@@ -35,6 +35,7 @@ from random import randint
 from .slideref import SlideRef,get_slide_ref
 from .project_ref import ProjectRef
 from .auth import access_project_read, access_project_admin
+from .common import cache
 from google.cloud import storage
 
 bp = Blueprint('dzi', __name__)
@@ -267,6 +268,25 @@ class PILBytesIO(BytesIO):
         raise AttributeError('Not supported')
 
 
+# Get the Deep Zoom generator for a slide. The output of this function is cached
+# in order to speed up tile retrieval and minimize database access. The user_id is
+# passed in order to have separate caches for different users (since different users
+# may have different view/access to the same slide)
+@cache.memoize(50)
+def get_dz_generator_cached(user_id, project, slide_id, resource):
+    from openslide.deepzoom import DeepZoomGenerator
+    
+    # Get a project reference, using either local database or remotely supplied dict
+    _, sr = dzi_get_project_and_slide_ref(project, slide_id)
+   
+    # Get the raw SVS/tiff file for the slide (the resource should exist, 
+    # or else we will spend a minute here waiting with no response to user)
+    # tiff_file = sr.get_local_copy(resource)
+    os = get_osl(slide_id, sr, resource) if sr is not None else None
+    dz = DeepZoomGenerator(os) if os is not None else None
+    return dz
+
+
 # Get the tiles for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
@@ -275,33 +295,19 @@ def tile_db(mode, project, slide_id, resource, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
         # Not supported by Deep Zoom
-        return 'bad format'
-        abort(404)
+        abort(404, 'bad format')
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
-
-    # Get the raw SVS/tiff file for the slide (the resource should exist, 
-    # or else we will spend a minute here waiting with no response to user)
-    # tiff_file = sr.get_local_copy(resource)
-    os = get_osl(slide_id, sr, resource)
-
-    # TODO: bring back affine!
-    #os = None
-    #if mode == 'affine':
-    #    os = AffineTransformedOpenSlide(tiff_file, get_affine_matrix(sr, 'affine', resource, 'image'))
-    #else:
-    #    os = OpenSlide(tiff_file)
-
-    from openslide.deepzoom import DeepZoomGenerator
-    dz = DeepZoomGenerator(os)
+    dz = get_dz_generator_cached(g.user, project, slide_id, resource)
+    if dz is None:
+        abort(404, 'bad slide/resource')
+        
     tile = dz.get_tile(level, (col, row))
 
     buf = PILBytesIO()
     tile.save(buf, format, quality=75)
     resp = make_response(buf.getvalue())
     resp.mimetype = 'image/%s' % format
-    print('PNG size: %d' % (len(buf.getvalue(),)))
     return resp
 
 

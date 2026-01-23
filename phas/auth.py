@@ -32,6 +32,7 @@ import click
 import uuid
 import json
 import pandas
+import httpx
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -297,7 +298,10 @@ def reset():
     rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = 0 COLLATE NOCASE', (rq_email,)).fetchone()
 
     if rc is None:
-        error = "There is no active user with email address %s" % (rq_email,)
+        error = f"There is no active user with email address {rq_email}"
+        
+    elif rc['oauth_only'] > 0:
+        error = f"The account associated with email address {rq_email} does not support password login. Please use ORCID iD to login."
 
     else:
         send_user_resetlink(rc['id'])
@@ -453,7 +457,9 @@ def edit_user_profile():
         return redirect(url_for('auth.login'))
 
     # Get the user information
-    rc = db.execute('SELECT U.* FROM user U where U.id = ? ', (g.user['id'],)).fetchone()
+    rc = db.execute('SELECT U.*, OAT.oauth_id '
+                    'FROM user U LEFT JOIN (SELECT * FROM oauth_token WHERE authority="orcid") OAT ON U.id = OAT.user '
+                    'WHERE U.id = ?', (g.user['id'],)).fetchone()
 
     error = None
     rq_email = None
@@ -491,7 +497,9 @@ def edit_user_profile():
 
     return render_template('auth/edit_profile.html',
                            username=rc['username'],
-                           email = rq_email if rq_email is not None else rc['email'])
+                           email = rq_email if rq_email is not None else rc['email'],
+                           orcid_id = rc['oauth_id'],
+                           oauth_only = rc['oauth_only'] > 0)
 
 
 @bp.route('/api/generate_key', methods=('GET', 'POST'))
@@ -576,7 +584,197 @@ def get_project_private_access(project:str):
         if pa is not None and pa['anon_permission'] > 0:
             return jsonify({'private_access': True})
     return jsonify({'private_access': False})
+
+def login_or_create_account_with_orcid(create_new: bool):
+    if not current_app.config.get('HISTOANNOT_ALLOW_ORCID_LOGIN', False):
+        abort(403, description="ORCID OAuth login is not enabled.")
+    orcid_client_id = current_app.config.get('ORCID_CLIENT_ID', None)
+    public_url = current_app.config.get('HISTOANNOT_PUBLIC_URL', None)
+    if orcid_client_id is None or public_url is None:
+        abort(500, description="ORCID OAuth client ID is not configured.")
+        
+    return redirect(f'https://orcid.org/oauth/authorize?client_id={orcid_client_id}' 
+                    f'&response_type=code&scope=/authenticate' 
+                    f'&redirect_uri={public_url}/auth/api/oauth/orcid/callback' 
+                    f'&state={"create_account" if create_new else "login"}')
+
+
+@bp.route('/api/oauth/orcid/login', methods=('GET',))
+def login_with_orcid():
+    return login_or_create_account_with_orcid(False)
+
+@bp.route('/api/oauth/orcid/create_account', methods=('GET',))
+def create_account_with_orcid():
+    return login_or_create_account_with_orcid(True)
+
+@bp.route('/api/oauth/orcid/callback', methods=('GET',))
+def orcid_oauth_callback():
+    if not current_app.config.get('HISTOANNOT_ALLOW_ORCID_LOGIN', False):
+        abort(403, description="ORCID OAuth login is not enabled.")
+
+    # Get the authorization code from the request
+    code = request.args.get('code', None)
     
+    # Read the state from the request - do we need to create a new account?
+    create_new = request.args.get('state', '') == 'create_account'
+    if code is None:
+        abort(400, description="Missing authorization code from ORCID.")
+        
+    # If there is already a user logged in, we are linking the ORCID ID to the account
+    # and the create_new flag cannot be set
+    if g.user is not None and create_new is True:
+        abort(400, description="Cannot create a new account when already logged in.")
+        
+    if create_new is True and not current_app.config.get('HISTOANNOT_ALLOW_NEW_ACCOUNTS', False):
+        abort(403, description="Creating new accounts is not allowed.")
+        
+    # Now, we need to generate the following request:
+    orcid_client_id = current_app.config.get('ORCID_CLIENT_ID', None)
+    public_url = current_app.config.get('HISTOANNOT_PUBLIC_URL', None)
+    r = httpx.post(
+        'https://orcid.org/oauth/token',
+        headers={
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        data={
+            'client_id': orcid_client_id,
+            'client_secret': current_app.config.get('ORCID_CLIENT_SECRET', ''),
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': f"{public_url}/auth/api/oauth/orcid/callback"
+        })
+    
+    if r.status_code != 200:
+        abort(500, description=f"ORCID token request failed with status code {r.status_code}: {r.text}")
+        
+    # Parse the json response
+    r_json = r.json()
+    name = r_json.get('name', None)
+    orcid_id = r_json.get('orcid', None)
+    print(f'ORCID OAuth login for ORCID ID {orcid_id}, name={name}, json={r_json}')
+    
+    # Process the ORCID ID
+    db = get_db()
+    
+    # Are we logging in or creating a new account?
+    if create_new is True:
+        # Check if the user with this ORCID ID already exists in the system
+        user = db.execute(
+            '''SELECT * 
+            FROM user U LEFT JOIN oauth_token OAT ON U.id = OAT.user 
+            WHERE authority="orcid" AND oauth_id = ?''', (orcid_id,)).fetchone()
+        
+        if user is not None:
+            # Redirect to login page with error message
+            flash(f'An account associated with ORCID ID {orcid_id} already exists. Please use the "Existing Users" tab to sign in.')
+            return redirect(url_for('auth.login'))
+        
+        # Check that there is a valid group for new accounts
+        new_user_group = current_app.config.get('HISTOANNOT_NEW_USER_GROUP', None)
+        if new_user_group is None:
+            abort(500, description="New user group is not configured, cannot create new account.")
+        rc = db.execute('SELECT * FROM user WHERE username=? AND is_group=1', (new_user_group,)).fetchone()
+        if rc is None:
+            abort(500, description=f"New user group '{new_user_group}' does not exist, cannot create new account.")
+        group_id = rc['id']
+            
+        # Create a new user account
+        username = f'orcid_{orcid_id}'
+        password = str(uuid.uuid4())  # Random password, will never be used
+        rc = db.execute(
+            '''INSERT INTO user(username, password, is_group, oauth_only)
+            VALUES (?,?,0,1)''', (username, password))
+        user_id = rc.lastrowid
+        
+        # Link the ORCID ID to the user account
+        rc = db.execute(
+            '''INSERT INTO oauth_token(user, authority, oauth_id, access_token, refresh_token)
+            VALUES (?,?,?,?,?)''', (user_id, 'orcid', orcid_id, r_json['access_token'], r_json['refresh_token']))
+        
+        # Add the user to the new user group
+        rc = db.execute(
+            '''INSERT INTO group_membership(user_id,group_id)
+            VALUES (?,?)''', (user_id, group_id))
+        
+        # Commit the changes
+        db.commit()
+        
+    else:
+        # Are we already logged in? In this case, we need to link the ORCID ID to the user account
+        if g.user is not None:
+            rc = db.execute(
+                '''INSERT OR REPLACE INTO oauth_token(user, authority, oauth_id, access_token, refresh_token)
+                VALUES (?,?,?,?,?)''', (g.user['id'], 'orcid', orcid_id, r_json['access_token'], r_json['refresh_token']))
+            db.commit()
+            flash(f'ORCID ID {orcid_id} has been linked to your user account.')
+            return redirect(url_for('auth.edit_user_profile'))
+        
+    # Check if the user with this ORCID ID exists and is enabled    
+    user = db.execute(
+        '''SELECT * 
+        FROM user U LEFT JOIN oauth_token OAT ON U.id = OAT.user 
+        WHERE authority="orcid" AND oauth_id = ? AND disabled = 0''', (orcid_id,)).fetchone()
+    
+    if user is not None:
+        # Log the user in
+        session.clear()
+        session['user_id'] = user['id']
+        session['user_is_site_admin'] = user['site_admin']
+        session['user_api_key'] = False
+        return redirect(url_for('index'))
+    
+    # Redirect to login page with error message
+    flash(f'No user account is associated with ORCID ID {orcid_id}. Please login with your username and password to link your ORCID ID to your user account.')
+    return redirect(url_for('auth.login'))
+
+    
+@bp.route('/api/oauth/orcid/unlink', methods=('GET','POST'))
+@login_required
+def unlink_orcid():
+    db = get_db()
+    
+    # Get the current token and check that the user can actually be removed
+    rc = db.execute(
+        '''SELECT U.*, OAT.* 
+           FROM user U LEFT JOIN oauth_token OAT on U.id = OAT.user
+           WHERE user=? AND authority="orcid"''', (g.user['id'],)).fetchone()
+    if rc is None:
+        flash('No ORCID ID is linked to your user account.')
+        return redirect(url_for('auth.edit_user_profile'))
+    if rc['oauth_only'] > 0:
+        flash('Cannot unlink ORCID ID from an OAuth-only account.')
+        return redirect(url_for('auth.edit_user_profile'))
+
+    orcid_id = rc['oauth_id']
+    
+    # Revoke the token at ORCID
+    orcid_client_id = current_app.config.get('ORCID_CLIENT_ID', None)
+    r = httpx.post(
+        'https://orcid.org/oauth/revoke',
+        headers={
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        data={
+            'client_id': orcid_client_id,
+            'client_secret': current_app.config.get('ORCID_CLIENT_SECRET', ''),
+            'token': rc['access_token']
+        })
+    
+    # Print what was sent to the ORCID server
+    print(f'Revoking ORCID token for ORCID ID {orcid_id}, client_id={orcid_client_id}, token={rc["refresh_token"]}')
+
+    if r.status_code != 200:
+        abort(500, description=f"ORCID token request failed with status code {r.status_code}: {r.text}")
+    else:
+        print(f'ORCID token for ORCID ID {orcid_id} revoked successfully with status code {r.status_code}: {r.text}')
+    
+    db.execute('DELETE FROM oauth_token WHERE user=? AND authority="orcid"', (g.user['id'],))
+    db.commit()
+    flash('Your ORCID ID has been unlinked from your user account.')
+    return redirect(url_for('auth.edit_user_profile'))
+
 
 def check_anon(project):
     """
@@ -586,6 +784,10 @@ def check_anon(project):
     Parameters:
     - project: project name
     """
+    # Check config
+    if current_app.config.get('HISTOANNOT_DISABLE_ANONYMIZATION', False) is True:
+        return False
+    
     if g.get('in_request', False) is False:
         # Not in a request context, CLI command, private access is allowed
         return False

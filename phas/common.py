@@ -1,4 +1,7 @@
 import json
+from flask_caching import Cache
+
+cache = Cache()
 
 class AccessLevel:
 

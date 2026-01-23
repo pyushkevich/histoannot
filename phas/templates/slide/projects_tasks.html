@@ -226,13 +226,39 @@ $(document).ready(function() {
     }
   });
 
+  let popup_about_dialog = function(title, content) {
+    $("<div></div>").html(content).dialog({
+      modal: true,
+      title: title,
+      width: "auto",
+      height: "auto",
+      buttons: {
+        "Close": function() {
+          $(this).dialog("close");
+        }
+      }
+    });
+  };
+
   // Set up the actual menu, including actions when the menu items are clicked
   $("#proj-context-menu").menu({
     select: function (event, ui) {
       var dialog = $("#dialog-proj-context-menu");
       var project = dialog.data("project");
       dialog.dialog("close");
-      if(ui.item[0].id === "mi-labelset-edt") {
+      if (ui.item[0].id === "mi-about") {
+        // pop up a dialog with project info using ajax
+        var url = "{{url_for('slide.project_get_info', project='XXXX')}}".replace('XXXX', project);
+        $.ajax({
+          url: url,
+          success: function(resp_text) {
+            resp = JSON.parse(resp_text);
+            popup_about_dialog("Project Information", resp.description);
+          }
+        });        
+        return false;
+      }
+      else if(ui.item[0].id === "mi-labelset-edt") {
         url = url_labelset_edt.replace('XXXX', project);
         window.location.href = url;
         return false;
@@ -246,7 +272,19 @@ $(document).ready(function() {
       var dialog = $("#dialog-task-context-menu");
       var task_id = dialog.data("task_id");
       dialog.dialog("close");
-      if(ui.item[0].id === "mi-task-all-slides") {
+      if (ui.item[0].id === "mi-task-about") {
+        // pop up a dialog with project info using ajax
+        var url = "{{url_for('slide.task_get_info', task_id='999999')}}".replace('999999', task_id);
+        $.ajax({
+          url: url,
+          success: function(resp_text) {
+            resp = JSON.parse(resp_text);
+            popup_about_dialog("Task Information", resp.desc);
+          }
+        });        
+        return false;
+      }
+      else if(ui.item[0].id === "mi-task-all-slides") {
         url = url_task_all_slides.replace('999999', task_id);
         window.location.href = url;
         return false;

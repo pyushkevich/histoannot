@@ -212,6 +212,7 @@ def user_delete(user_id):
     db.execute('DELETE FROM project_access WHERE user=?', (user_id,))
     db.execute('DELETE FROM user_task_slide_preferences WHERE user=?', (user_id,))
     db.execute('DELETE FROM user WHERE id=?', (user_id,))
+    db.execute('DELETE FROM oauth_token WHERE user=?', (user_id,))
     db.commit()
 
     # Return success

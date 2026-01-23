@@ -55,6 +55,7 @@
   </div>
   {% endif %}
 
+  {% if g.user.get('max_api_permission', None) == 1 %}
   <h3>Generate API Key</h3>
   <div>
     <p style="max-width: 640px;">If you need to interface with the server using the REST API (e.g., in a Python script), use the button below to download a JSON file containing your API key. <b>Please store this file securely</b>. A person with access to this file will have the same access to the system as someone who has your username and password.</p>
@@ -65,6 +66,7 @@
       </div>
     </a>
   </div>
+  {% endif %}
 </div>
 
 <script type="text/javascript" charset="utf8">

@@ -48,10 +48,12 @@
                       <a href="{{ url_for('admin.user_management') }}" class="pure-menu-link">Manage Users ...</a>
                   </li>
                 {% endif %}
+                {% if g.user.get('max_api_permission', None) == 1 %}
                 <li class="pure-menu-item">
                   <a href="{{ url_for('auth.generate_api_key') }}" class="pure-menu-link">Generate API key</a>
                 </li>
-                {% if not config.HISTOANNOT_DISABLE_ANONYMIZATION %}
+                {% endif %}
+                {% if (not config.HISTOANNOT_DISABLE_ANONYMIZATION) and (g.user.get('max_anon_permission' ,None) == 1) %}
                 <li class="pure-menu-item">
                   <form method="get" action="{{ url_for('auth.toggle_anonymize') }}">
                     <label class="toggle" style="padding: 8px 16px 8px 16px;">

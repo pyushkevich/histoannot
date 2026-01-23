@@ -100,9 +100,14 @@ def cache_in_session(fetch_function):
         
 @cache_in_session
 def fetch_user_info(user_id, key):
-    row = get_db().execute('SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)).fetchone()
+    row = get_db().execute("""
+                           SELECT U.*, MAX(PA.anon_permission) as max_anon_permission, MAX(PA.api_permission) as max_api_permission 
+                           FROM user U LEFT JOIN project_access PA on U.id = PA.user
+                           WHERE U.id = ? AND disabled=0""", (user_id,)).fetchone()
     if row:
-        return dict(row)
+        d = dict(row)
+        d.pop('password', None)  # Remove password hash from user data
+        return d
     else:
         return None
 

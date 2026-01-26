@@ -1307,8 +1307,8 @@ def users_list_command(project, task, csv):
         rc = db.execute('SELECT id FROM user U '
                         'LEFT JOIN effective_task_project_access TPA ON U.id = TPA.user '
                         'WHERE task=? AND '
-                        '  TPA.project_access != "none" AND '
-                        '  (TPA.restrict_access=0 OR TPA.task_access != "none")', (t,))
+                        '  (TPA.restrict_access=0 AND TPA.project_access != "none" OR '
+                        '   TPA.restrict_access>0 AND TPA.task_access != "none")', (t,))
         for row in rc.fetchall():
             user_set.add(row['id'])
 
@@ -1349,18 +1349,31 @@ def users_list_permissions(username):
     # Describe the user
     print('User:    %20s   Access level: %s' % (username, 'Site Admin' if site_admin > 0 else 'Regular'))
 
-    # List all projects that the user has access to
-    rc = db.execute('SELECT project, access, anon_permission, api_permission FROM effective_project_access WHERE user=? AND access != "none"', (user_id,))
+    # List all projects that the user has access to (either via project or task access)
+    rc = db.execute(
+        'SELECT DISTINCT project, access, anon_permission, api_permission '
+        'FROM effective_project_access '
+        'WHERE user=? AND (access != "none" OR EXISTS ('
+        '  SELECT 1 FROM task_info TI '
+        '  LEFT JOIN effective_task_project_access TA ON TI.id = TA.task '
+        '  WHERE TI.project = effective_project_access.project '
+        '    AND TA.user = effective_project_access.user '
+        '    AND TI.restrict_access > 0 AND TA.task_access != "none"'
+        '))', (user_id,))
     for row in rc.fetchall():
         prj = row['project']
         print('Project: %20s   Access level: %5s   PHI: %d   API: %d' % (prj, row['access'], row['anon_permission'], row['api_permission']))
-        rc2 = db.execute('SELECT TI.name, TI.id, TA.task_access as access '
+        rc2 = db.execute('SELECT TI.name, TI.id, TI.restrict_access, TA.project_access, TA.task_access '
                          'FROM task_info TI left join effective_task_project_access TA on TI.id = TA.task '
                          'WHERE TI.project = ? AND TA.user=? '
                          '  AND (TI.restrict_access = 0 OR TA.task_access != "none")',
                          (prj, user_id))
         for row_t in rc2.fetchall():
-            access = row_t['access'] if row_t['access'] is not None else row['access']
+            # For access-controlled tasks, use task_access; otherwise use project_access
+            if row_t['restrict_access'] > 0 and row_t['task_access'] is not None:
+                access = row_t['task_access']
+            else:
+                access = row_t['project_access'] if row_t['project_access'] is not None else row['access']
             print('  Task: %03d [%40s]   Access level: %s' % (row_t['id'], row_t['name'], access))
 
 

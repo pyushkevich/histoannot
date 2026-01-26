@@ -249,12 +249,16 @@ def _task_access_required(view, min_access_level, api_access_required=False):
         error = None
         if tpa is None:
             error = "No privileges on parent project"
-        elif AccessLevel.check_access(tpa['project_access'], min_access_level) is False:
-            error = "Insufficient privileges on parent project"
         elif api_access_required and tpa['api_permission'] < 1:
             error = "Missing API access permission"
-        elif tpa['restrict_access'] > 0 and AccessLevel.check_access(tpa['task_access'], min_access_level) is False:
-            error = "Insufficient privileges on task"
+        elif tpa['restrict_access'] > 0:
+            # Task has specific access control - use task-level access
+            if AccessLevel.check_access(tpa['task_access'], min_access_level) is False:
+                error = "Insufficient privileges on task"
+        else:
+            # Task does not have specific access control - use project-level access as wildcard
+            if AccessLevel.check_access(tpa['project_access'], min_access_level) is False:
+                error = "Insufficient privileges on parent project"
 
         if error is not None:
             url = request.url if request is not None else None

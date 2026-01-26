@@ -87,15 +87,15 @@ def cached_project_listing(user_id):
     if session.get('user_is_site_admin', False) is not True:
         # Show projects where user has project access OR has access to at least one task
         rc = db.execute(
-            'SELECT DISTINCT P.*, PA.access="admin" as admin FROM project P '
-            'LEFT JOIN effective_project_access PA ON PA.project=P.id '
+            'SELECT DISTINCT P.*, IFNULL(PA.access="admin", 0) as admin FROM project P '
+            'LEFT JOIN effective_project_access PA ON PA.project=P.id AND PA.user = ? '
             'LEFT JOIN task_info TI ON TI.project=P.id '
-            'LEFT JOIN effective_task_project_access TPA ON TPA.task=TI.id AND TPA.user=PA.user '
-            'WHERE PA.user = ? AND ('
-            '  PA.access != "none" OR '
-            '  (TI.restrict_access > 0 AND TPA.task_access != "none")'
+            'LEFT JOIN effective_task_project_access TPA ON TPA.task=TI.id AND TPA.user = ? '
+            'WHERE ('
+            '  (PA.access IS NOT NULL AND PA.access != "none") OR '
+            '  (TI.restrict_access > 0 AND TPA.task_access IS NOT NULL AND TPA.task_access != "none")'
             ') '
-            'ORDER BY P.disp_name', (user_id,))
+            'ORDER BY P.disp_name', (user_id, user_id))
     else:
         rc = db.execute('SELECT P.*, 1 as admin FROM project P ORDER BY P.disp_name ')
 

@@ -1307,8 +1307,8 @@ def users_list_command(project, task, csv):
         rc = db.execute('SELECT id FROM user U '
                         'LEFT JOIN effective_task_project_access TPA ON U.id = TPA.user '
                         'WHERE task=? AND '
-                        '  (TPA.restrict_access=0 AND TPA.project_access != "none" OR '
-                        '   TPA.restrict_access>0 AND TPA.task_access != "none")', (t,))
+                        '  ((TPA.restrict_access=0 AND TPA.project_access != "none") OR '
+                        '   (TPA.restrict_access>0 AND TPA.task_access != "none"))', (t,))
         for row in rc.fetchall():
             user_set.add(row['id'])
 
@@ -1370,7 +1370,7 @@ def users_list_permissions(username):
                          (prj, user_id))
         for row_t in rc2.fetchall():
             # For access-controlled tasks, use task_access; otherwise use project_access
-            if row_t['restrict_access'] > 0 and row_t['task_access'] is not None:
+            if row_t['restrict_access'] > 0 and row_t['task_access'] is not None and row_t['task_access'] != "none":
                 access = row_t['task_access']
             else:
                 access = row_t['project_access'] if row_t['project_access'] is not None else row['access']

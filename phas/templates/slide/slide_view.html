@@ -525,18 +525,21 @@
 
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
 
-{% if seg_mode == 'annot' %}
-<button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</button>
-<button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</button>
-{% elif seg_mode == 'dltrain' %}
-<button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
-{% elif seg_mode == 'sampling' %}
-<button id="trap_button" class="bottom_button enabled">&nbsp Draw Trapezoid (T) &nbsp</button>
-<button id="poly_button" class="bottom_button enabled">&nbsp Draw Polygon (P) &nbsp</button>
-{% endif %}
+{# Annotation/placement controls are hidden in read-only mode #}
+{% if not read_only %}
+    {% if seg_mode == 'annot' %}
+    <button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</button>
+    <button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</button>
+    {% elif seg_mode == 'dltrain' %}
+    <button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
+    {% elif seg_mode == 'sampling' %}
+    <button id="trap_button" class="bottom_button enabled">&nbsp Draw Trapezoid (T) &nbsp</button>
+    <button id="poly_button" class="bottom_button enabled">&nbsp Draw Polygon (P) &nbsp</button>
+    {% endif %}
 
-{% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
-<button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
+    {% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
+    <button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
+    {% endif %}
 {% endif %}
 
 <div id="hovertooltip">Hover text goes here</div>
@@ -547,6 +550,7 @@ $(document).ready(function()
     // Segmentation/interaction mode
     const task_id = parseInt('{{task_id}}');
     const seg_mode='{{seg_mode}}';
+    const read_only = {{ 'true' if read_only else 'false' }};
 
     // Mode-specific properties
     let fixed_box_size = 0;
@@ -2193,6 +2197,10 @@ $(document).ready(function()
         // Record the event
         viewer_mouse_pos = ev_point(event);
 
+        if(read_only) {
+            return;
+        }
+
         if(curr_mode === 'DRAW') {
             curr_path.add(ev_point(event));
             paper.view.draw();
@@ -2245,6 +2253,11 @@ $(document).ready(function()
 
     // Update current mode, setting the sticky tag if needed
     let update_current_mode = function(new_mode) {
+        // In read-only mode, force NAV and ignore tool modes
+        if(read_only && new_mode !== 'NAV') {
+            return;
+        }
+
         // Second click on a tool puts it into sticky mode
         sticky_tool_mode = (new_mode !== 'NAV') && (new_mode === curr_mode);
         curr_mode = new_mode;
@@ -2258,6 +2271,9 @@ $(document).ready(function()
     };
 
     var dragEnd_handler = function(event) {
+        if(read_only) {
+            return;
+        }
         if(curr_mode === 'DRAW') {
             curr_path.simplify(10);
             upload_annot();
@@ -2303,6 +2319,9 @@ $(document).ready(function()
     };
 
     var show_marker_editor = function(event, target_item) {
+        if(read_only) {
+            return;
+        }
         var p = ev_point(event);
         var input = document.getElementById("marker");
         input.style.left = "" + event.position.x - 50 + "px";
@@ -2345,6 +2364,9 @@ $(document).ready(function()
     };
 
     var release_handler = function(event) {
+        if(read_only) {
+            return;
+        }
         if(curr_mode === 'NAV' && moving_object) {
             if(!moving_object_moved)
                 moving_object.selected = false;
@@ -2460,6 +2482,9 @@ $(document).ready(function()
     };
 
     let dblClick_handler = function(event) {
+        if(read_only) {
+            return;
+        }
         if(curr_mode === 'NAV') {
             hit = my_hit_test(ev_point(event));
             if(hit && hit.item instanceof paper.PointText) {
@@ -2493,13 +2518,14 @@ $(document).ready(function()
 
     // Update button active state
     var fn_update_button_state = function() {
+        var del_btn = document.getElementById("del_button");
+        if(!del_btn)
+            return;
         // Is there an active selection
         if(get_number_selected_manipulables() > 0)
-            document.getElementById("del_button").className =
-                document.getElementById("del_button").className.replace(" disabled", " enabled");
+            del_btn.className = del_btn.className.replace(" disabled", " enabled");
         else
-            document.getElementById("del_button").className =
-                document.getElementById("del_button").className.replace(" enabled", " disabled");
+            del_btn.className = del_btn.className.replace(" enabled", " disabled");
 
     }
 
@@ -2519,6 +2545,7 @@ $(document).ready(function()
 
     // Event handler
     var draw_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
         update_current_mode('DRAW');
@@ -2540,6 +2567,7 @@ $(document).ready(function()
     };
 
     var marker_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
         update_current_mode('MARKER');
@@ -2548,6 +2576,7 @@ $(document).ready(function()
     };
 
     var box_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
 
@@ -2568,6 +2597,7 @@ $(document).ready(function()
     };
 
     var trapezoid_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
 
@@ -2581,6 +2611,7 @@ $(document).ready(function()
     };
 
     var polygon_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
 
@@ -2594,6 +2625,7 @@ $(document).ready(function()
     };
 
     var del_pressed_handler = function(options) {
+        if(read_only) return;
         if(document.getElementById("del_button").className.includes(" enabled")) {
             var selected = paper.project.selectedItems;
             if(seg_mode === 'annot') {
@@ -2689,46 +2721,52 @@ $(document).ready(function()
         Mousetrap.bind('>', function() {$("form#form-next").submit();});
 
     if (seg_mode=='annot') {
-        var drawButton = add_seadragon_button(
-            'draw_button', 
-            'Draw line segments on the slide', 
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            draw_pressed_handler);
-        Mousetrap.bind('l', function() { draw_pressed_handler() });
+        if(!read_only) {
+            var drawButton = add_seadragon_button(
+                'draw_button', 
+                'Draw line segments on the slide', 
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                draw_pressed_handler);
+            Mousetrap.bind('l', function() { draw_pressed_handler() });
 
-        var markerButton = add_seadragon_button(
-            'marker_button', 
-            'Place anatomical marker', 
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            marker_pressed_handler);
-        Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
+            var markerButton = add_seadragon_button(
+                'marker_button', 
+                'Place anatomical marker', 
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                marker_pressed_handler);
+            Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
+        }
     }
 
     else if(seg_mode=='dltrain') {
-        var boxButton = add_seadragon_button(
-            'box_button',
-            'Draw boxes for training classes',
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            box_pressed_handler);
-        Mousetrap.bind('b', function() { box_pressed_handler(); });
+        if(!read_only) {
+            var boxButton = add_seadragon_button(
+                'box_button',
+                'Draw boxes for training classes',
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                box_pressed_handler);
+            Mousetrap.bind('b', function() { box_pressed_handler(); });
+        }
     }
 
     else if(seg_mode=='sampling') {
-        var trapButton = add_seadragon_button(
-            'trap_button',
-            'Draw sampling trapezoid',
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            trapezoid_pressed_handler);
-        var polyButton = add_seadragon_button(
-            'poly_button',
-            'Draw sampling polygon',
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            polygon_pressed_handler);
-        Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
-        Mousetrap.bind('p', function() { polygon_pressed_handler(); });
+        if(!read_only) {
+            var trapButton = add_seadragon_button(
+                'trap_button',
+                'Draw sampling trapezoid',
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                trapezoid_pressed_handler);
+            var polyButton = add_seadragon_button(
+                'poly_button',
+                'Draw sampling polygon',
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                polygon_pressed_handler);
+            Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
+            Mousetrap.bind('p', function() { polygon_pressed_handler(); });
+        }
     }
 
-    if(seg_mode == 'annot' || seg_mode == 'dltrain' || seg_mode == 'sampling') {
+    if(!read_only && (seg_mode == 'annot' || seg_mode == 'dltrain' || seg_mode == 'sampling')) {
         var delButton = add_seadragon_button(
             'del_button', 
             'Delete selected line or text', 

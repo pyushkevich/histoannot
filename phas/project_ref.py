@@ -392,7 +392,38 @@ class ProjectRef:
             self.user_set_task_access_level(t, user, access_level)
 
 
+class TaskRef:
+    """
+    This class represents a reference to a task within a project.
+    It wraps a ProjectRef and provides task-specific functionality.
+    """
 
+    def __init__(self, task_id):
+        self.id = task_id
+        db = get_db()
+
+        rc = db.execute('SELECT * FROM task_info WHERE id = ?', (task_id,)).fetchone()
+        if rc is None:
+            raise ValueError("Task %d not found" % (task_id,))
+        self.project = rc['project']
+        self.name = rc['name']
+        self.restrict_access = rc['restrict_access']
+        self.anonymize = rc['anonymize']
+        self.data = json.loads(rc['json'])
+        self.referenced_task = rc['referenced_task']
+        
+    # Property to access the task mode
+    @property
+    def mode(self) -> str:
+        return self.data.get('mode', None)
+    
+    # Whether the task is read-only
+    @property
+    def read_only(self) -> bool:
+        return self.mode == 'browse' or self.referenced_task is not None
+
+    def __str__(self):
+        return f"Task {self.id} in {self.project}"
 
 
 

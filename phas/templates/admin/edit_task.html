@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+
+{% block header %}
+  {% block title %}{% if existing %}Task {{task["id"]}} Properties {% else %} Create New Task {% endif %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+<!-- among the usual imports, import tagify for showing tags -->
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-3.6.4.min.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+<script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.polyfills.min.js"></script>
+
+<style>
+.pure-form input[type="text"] {
+    height: 2.25em;
+}
+
+.tagified input {
+    border-radius: 9px;
+}
+</style>
+
+
+<div>
+<form method="post" class="pure-form pure-form-stacked">
+    <fieldset>
+    <div class="pure-g" style="max-width: 640px;">
+        <div class="pure-u-1 pure-u-md-11-24">
+          <label for="name">Task Name:</label>
+          <input name="name" class="pure-u-24-24" type="text" id="name" value="{{ d.get('name','') }}" required>
+        </div>
+        <div class="pure-u-1 pure-u-md-2-24"></div>
+        <div class="pure-u-1 pure-u-md-11-24">
+          <label for="mode">Mode:</label>
+          <select name="mode" id="mode" class="pure-u-24-24" title="The type of task. Task modes include browsing, anatomical annotation, deep learning classifier training, and sampling ROI placement" {% if existing %}disabled{% endif %}>
+            <option value="annot" {% if d.get('mode') == 'annot' %}selected{% endif %}>Anatomy Annotation</option>
+            <option value="dltrain" {% if d.get('mode') == 'dltrain' %}selected{% endif %}>DL Classifier Training</option>
+            <option value="browse" {% if d.get('mode') == 'browse' %}selected{% endif %}>Browse</option>
+            <option value="sampling" {% if d.get('mode') == 'sampling' %}selected{% endif %}>Sampling ROI Placement</option>
+          </select>
+          {% if existing %}
+            <input type="hidden" name="mode" value="{{ d.get('mode','') }}">
+          {% endif %}
+        </div>
+
+        <div class="pure-u-1">
+          <label for="desc">Description:</label>
+          <textarea name="desc" id="desc" class="pure-u-24-24" rows="3">{{ d.get('desc','') }}</textarea>
+        </div>
+
+        <div class="pure-u-1 pure-u-md-11-24">
+          <label for="reference-task">Reference Task:</label>
+          <select name="reference-task" id="reference-task" class="pure-u-24-24" title="The name of a task to use as a reference for this task (e.g., to display annotations as overlays).">            
+          </select>
+        </div>
+        <div class="pure-u-1 pure-u-md-2-24"></div>
+        <div class="pure-u-1 pure-u-md-11-24" style="margin-top: 1.8em;">
+          <label for="restrict-access" class="pure-checkbox">
+            <input id="restrict-access" type="checkbox" name="restrict-access" style="width:auto; margin-top: 1em;" {% if d.get('restrict-access') %}checked{% endif %}
+                   title="When checked, the users' access to the task can be managed by administrators. When unchecked, access to the task is the same as the for the parent project."/> 
+            Task-specific access control
+          </label>
+          <!--
+          <label for="anonymize" class="pure-checkbox">
+            <input id="anonymize" type="checkbox" name="anonymize" style="width:auto;" {% if d.get('restrict-access') %}checked{% endif %}/> 
+            Anonymize
+          </label>
+          -->
+        </div>
+
+        <div class="pure-u-1" title="If specified, only slides with at least one of the listed stains will be included in the task.">
+          <label for="stains">Stain Filter:</label>
+          <input name="stains" class="pure-u-24-24 tagified" type="text" id="stains" value="{{ d.get('stains', []) | join(', ') }}">
+        </div>
+
+        <div class="pure-u-1">
+          <label>Tag Filter:</label>
+        </div>
+        <div class="pure-u-1 pure-u-md-8-24" title="If specified, only slides with at least one of the listed tags will be included in the task.">
+          <label for="tags_any">Any:</label>
+          <input name="tags_any" class="pure-u-24-24 tagified" type="text" id="tags_any" value="{{ d.get('tags', {}).get('any', []) | join(', ') }}">
+        </div>
+        <div class="pure-u-1 pure-u-md-1-24"></div>
+        <div class="pure-u-1 pure-u-md-7-24" title="If specified, only slides with all of the listed tags will be included in the task.">
+          <label for="tags_all">All:</label>
+          <input name="tags_all" class="pure-u-24-24 tagified" type="text" id="tags_all" value="{{ d.get('tags', {}).get('all', []) | join(', ') }}">
+        </div>
+        <div class="pure-u-1 pure-u-md-1-24"></div>
+        <div class="pure-u-1 pure-u-md-7-24" title="If specified, slides with any of the listed tags will be excluded from the task.">
+          <label for="tags_not">Not:</label>
+          <input name="tags_not" class="pure-u-24-24 tagified" type="text" id="tags_not" value="{{ d.get('tags', {}).get('not', []) | join(', ') }}">
+        </div>
+
+        <div class="pure-u-1" title="If specified, only slides from the listed specimens will be included in the task.">
+          <label for="specimens">Specimen Filter:</label>
+          <input name="specimens" class="pure-u-24-24 tagified" type="text" id="specimens" value="{{ d.get('specimens', []) | join(', ') }}">
+        </div>
+
+        <div class="pure-u-1" style="margin-top: 1em;">
+          <button type="submit" class="pure-button pure-button-primary">Save Changes</button>
+        </div>
+    </div>
+    </fieldset>
+</form>
+</div>
+
+<script type="text/javascript" charset="utf8">
+$(document).ready(function() {
+
+  // Read the candidate reference tasks from the server-rendered data
+  var candidate_reference_tasks = JSON.parse('{{ candidate_reference_tasks | tojson | safe}}');
+  var current_reference_task_name = '{{ d.get("reference-task","") }}';
+  var labelsets = JSON.parse('{{ labelsets | tojson | safe }}');
+
+  $('.tagified').each(function() {
+    new Tagify(this);
+  });
+
+  $( document ).tooltip();
+
+  // Function to initialize the reference task select based on the current mode
+  let update_reference_task_select = function() {
+    var mode = $(this).val();
+    var reference_task_select = $('#reference-task');
+    reference_task_select.empty();
+    reference_task_select.append($('<option>', { value: '', text: '(None)' }));
+    candidate_reference_tasks.forEach(function(task) {
+      if (task.mode == mode) {
+        reference_task_select.append($('<option>', { value: task.name, text: task.name }));
+        if (task.name == current_reference_task_name) 
+          reference_task_select.val(task.name);            
+      }
+    });
+  };
+
+  // Add a handler for change events on the mode select to show/hide the reference task input
+  $('#mode').on('change', update_reference_task_select);
+
+  // We also want the hadler to run on page load to initialize the reference task select
+  $('#mode').trigger('change');
+
+});
+</script>
+
+{% endblock %}
+

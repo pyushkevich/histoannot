@@ -21,6 +21,7 @@ CREATE TABLE user (
   disabled BOOLEAN NOT NULL DEFAULT (0),
   site_admin BOOLEAN NOT NULL DEFAULT(0),
   is_group BOOLEAN NOT NULL DEFAULT(0),
+  oauth_only BOOLEAN NOT NULL DEFAULT(0)
 );
 
 DROP TABLE IF EXISTS group_membership;
@@ -111,9 +112,19 @@ CREATE TABLE task (
   name TEXT NOT NULL,
   json TEXT NOT NULL,
   restrict_access BOOLEAN NOT NULL,
-  anonymize BOOLEAN DEFAULT(0) NOT NULL
+  anonymize BOOLEAN DEFAULT(0) NOT NULL,
+  disabled BOOLEAN DEFAULT(0) NOT NULL
 );
 
+/* Table to reference another task from a task */
+DROP TABLE IF EXISTS task_ref;
+CREATE TABLE task_ref (
+  task INTEGER NOT NULL,
+  referenced_task INTEGER NOT NULL,
+  PRIMARY KEY (task),
+  FOREIGN KEY (task) REFERENCES task (id),
+  FOREIGN KEY (referenced_task) REFERENCES task (id)
+);
 
 DROP TABLE IF EXISTS task_access;
 CREATE TABLE task_access (

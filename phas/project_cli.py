@@ -782,7 +782,7 @@ task_schema = {
         "name": {"type": "string", "minLength": 2, "maxLength": 80},
         "desc": {"type": "string", "maxLength": 1024},
         "mode": {"type": "string", "enum": ["annot", "dltrain", "browse", "sampling"]},
-        "reference_task": {"type": "string"},
+        "reference-task": {"type": "string"},
         "dltrain": {
             "type": "object",
             "properties": {
@@ -829,59 +829,76 @@ task_schema = {
 
 # Add a new task (or update existing task) based on a JSON specifier. We
 # will check the JSON for completeness here and then configure the task
-def add_task(project, json_file, update_existing_task_id=None):
+def add_task(project, task_dict, update_existing_task_id=None):
 
     # Get a project reference
     pr = ProjectRef(project)
 
-    with open(json_file) as fdesc:
+    # Validate the JSON against the schema
+    validate(instance=task_dict, schema=task_schema)
 
-        # Validate the JSON against the schema
-        data = json.load(fdesc)
-        validate(instance=data, schema=task_schema)
+    db = get_db()
 
-        db = get_db()
+    # Update or insert?
+    if update_existing_task_id is None:
 
-        # Update or insert?
-        if update_existing_task_id is None:
+        # Insert the JSON
+        rc = db.execute('INSERT INTO task(name,json,restrict_access) VALUES (?,?,?)',
+                        (task_dict['name'], json.dumps(task_dict), task_dict['restrict-access']))
 
-            # Insert the JSON
-            rc = db.execute('INSERT INTO task(name,json,restrict_access) VALUES (?,?,?)',
-                            (data['name'], json.dumps(data), data['restrict-access']))
+        # Associate the task with the project
+        rc = db.execute('INSERT INTO project_task (project, task_id, task_name) VALUES (?,?,?)',
+                        (project, rc.lastrowid, task_dict['name']))
 
-            # Associate the task with the project
-            rc = db.execute('INSERT INTO project_task (project, task_id, task_name) VALUES (?,?,?)',
-                            (project, rc.lastrowid, data['name']))
+        task_id = rc.lastrowid
+        print("Successfully inserted task %s with id %d" % (task_dict['name'], task_id))
 
-            task_id = rc.lastrowid
-            print("Successfully inserted task %s with id %d" % (data['name'], task_id))
+    else:
 
-        else:
+        # Update
+        task_id = int(update_existing_task_id)
+        rc = db.execute('UPDATE task SET name=?, json=?, restrict_access=? WHERE id=?',
+                        (task_dict['name'], json.dumps(task_dict), task_dict['restrict-access'], task_id))
 
-            # Update
-            task_id = int(update_existing_task_id)
-            rc = db.execute('UPDATE task SET name=?, json=?, restrict_access=? WHERE id=?',
-                            (data['name'], json.dumps(data), data['restrict-access'], task_id))
+        if rc.rowcount != 1:
+            raise ValueError("Task %d not found" % task_id)
 
-            if rc.rowcount != 1:
-                raise ValueError("Task %d not found" % task_id)
+        # If the task is currently not associated with the same project, update
+        db.execute('UPDATE project_task SET project=? WHERE task_id=?', (project, task_id))
 
-            # If the task is currently not associated with the same project, update
-            db.execute('UPDATE project_task SET project=? WHERE task_id=?', (project, task_id))
+        print("Successfully updated task %d" % task_id)
 
-            print("Successfully updated task %d" % task_id)
+    # Update the anonymization, but only if specified in the task json
+    if 'anonymize' in task_dict:
+        db.execute('UPDATE task SET anonymize=? WHERE id=?', (task_dict['anonymize'], task_id))
+        
+    # Update the reference database, but only if specified in the task json
+    if 'reference-task' in task_dict:
+        # Find the referenced task by name
+        rc = db.execute('SELECT id FROM task_info WHERE project=? AND name=?',
+                        (project, task_dict['reference-task'])).fetchone()
+        if rc is None:
+            raise ValueError("Referenced task %s not found in project %s" %
+                             (task_dict['reference-task'], project))
+        
+        # Update the referenced task
+        db.execute('INSERT OR REPLACE INTO task_ref (task, referenced_task) VALUES (?,?)',
+                   (task_id, rc['id']))
+    else:
+        # Remove any existing reference
+        db.execute('DELETE FROM task_ref WHERE task=?', (task_id,))
 
-        # Update the anonymization, but only if specified in the task json
-        if 'anonymize' in data:
-            db.execute('UPDATE task SET anonymize=? WHERE id=?', (data['anonymize'], task_id))
+    db.commit()
 
-        db.commit()
-
-        # Update the slide index
-        rebuild_task_slide_index(task_id)
+    # Update the slide index
+    rebuild_task_slide_index(task_id)
+    
+    # Return the task id
+    return task_id
 
 
 # Get json for a task
+# TODO: replace all uses of this function with TaskRef
 def get_task_data(task_id):
     db = get_db()
     rc = db.execute('SELECT * FROM task_info WHERE id = ?', (task_id,)).fetchone()
@@ -894,7 +911,9 @@ def get_task_data(task_id):
 @with_appcontext
 def add_task_command(project, json):
     """Create a new task in a project using a json descriptor"""
-    add_task(project, json)
+    with open(json) as fdesc:
+        d = json.load(fdesc)
+        add_task(project, d)
 
 
 @click.command('tasks-update')
@@ -904,7 +923,9 @@ def add_task_command(project, json):
 def update_task_command(task, json):
     """Update an existing task"""
     (project,t_data) = get_task_data(task)
-    add_task(project, json, update_existing_task_id=task)
+    with open(json) as fdesc:
+        d = json.load(fdesc)
+        add_task(project, d, update_existing_task_id=task)
 
 
 @click.command('tasks-list')
@@ -1305,10 +1326,8 @@ def users_list_command(project, task, csv):
     # For each task, get a list of user IDs that have access
     for t in task:
         rc = db.execute('SELECT id FROM user U '
-                        'LEFT JOIN effective_task_project_access TPA ON U.id = TPA.user '
-                        'WHERE task=? AND '
-                        '  ((TPA.restrict_access=0 AND TPA.project_access != "none") OR '
-                        '   (TPA.restrict_access>0 AND TPA.task_access != "none"))', (t,))
+                        'LEFT JOIN effective_task_access TPA ON U.id = TPA.user '
+                        'WHERE task=? AND TPA.access != "none"', (t,))
         for row in rc.fetchall():
             user_set.add(row['id'])
 
@@ -1351,22 +1370,14 @@ def users_list_permissions(username):
 
     # List all projects that the user has access to (either via project or task access)
     rc = db.execute(
-        'SELECT DISTINCT project, access, anon_permission, api_permission '
-        'FROM effective_project_access '
-        'WHERE user=? AND (access != "none" OR EXISTS ('
-        '  SELECT 1 FROM task_info TI '
-        '  LEFT JOIN effective_task_project_access TA ON TI.id = TA.task '
-        '  WHERE TI.project = effective_project_access.project '
-        '    AND TA.user = effective_project_access.user '
-        '    AND TI.restrict_access > 0 AND TA.task_access != "none"'
-        '))', (user_id,))
+        'SELECT * FROM effective_project_and_max_task_access '
+        'WHERE user=? AND (max_task_access != "none" OR project_access != "none"', (user_id,))
     for row in rc.fetchall():
         prj = row['project']
-        print('Project: %20s   Access level: %5s   PHI: %d   API: %d' % (prj, row['access'], row['anon_permission'], row['api_permission']))
-        rc2 = db.execute('SELECT TI.name, TI.id, TI.restrict_access, TA.project_access, TA.task_access '
-                         'FROM task_info TI left join effective_task_project_access TA on TI.id = TA.task '
-                         'WHERE TI.project = ? AND TA.user=? '
-                         '  AND (TI.restrict_access = 0 OR TA.task_access != "none")',
+        print('Project: %20s   Access level: %5s   PHI: %d   API: %d' % (prj, row['project_access'], row['anon_permission'], row['api_permission']))
+        rc2 = db.execute('SELECT TI.name, TI.id, TI.restrict_access, TA.access '
+                         'FROM task_info TI left join effective_task_access TA on TI.id = TA.task '
+                         'WHERE TI.project = ? AND TA.user=? AND TA.access != "none")',
                          (prj, user_id))
         for row_t in rc2.fetchall():
             # For access-controlled tasks, use task_access; otherwise use project_access

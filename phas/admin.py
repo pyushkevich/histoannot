@@ -20,10 +20,11 @@ from flask import(
     current_app, send_from_directory, session, send_file
 )
 
-from .auth import site_admin_access_required, create_password_reset_link, add_user, send_user_invitation
+from .auth import site_admin_access_required, create_password_reset_link, add_user, send_user_invitation, access_task_admin
 from .db import get_db
 from .common import abort_json, success_json
 from .project_ref import ProjectRef
+from .project_cli import add_task
 import json
 import re
 
@@ -356,3 +357,129 @@ def user_set_user_group_membership(user_id, group_id, membership):
         'WHERE G.is_group = TRUE AND G.id=? ',
         (user_id, group_id)).fetchone()
     return json.dumps(group_membership_row_to_json(row))
+
+def task_edit_response_to_json(form_data):
+    # Add the normal fields
+    d = {}
+    for x in ('name', 'mode', 'desc', 'reference-task'):
+        val = form_data.get(x)
+        if val is not None and len(val) > 0:
+            d[x] = form_data.get(x)
+            
+    # Handle the checkboxes
+    for x in ('restrict-access',):
+        d[x] = form_data.get(x, 'off') == 'on'        
+        
+    # Add the tags, which come in a weird 'value': 'tag' format
+    for field in 'stains', 'tags_any', 'tags_all', 'tags_not', 'specimens':
+        val = form_data.get(field, '')
+        if val is not None and len(val) > 0:
+            d_field = json.loads(val)
+            tags = [ x['value'] for x in d_field ]
+            if len(tags) > 0:
+                if field.startswith('tags_'):
+                    subfield = field.replace('tags_','')
+                    if 'tags' not in d:
+                        d['tags'] = {}
+                    d['tags'][subfield] = tags
+                else:
+                    d[field] = tags
+    
+    print(f'task_edit_response_to_json: {d}')
+         
+    return d
+
+
+def _get_candidate_reference_tasks(project, task_id=None):
+    db = get_db()
+
+    # Get the list of tasks in the project
+    rc = db.execute('SELECT id, name, json FROM task_info WHERE project=? ORDER BY id', (project,))
+    
+    # Filter the tasks that have correct mode
+    listing = []
+    for row in rc.fetchall():
+        if task_id != row['id']:
+            d = json.loads(row['json'])
+            listing.append({'id': row['id'], 'name': row['name'], 'mode': d['mode']})
+    return listing
+
+
+def _get_labelsets(project):
+    db = get_db()
+
+    # Get the list of tasks in the project
+    rc = db.execute('SELECT * FROM labelset_info WHERE project=? ORDER BY id', (project,))
+    
+    # Filter the tasks that have correct mode
+    listing = []
+    for row in rc.fetchall():
+        listing.append({k: row[k] for k in ('id', 'name', 'description')})
+    return listing
+
+
+@bp.route('/admin/project/<project>/task/<int:task_id>/edit', methods=('GET','POST'))
+@site_admin_access_required
+def admin_edit_task(project, task_id):
+    if request.method == 'POST':
+        # Convert form data to task dict
+        task_dict = task_edit_response_to_json(request.form)
+        
+        # Try creating the task
+        try:
+            task_id = add_task(project, task_dict, update_existing_task_id=task_id)
+            flash(f'Task {task_id} has been updated')
+        
+        except Exception as e:
+            # Print the stack trace in the output
+            import traceback
+            traceback.print_exc()
+            
+            # Show the error to the user
+            flash(f'Error updating task: {str(e)}')
+        
+        return redirect(url_for('.admin_edit_task', project=project, task_id=task_id))
+
+    else:
+        db = get_db()
+        task_row = db.execute('SELECT * FROM task_info WHERE id=? AND project=?', (task_id,project)).fetchone()
+        if task_row is None:
+            return "Task not found", 404
+            
+        return render_template('admin/edit_task.html', 
+                               task=task_row, 
+                               d=json.loads(task_row['json']), 
+                               existing=True, 
+                               labelsets = _get_labelsets(project),
+                               candidate_reference_tasks = _get_candidate_reference_tasks(project, task_id))
+
+
+@bp.route('/admin/project/<project>/create_task', methods=('GET','POST'))
+@site_admin_access_required
+def admin_create_task(project):
+    if request.method == 'POST':
+        # Convert form data to task dict
+        task_dict = task_edit_response_to_json(request.form)
+        
+        # Try creating the task
+        try:
+            task_id = add_task(project, task_dict)
+            flash(f'Created new task: {task_id}')
+            return redirect(url_for('.admin_edit_task', project=project, task_id=task_id))
+        
+        except Exception as e:
+            # Print the stack trace in the output
+            import traceback
+            traceback.print_exc()
+            
+            # Show the error to the user
+            flash(f'Error creating task: {str(e)}')
+            return redirect(url_for('.admin_create_task', project=project))
+    
+    else:
+        return render_template('admin/edit_task.html', 
+                               task=None, 
+                               d=dict(), 
+                               existing=False,
+                               labelsets = _get_labelsets(project),
+                               candidate_reference_tasks = _get_candidate_reference_tasks(project, None))

@@ -34,7 +34,7 @@ from random import randint
 # from openslide.deepzoom import DeepZoomGenerator
 from .slideref import SlideRef,get_slide_ref
 from .project_ref import ProjectRef
-from .auth import access_project_read, access_project_admin
+from .auth import access_slide_read, access_slide_admin
 from .common import cache
 from google.cloud import storage
 
@@ -124,7 +124,7 @@ def get_affine_matrix(slide_ref, mode, resolution='raw', target='annot'):
 
 # Get the dimensions for a slide in JSON format
 @bp.route('/dzi/<project>/<int:slide_id>/header', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_slide_dimensions(project, slide_id):
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     return jsonify(
@@ -134,7 +134,7 @@ def dzi_slide_dimensions(project, slide_id):
 
 # Get the file path of the slide - this requires admin access
 @bp.route('/dzi/<project>/<int:slide_id>/filepath', methods=('GET', 'POST'))
-@access_project_admin
+@access_slide_admin()
 def dzi_slide_filepath(project, slide_id):
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     return jsonify(
@@ -144,7 +144,7 @@ def dzi_slide_filepath(project, slide_id):
 
 # Get the DZI for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>.dzi', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi(mode, project, slide_id, resource):
     from openslide.deepzoom import DeepZoomGenerator
 
@@ -243,21 +243,21 @@ def dzi_download(project, slide_id, resource, downsample, extension):
 
 # Download a thumbnail for the slide
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_download_tiff(project, slide_id, resource, downsample):
     return dzi_download(project, slide_id, resource, downsample, 'tiff')
 
 
 # Download a thumbnail for the slide, in NIFTI format
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.nii.gz', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_download_nii_gz(project, slide_id, resource, downsample):
     return dzi_download(project, slide_id, resource, downsample, 'nii.gz')
 
 
 # Download a full-resolution slide, in whatever format the slide is in
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_fullres.<extension>', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_download_fullres(project, slide_id, resource, extension):
     return dzi_download(project, slide_id, resource, 0, extension)
 
@@ -290,7 +290,7 @@ def get_dz_generator_cached(user_id, project, slide_id, resource):
 # Get the tiles for a slide
 @bp.route('/dzi/<mode>/<project>/<int:slide_id>/<resource>_files/<int:level>/<int:col>_<int:row>.<format>',
         methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def tile_db(mode, project, slide_id, resource, level, col, row, format):
     format = format.lower()
     if format != 'jpeg' and format != 'png':
@@ -364,7 +364,7 @@ def get_random_patch(project, slide_id, resource, level, w, format):
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:ctrx>_<int:ctry>_<int:w>_<int:h>.<format>',
         methods=('GET','POST'))
-@access_project_read
+@access_slide_read()
 def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, format):
     return get_patch(project, slide_id, resource, level, ctrx, ctry, w, h, format)
 
@@ -372,7 +372,7 @@ def get_patch_endpoint(project, slide_id, resource, level, ctrx, ctry, w, h, for
 # Get an image patch at level 0 from the raw image
 @bp.route('/dzi/random_patch/<project>/<int:slide_id>/<resource>/<int:level>/<int:width>.<format>',
         methods=('GET','POST'))
-@access_project_read
+@access_slide_read()
 def get_random_patch_endpoint(project, slide_id, resource, level, width, format):
     return get_random_patch(project, slide_id, resource, level, width, format)
 
@@ -398,14 +398,14 @@ def dzi_download_thumblike_image(project, slide_id, resource, extension):
 
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_label.png', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_download_label_image(project, slide_id):
     return dzi_download_thumblike_image(project, slide_id, 'label', 'png')
 
 
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_macro.png', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_download_macro_image(project, slide_id):
     return dzi_download_thumblike_image(project, slide_id, 'macro', 'png')
 
@@ -438,7 +438,7 @@ def format_properties(prop_dict):
 
 # Download a label image for a slide 
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_header.json', methods=('GET', 'POST'))
-@access_project_read
+@access_slide_read()
 def dzi_download_header(project, slide_id, resource):
 
     # Get a project reference, using either local database or remotely supplied dict

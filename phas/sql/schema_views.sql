@@ -31,8 +31,10 @@ CREATE VIEW block_info_anon AS
 /* Create a view for quick access to tasks */
 DROP VIEW IF EXISTS task_info;
 CREATE VIEW task_info AS
-   SELECT T.*, PT.project as project
-   FROM task T LEFT JOIN project_task PT on T.id = PT.task_id;
+   SELECT T.*, PT.project as project, TR.referenced_task as referenced_task
+   FROM task T 
+      LEFT JOIN project_task PT on T.id = PT.task_id
+      LEFT JOIN task_ref TR on T.id = TR.task;
 
 DROP VIEW IF EXISTS labelset_info;
 CREATE VIEW labelset_info AS
@@ -55,12 +57,16 @@ CREATE VIEW task_slide_info_anon AS
     LEFT JOIN slide_info_anon S on S.id = TSI.slide
     LEFT JOIN task T on TSI.task_id = T.id;
 
-/* A combined view of task and project access */
+/* 
+A combined view of task and project access. The column task_access is inferred from both project
+an task access entries. If the task is not restricted, the project access is used as task access.
+*/
 DROP VIEW IF EXISTS task_project_access;
 CREATE VIEW task_project_access AS
    SELECT PA.project as project, TI.id as task, PA.user as user, 
           PA.access as project_access, api_permission, anon_permission, 
-          TI.restrict_access, TA.access as task_access 
+          TI.restrict_access, 
+          CASE WHEN TI.restrict_access = 0 THEN PA.access ELSE IFNULL(TA.access,'none') END as task_access
    FROM project_access PA 
    LEFT JOIN task_info TI on PA.project=TI.project 
    LEFT JOIN task_access TA on PA.user=TA.user and TI.id=TA.task;
@@ -87,18 +93,49 @@ CREATE VIEW effective_project_access AS
       LEFT JOIN effective_group_membership GM ON GM.group_id = PA.user 
       GROUP BY PA.project, GM.user_id);
 
-/* A view of task access that includes group memberships */
+/* 
+A view of task access that includes group memberships. This is the view that should be used to test if
+a user has access to a task because it checkes both direct user access and group-based access, and because
+it considers project-level and task-level access settings.
+ */
+DROP VIEW IF EXISTS effective_task_access;
+CREATE VIEW effective_task_access AS
+SELECT project, task, user_id as user,
+       CASE mna_task WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS access,
+       anon_permission, api_permission
+FROM (
+   SELECT TPA.project, TPA.task, GM.user_id,
+          MAX(CASE TPA.task_access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_task,
+          MAX(api_permission) AS api_permission, MAX(anon_permission) AS anon_permission
+   FROM task_project_access TPA
+   LEFT JOIN effective_group_membership GM ON GM.group_id = TPA.user
+   GROUP BY TPA.task, GM.user_id);
+   
+
+/* Defunct view created in prior versions of the code */
 DROP VIEW IF EXISTS effective_task_project_access;
-CREATE VIEW effective_task_project_access AS
-   SELECT project, task, user_id AS user,  
-          CASE mna_project WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS project_access, 
-          anon_permission, api_permission, restrict_access,
-          CASE mna_task WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS task_access
+
+/* A view of project access that includes group memberships and maximum task access */
+DROP VIEW IF EXISTS effective_project_and_max_task_access;
+CREATE VIEW effective_project_and_max_task_access AS
+   SELECT project, user, access as project_access, anon_permission, api_permission, 
+          CASE max_task_access WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS max_task_access 
    FROM (
-      SELECT TPA.project, TPA.task, TPA.restrict_access, GM.user_id,
-             MAX(CASE TPA.project_access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_project, 
-             MAX(CASE IFNULL(TPA.task_access,'none') WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS mna_task, 
-             MAX(api_permission) AS api_permission, MAX(anon_permission) AS anon_permission 
-      FROM task_project_access TPA 
-      LEFT JOIN effective_group_membership GM ON GM.group_id = TPA.user 
-      GROUP BY TPA.task, GM.user_id);
+      SELECT EPA.*, MAX(CASE ETA.access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END) AS max_task_access 
+      FROM effective_project_access EPA LEFT JOIN effective_task_access ETA on EPA.project = ETA.project AND EPA.user = ETA.user
+      GROUP BY EPA.project, EPA.user)
+   ORDER BY project, user;
+
+/* A view of slide access - maximum access that the user has to a slide */
+DROP VIEW IF EXISTS effective_slide_access;
+CREATE VIEW effective_slide_access AS
+   SELECT slide, user, 
+          MAX(anon_permission) AS anon_permission, 
+          MAX(api_permission) AS api_permission, 
+          CASE MAX(acc) WHEN 0 THEN 'none' WHEN 1 THEN 'read' WHEN 2 THEN 'write' WHEN 3 THEN 'admin' END AS slide_access 
+   FROM (
+      SELECT TSI.slide, TA.user, TA.anon_permission, TA.api_permission,
+             CASE TA.access WHEN 'none' THEN 0 WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 END AS acc
+      FROM task_slide_index TSI 
+      LEFT JOIN effective_task_access TA ON TSI.task_id = TA.task) 
+   GROUP BY slide, user;

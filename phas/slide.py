@@ -25,7 +25,7 @@ from werkzeug.exceptions import abort
 
 from .auth import *
 from .db import get_db
-from .project_ref import ProjectRef
+from .project_ref import ProjectRef, TaskRef
 from .slideref import SlideRef, get_slide_ref
 from .project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from .delegate import find_delegate_for_slide
@@ -61,7 +61,7 @@ def index():
 
 # The index
 @bp.route('/project/<project>')
-@access_project_read
+@access_project_read(allow_on_task=True)
 def project_detail(project):
 
     # Render the entry page
@@ -69,7 +69,7 @@ def project_detail(project):
 
 
 @bp.route('/api/project/<project>/info', methods=['GET'])
-@access_project_read
+@access_project_read(allow_on_task=True)
 def project_get_info(project):
     pr = ProjectRef(project)
     return json.dumps({'description': pr.desc})
@@ -84,18 +84,13 @@ def cached_project_listing(user_id):
     listing = []
 
     # List all projects for the current user
-    if session.get('user_is_site_admin', False) is not True:
+    if g.user['site_admin'] is not True:
         # Show projects where user has project access OR has access to at least one task
         rc = db.execute(
-            'SELECT DISTINCT P.*, IFNULL(PA.access="admin", 0) as admin FROM project P '
-            'LEFT JOIN effective_project_access PA ON PA.project=P.id AND PA.user = ? '
-            'LEFT JOIN task_info TI ON TI.project=P.id '
-            'LEFT JOIN effective_task_project_access TPA ON TPA.task=TI.id AND TPA.user = ? '
-            'WHERE ('
-            '  (PA.access IS NOT NULL AND PA.access != "none") OR '
-            '  (TI.restrict_access > 0 AND TPA.task_access IS NOT NULL AND TPA.task_access != "none")'
-            ') '
-            'ORDER BY P.disp_name', (user_id, user_id))
+            'SELECT P.*, MAX(IFNULL(PA.project_access="admin", 0), IFNULL(PA.max_task_access="admin", 0)) as admin FROM project P '
+            '   LEFT JOIN effective_project_and_max_task_access PA ON PA.project=P.id '
+            'WHERE (PA.project_access != "none" OR PA.max_task_access != "none") AND PA.user=? '
+            'ORDER BY P.disp_name', (user_id,))
     else:
         rc = db.execute('SELECT P.*, 1 as admin FROM project P ORDER BY P.disp_name ')
 
@@ -132,10 +127,17 @@ def cached_project_task_listing(user_id, project):
     db=get_db()
 
     # List the available tasks
-    rc = db.execute("""
-                    SELECT DISTINCT TI.* from task_info TI left join effective_task_project_access TA on TI.id=TA.task 
-                    where TA.project=? and user=? and (TA.restrict_access=0 or TA.task_access != "none")
-                    """, (project, user_id))
+    if not g.user['site_admin']:
+        rc = db.execute("""
+                        SELECT DISTINCT TI.*, TA.access="admin" as admin
+                        FROM task_info TI LEFT JOIN effective_task_access TA on TI.id=TA.task 
+                        WHERE TA.project=? AND user=? AND TA.access != "none"
+                        """, (project, user_id))
+    else:
+        rc = db.execute("""
+                        SELECT DISTINCT TI.*, 1 as admin from task_info TI  
+                        WHERE TI.project=?
+                        """, (project,))
 
     listing = []
     for row in rc.fetchall():
@@ -152,17 +154,18 @@ def cached_project_task_listing(user_id, project):
 
         # Create a dict
         task = json.loads(row['json'])
-        d = {'id': row['id'], 'name': task['name'], 'desc': task['desc'], 'mode': task['mode']}
+        d = {'id': row['id'], 'name': task['name'], 'desc': task.get('desc',None), 'mode': task['mode'], 'admin': row['admin'] }
         for key in ('nspecimens', 'nblocks', 'nslides'):
             d[key] = stat[key]
 
         listing.append(d)
 
+    print(listing)
     return listing
 
 
 @bp.route('/api/project/<project>/tasks')
-@access_project_read
+@access_project_read(allow_on_task=True)
 def task_listing(project):
     user_id = session['user_id']
     print(f'Cache info: {cache.cache}')
@@ -177,7 +180,7 @@ def task_get_info(task_id):
     rc = db.execute('SELECT * FROM task_info WHERE id = ?', (task_id,)).fetchone()
     d = { k:rc[k] for k in ('id','project','name','restrict_access','anonymize') }
     detail = json.loads(rc['json'])
-    for k in 'desc', 'mode', 'reference_task':
+    for k in 'desc', 'mode', 'reference-task':
         if k in detail:
             d[k] = detail[k]
     return json.dumps(d)  
@@ -195,25 +198,30 @@ def task_specimen_listing(task_id):
     db = get_db()
 
     # Get the current task data
-    project,task = get_task_data(task_id)
+    task = TaskRef(task_id)
 
     # Get the right table based on anonymization setting
-    tsi_view = get_table_slide_info_view(project)
+    tsi_view = get_table_slide_info_view(task.project)
+    
+    # Check if the task references another task; in that case we will use that task's id 
+    # when counting annotations, etc
+    # TODO: implement referencing for other task modes!
+    ref_task_id = task.id if task.referenced_task is None else task.referenced_task
 
     # List all the blocks that meet requirements for the current task
-    if task['mode'] == 'annot':
+    if task.mode == 'annot':
 
         # Join with the annotations table
         blocks = db.execute(
             f"""SELECT specimen_display, specimen, COUNT(DISTINCT block_id) as nblocks,
                    COUNT (S.id) as nslides, COUNT(A.slide_id) as nannot
                 FROM {tsi_view} S
-                LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = S.task_id
+                LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ?
                 WHERE S.task_id = ?
                 GROUP BY specimen
-                ORDER BY specimen_display""", (task_id,)).fetchall()
+                ORDER BY specimen_display""", (ref_task_id, task_id)).fetchall()
 
-    elif task['mode'] == 'dltrain':
+    elif task.mode == 'dltrain':
 
         # Join with the annotations table
         blocks = db.execute(
@@ -225,7 +233,7 @@ def task_specimen_listing(task_id):
                 GROUP BY specimen
                 ORDER BY specimen_display""", (task_id,)).fetchall()
 
-    elif task['mode'] == 'sampling':
+    elif task.mode == 'sampling':
 
         blocks = db.execute(
             f"""SELECT specimen_display, specimen, COUNT(DISTINCT block_id) as nblocks,
@@ -318,6 +326,7 @@ def generate_detailed_slide_listing(
 # Get basic information about a slide in a task
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/info')
 @api_access_task_read
+@access_slide_read(api=True)
 def task_get_slide_info(task_id, slide_id):
     db = get_db()
     project, _ = get_task_data(task_id)
@@ -425,25 +434,28 @@ def specimen_block_listing(task_id, specimen):
     db = get_db()
 
     # Get the current task data
-    project, task = get_task_data(task_id)
+    task = TaskRef(task_id)
     
     # Get the right table based on anonymization setting
-    tsi_view = get_table_slide_info_view(project)
+    tsi_view = get_table_slide_info_view(task.project)
     
+    # TODO: implement referencing for other task modes!
+    ref_task_id = task.id if task.referenced_task is None else task.referenced_task
+
     # List all the blocks that meet requirements for the current task
-    if task['mode'] == 'annot':
+    if task.mode == 'annot':
 
         # Join with the annotations table
         blocks = db.execute(
             f"""SELECT block_id,block_name,specimen_display,
                    COUNT (S.id) as nslides, COUNT(A.slide_id) as nannot 
                 FROM {tsi_view} S
-                LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = S.task_id
+                LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ?
                 WHERE S.task_id = ? AND S.specimen = ?
                 GROUP BY block_id,block_name,specimen
-                ORDER BY block_name""", (task_id, specimen)).fetchall()
+                ORDER BY block_name""", (ref_task_id, task_id, specimen)).fetchall()
 
-    elif task['mode'] == 'dltrain':
+    elif task.mode == 'dltrain':
 
         # Join with the annotations table
         blocks = db.execute(
@@ -455,7 +467,7 @@ def specimen_block_listing(task_id, specimen):
                 GROUP BY block_id,block_name,specimen
                 ORDER BY block_name""", (task_id, specimen)).fetchall()
 
-    elif task['mode'] == 'sampling':
+    elif task.mode == 'sampling':
 
         # Join with the annotations table
         blocks = db.execute(
@@ -550,22 +562,25 @@ def block_slide_listing(task_id, specimen, block_name):
     db = get_db()
 
     # Get the current task data
-    project,task = get_task_data(task_id)
+    task = TaskRef(task_id)
     
     # Get the right table based on anonymization setting
-    tsi_view = get_table_slide_info_view(project)
+    tsi_view = get_table_slide_info_view(task.project)
 
     # Get the block descriptor
     block = db.execute('SELECT * FROM block_info WHERE specimen=? AND block_name=? AND project=?',
-            (specimen,block_name,project)).fetchone()
+            (specimen,block_name,task.project)).fetchone()
 
     if block is None:
         return json.dumps([])
 
     block_id = block['id']
 
+    # TODO: implement referencing for other task modes!
+    ref_task_id = task.id if task.referenced_task is None else task.referenced_task
+    
     # List all the blocks that meet requirements for the current task
-    if task['mode'] == 'annot':
+    if task.mode == 'annot':
 
         # Join with the annotations table
         slides = db.execute(
@@ -574,12 +589,12 @@ def block_slide_listing(task_id, specimen, block_name):
                    IFNULL(SUM(A.n_markers),0) as n_markers,
                    IFNULL(SUM(A.n_paths),0) + IFNULL(SUM(A.n_markers),0) as n_annot
                 FROM {tsi_view} S
-                    LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = S.task_id
+                    LEFT JOIN annot A on A.slide_id = S.id AND A.task_id = ?
                 WHERE S.task_id = ? AND S.block_id = ?
                 GROUP BY S.id, S.section, S.slide
-                ORDER BY section, slide""", (task_id, block_id)).fetchall()
+                ORDER BY section, slide""", (ref_task_id, task_id, block_id)).fetchall()
 
-    elif task['mode'] == 'dltrain':
+    elif task.mode == 'dltrain':
 
         # Join with the training samples table
         slides = db.execute(
@@ -590,7 +605,7 @@ def block_slide_listing(task_id, specimen, block_name):
                 GROUP BY S.id, S.section, S.slide
                 ORDER BY section, slide""", (task_id, block_id)).fetchall()
 
-    elif task['mode'] == 'sampling':
+    elif task.mode == 'sampling':
 
         # Join with the training samples table
         slides = db.execute(
@@ -685,6 +700,8 @@ def get_slide_info(task_id, slide_id):
     # Get the info on the current slide
     tsi_view = get_table_slide_info_view(project)
     slide_info = db.execute(f'SELECT * from {tsi_view} WHERE id = ? AND task_id = ?', (slide_id,task_id)).fetchone()
+    if slide_info is None:
+        raise ValueError(f'Slide {slide_id} is not part of task {task_id}')
 
     # Get the slide info
     block_id = slide_info['block_id']
@@ -772,10 +789,9 @@ def get_available_tasks_for_slide(project, slide_id):
     # All tasks that the user has access to on this slide
     rc = db.execute(
         "SELECT DISTINCT TI.* FROM task_info TI "
-        "       LEFT JOIN effective_task_project_access TA ON TI.id=TA.task "
+        "       LEFT JOIN effective_task_access TA ON TI.id=TA.task "
         "       LEFT JOIN task_slide_index TSI on TSI.task_id = TI.id "
-        "WHERE TA.project=? AND TSI.slide = ? AND user=? "
-        "       AND (TA.restrict_access=0 OR TA.task_access != 'none') ",
+        "WHERE TA.project=? AND TSI.slide = ? AND user=? AND TA.access != 'none' ",
         (project, slide_id, user))
     
     # For each task, designate its mode
@@ -797,22 +813,26 @@ def load_slide_into_cache(slide_id, sr, resource, socket_addr_list):
 # The slide view
 @bp.route('/task/<int:task_id>/slide/<int:slide_id>/view/<resolution>/<affine_mode>', methods=('GET', 'POST'))
 @access_task_read
+@access_slide_read()
 def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the current task data
-    project,task = get_task_data(task_id)
+    task = TaskRef(task_id)
+    pr = ProjectRef(task.project)
 
     # Get the next/previous slides for this task
-    si, prev_slide, next_slide, stain_list, user_prefs = get_slide_info(task_id, slide_id)
+    try:
+        si, prev_slide, next_slide, stain_list, user_prefs = get_slide_info(task_id, slide_id)
+    except ValueError as ve:
+        abort(404, f'Error: {str(ve)}')
 
-    pr = ProjectRef(project)
     sr = get_slide_ref(slide_id, pr)
     if sr is None:
-        return f'Error: Slide {slide_id} not found in project {project}', 404
+        abort(404, f'Error: Slide {slide_id} not found in project {task.project}')
     
     # Check that the affine mode and resolution requested are available
     have_affine, have_x16 = False, False
-    if task['mode'] != 'dltrain':
+    if task.mode != 'dltrain':
         have_affine = sr.resource_exists('affine', True) or sr.resource_exists('affine', False)
         have_x16 = sr.resource_exists('x16', True) or sr.resource_exists('x16', False)
 
@@ -830,7 +850,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     overlays = sr.get_available_overlays(local = False)
     
     # Get the list of other tasks available for this slide
-    other_tasks = get_available_tasks_for_slide(project, slide_id)
+    other_tasks = get_available_tasks_for_slide(task.project, slide_id)
     other_tasks = { k:v for k,v in other_tasks.items() if k != task_id }
 
     # Remove the URL from the overlay dict - this is not for public consumption
@@ -843,13 +863,10 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
             task_id=task_id, slide_id=slide_id,
             resolution=rd_resolution, affine_mode=rd_affine_mode))
 
-    # Get additional project info
-    pr = ProjectRef(project)
-
     # Form the URL templates for preloading and actual dzi access, so that in JS we
     # can just do a quick substitution
     url_ctx = {
-            'project':project,
+            'project':task.project,
             'slide_id':slide_id,
             'mode':affine_mode,
             'resource':'XXXXX',
@@ -864,6 +881,9 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     url_tmpl_download_label = url_for('dzi.dzi_download_label_image', **url_ctx)
     url_tmpl_download_macro = url_for('dzi.dzi_download_macro_image', **url_ctx)
     url_tmpl_download_header = url_for('dzi.dzi_download_header', **url_ctx)
+    
+    # Determine if the task is read-only
+    read_only = task.read_only or check_task_access(g.user['id'], task_id, 'write')[0] == False
 
     # Build a dictionary to call
     context = {
@@ -877,7 +897,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'have_affine': have_affine,
         'have_x16': have_x16,
         'resolution': resolution,
-        'seg_mode': task['mode'],
+        'seg_mode': task.mode,
         'task_id': task_id,
         'project': si['project'],
         'project_name': pr.disp_name,
@@ -889,11 +909,12 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'url_tmpl_download_label': url_tmpl_download_label,
         'url_tmpl_download_macro': url_tmpl_download_macro,
         'url_tmpl_download_header': url_tmpl_download_header,
-        'task': task,
-        'fixed_box_size': get_dltrain_fixed_box_size(task),
+        'task': task.data,
+        'fixed_box_size': get_dltrain_fixed_box_size(task.data),
         'user_prefs': user_prefs,
         'overlays': overlays,
-        'other_tasks': other_tasks
+        'other_tasks': other_tasks,
+        'read_only': read_only
     }
 
     # Load the metadata for the slide to get spacing information
@@ -914,7 +935,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     # Add optional fields to context
     sample_data = {}
     if 'slide_view_sample_data' in session:
-        sample_data = session.get('slide_view_sample_data')
+        sample_data = session.get('slide_view_sample_data', {})
         session.pop('slide_view_sample_data')
 
     for field in ('sample_id', 'sample_cx', 'sample_cy'):
@@ -1148,6 +1169,7 @@ user_preferences_schema = {
 # Receive user preferences for the slide, such as preferred rotation and flip
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/user_preferences/set', methods=('POST',))
 @access_task_read
+@access_slide_read()
 def set_slide_user_preferences(task_id, slide_id):
 
     # Get the json and validate
@@ -1170,6 +1192,7 @@ def set_slide_user_preferences(task_id, slide_id):
 # Receive updated json for the slide
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/set', methods=('POST',))
 @access_task_write
+@access_slide_write()
 def update_annot_json(task_id, mode, resolution, slide_id):
 
     # Get the raw json
@@ -1190,12 +1213,17 @@ def update_annot_json(task_id, mode, resolution, slide_id):
 # Send the json for the slide
 @bp.route('/task/<int:task_id>/slide/<mode>/<resolution>/<int:slide_id>/annot/get', methods=('GET',))
 @access_task_read
+@access_slide_read()
 def get_annot_json(task_id, mode, resolution, slide_id):
+    
+    # Which task to obtain the annotation from? If referenced task, get that one
+    task = TaskRef(task_id)
+    ref_task_id = task.referenced_task if task.referenced_task is not None else task.id
 
     # Find the annotation in the database
     db = get_db()
     rc = db.execute('SELECT json FROM annot WHERE slide_id=? AND task_id=?',
-                    (slide_id, task_id)).fetchone()
+                    (slide_id, ref_task_id)).fetchone()
 
     # Get the affine transform
     M = np.linalg.inv(get_affine_matrix_by_slideid(slide_id, mode, resolution))
@@ -1212,6 +1240,8 @@ def get_annot_json(task_id, mode, resolution, slide_id):
 # API to get the timestamp when an annotation was last modified
 # TODO: need API keys!
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/timestamp', methods=('GET',))
+@access_task_read
+@access_slide_read()
 def api_get_annot_timestamp(task_id, slide_id):
     db = get_db()
     rc = db.execute('SELECT M.t_edit FROM annot A '
@@ -1225,7 +1255,9 @@ def api_get_annot_timestamp(task_id, slide_id):
 
 
 # API to get the timestamp when an annotation was last modified
+# TODO: need permission structure!
 @bp.route('/api/task/<int:task_id>/slidename/<slide_name>/annot/timestamp', methods=('GET',))
+@api_access_task_read
 def api_get_annot_timestamp_by_slidename(task_id, slide_name):
     db = get_db()
     rc = db.execute('SELECT S.id FROM annot A '
@@ -1239,8 +1271,9 @@ def api_get_annot_timestamp_by_slidename(task_id, slide_name):
 
 
 # API to get an SVG file
-# TODO: need API keys!
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/svg', methods=('GET','POST'))
+@access_task_read
+@access_slide_read()
 def api_get_annot_svg(task_id, slide_id):
 
     strip_width = request.form.get('strip_width', 0)
@@ -1257,8 +1290,9 @@ def api_get_annot_svg(task_id, slide_id):
 
 
 # API to get an SVG file
-# TODO: need API keys!
+# TODO: need permission structure!
 @bp.route('/api/task/<int:task_id>/slidename/<slide_name>/annot/svg', methods=('GET','POST'))
+@api_access_task_read
 def api_get_annot_svg_by_slidename(task_id, slide_name):
     db = get_db()
     rc = db.execute('SELECT S.id FROM annot A '
@@ -1280,6 +1314,7 @@ class PILBytesIO(BytesIO):
 # Serve label image if available
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>_thumbnail.png', methods=('GET',))
 @access_task_read
+@access_slide_read()
 def get_slide_thumbnail(task_id, slide_id):
     sr = get_slide_ref(slide_id)
     f_local = sr.get_local_copy('thumb')
@@ -1306,6 +1341,7 @@ def thumb(id):
 # Slide metadata
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/slide_admin_info', methods=('GET','POST'))
 @access_task_admin
+@access_slide_admin()
 def api_get_slide_admin_info(task_id, slide_id):
     sr = get_slide_ref(slide_id)
     return jsonify({
@@ -1322,7 +1358,8 @@ def api_get_slide_admin_info(task_id, slide_id):
 
 # Get a random patch from the slide
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<int:width>', methods=('GET','POST'))
-@access_task_read
+@api_access_task_read
+@access_slide_read(api=True)
 def api_get_slide_random_patch(task_id, slide_id, width):
     db = get_db()
 
@@ -1354,7 +1391,7 @@ def api_get_slide_random_patch(task_id, slide_id, width):
 
 
 @bp.route('/api/project/<project>/specimen/<specimen>/refresh_slides', methods=('GET','POST'))
-@api_access_project_admin
+@access_project_admin(api=True)
 def api_project_refresh_slides_for_specimen(project, specimen):
     refresh_slide_db(project, None, single_specimen=specimen, check_hash=False)
     return "", 200, {'ContentType':'application/json'} 

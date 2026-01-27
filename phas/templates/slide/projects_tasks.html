@@ -24,7 +24,8 @@ PICSL Histology Annotation Server
 
 .ui-menu {
   font-size: 80%;
-  line-height: $line-height * 0.8;
+  color: #7f8c8d;
+  line-height: 1.8em;
   white-space: nowrap;
 }
 
@@ -39,6 +40,12 @@ PICSL Histology Annotation Server
   padding: 0;
 }
 
+.mi-icon {
+  display: inline-block;
+  text-align: center;
+  margin-right: 0.5em;
+}
+
 </style>
 
 
@@ -48,7 +55,7 @@ PICSL Histology Annotation Server
 
 <!-- DataTable support -->
 <div class="pure-g" style="max-width: 1024px;">
-  <div class="pure-u-1 pure-u-md-12-24">
+  <div class="pure-u-1 pure-u-md-10-24">
     <h3 align="center">PROJECTS</h3>
     <div id="d_project_table">
       <table id="project" class="compact stripe hover" style="width:100%">
@@ -57,9 +64,9 @@ PICSL Histology Annotation Server
             <th>Id</th>
             <th>Admin</th>
             <th>Project</th>
-            <th>#Spc</th>
-            <th>#Blk</th>
-            <th>#Sld</th>
+            <th title="Number of specimens">#Spc</th>
+            <th title="Number of blocks">#Blk</th>
+            <th title="Number of slides">#Sld</th>
             <th></th>
           </tr>
         </thead>
@@ -73,17 +80,18 @@ PICSL Histology Annotation Server
   </div>
   <div class="pure-u-1 pure-u-md-1-24">
   </div>
-  <div class="pure-u-1 pure-u-md-11-24" id="d_tasks" style="display:none;">
+  <div class="pure-u-1 pure-u-md-13-24" id="d_tasks" style="display:none;">
     <h3 align="center">TASKS</h3>
     <table id="task" class="compact stripe hover" style="width:100%">
       <thead>
         <tr>
           <th>Id</th>
+          <th>Admin</th>
           <th>Mode</th>
-          <th>Activity</th>
-          <th>#Spc</th>
-          <th>#Blk</th>
-          <th>#Sld</th>
+          <th>Task</th>
+          <th title="Number of specimens">#Spc</th>
+          <th title="Number of blocks">#Blk</th>
+          <th title="Number of slides">#Sld</th>
           <th></th>
         </tr>
       </thead>
@@ -97,10 +105,13 @@ PICSL Histology Annotation Server
 <div id="dialog-proj-context-menu" class="menuDialog" style="display: none;">
   <ul id="proj-context-menu">
     <li id="mi-about" data-isadmin=0>
-      <div><span class="ui-icon ui-icon-help"></span>About</div>
+      <div><i class="mi-icon fa fa-circle-question"></i>About</div>
     </li>
-    <li id="mi-labelset-edt" data-isadmin=1>
-      <div><span class="ui-icon ui-icon-lightbulb"></span>Edit Label Sets</div>
+    <li id="mi-labelset-edt" data-isadmin=1 class="mi-p mi-p-admin">
+      <div><i class="mi-icon fa fa-pencil"></i>Edit Label Sets</div>
+    </li>
+    <li id="mi-task-create" data-isadmin=1 class="mi-p mi-p-admin">
+      <div><i class="mi-icon fa fa-file-lines"></i>Create New Task ...</div>
     </li>
   </ul>
 </div>
@@ -108,19 +119,22 @@ PICSL Histology Annotation Server
 <div id="dialog-task-context-menu" class="menuDialog" style="display: none;">
   <ul id="task-context-menu">
     <li id="mi-task-about" data-isadmin=0>
-      <div><span class="ui-icon ui-icon-help"></span>About</div>
+      <div><i class="mi-icon fa fa-circle-question"></i>About</div>
     </li>
-    <li id="mi-task-all-slides" data-isadmin=1>
-      <div>View All Slides</div>
+    <li id="mi-task-all-slides" data-isadmin=1 class="mi-t mi-t-admin">
+      <div><i class="mi-icon fa fa-eye"></i>View All Slides</div>
     </li>
-    <li id="mi-task-all-samples" data-isadmin=0>
-      <div>View All Samples</div>
+    <li id="mi-task-all-samples" data-isadmin=0 class="mi-t mi-t-dltrain">
+      <div><i class="mi-icon fa fa-robot"></i>View All Samples</div>
     </li>
-    <li id="mi-task-all-sroi" data-isadmin=0>
-      <div>View All Sampling ROIs</div>
+    <li id="mi-task-all-sroi" data-isadmin=0 class="mi-t mi-t-sroi">
+      <div><i class="mi-icon fa fa-draw-polygon"></i>View All Sampling ROIs</div>
     </li>
-    <li id="mi-task-slide-manifest" data-isadmin=1>
-      <div>Download Slide Manifest</div>
+    <li id="mi-task-slide-manifest" data-isadmin=1 class="mi-t mi-t-admin">
+      <div><i class="mi-icon fa fa-file-download"></i>Download Slide Manifest</div>
+    </li>
+    <li id="mi-task-edit" data-isadmin=1 class="mi-t mi-t-admin">
+      <div><i class="mi-icon fa fa-pencil"></i>Edit Task Properties ...</div>
     </li>
   </ul>
 </div>
@@ -142,11 +156,44 @@ $(document).ready(function() {
   var url_task_all_slides="{{url_for('slide.task_all_slides', task_id='999999')}}";
   var url_task_all_samples="{{url_for('dltrain.task_all_samples', task_id='999999')}}";
   var url_task_slide_manifest="{{url_for('slide.api_task_list_all_slides', task_id='999999')}}";
+  var url_task_edit="{{url_for('admin.admin_edit_task', project='XXXX', task_id='999999')}}";
+  var url_task_create="{{url_for('admin.admin_create_task', project='XXXX')}}";
 
   // Rendering of links
   var fn_task_link_render = function(data, type, row) {
     var url = url_action.replace('999999',row['id']);
-    return '<a class="action" href="'+url+'">'+row['name']+'</a>';
+    
+    // Render an appropriate icon for the task mode (browse, annot, dltrain, sampling)
+    icons = {
+      'browse': 'fa fa-eye',
+      'annot': 'fa fa-brain',
+      'dltrain': 'fa fa-robot',
+      'sampling': 'fa fa-draw-polygon'
+    };
+    icon = icons[row['mode']];
+
+    // Icon should come with a tooltip
+    tooltips = {
+      'browse': 'Browse',
+      'annot': 'Anatomy Annotation',
+      'dltrain': 'Deep Learning Classifier Training',
+      'sampling': 'Sampling ROI Placement'
+    }
+    tooltip = tooltips[row['mode']];
+
+    return `<i class="${icon}" title="${tooltip}"></i> <a class="action" href="${url}">${row['name']}</a>`;
+  };
+
+  var fn_task_mode_render = function(data, type, row) {
+    // Render an appropriate icon for the task mode (browse, annot, dltrain, sampling)
+    icons = {
+      'browse': 'fa fa-eye',
+      'annot': 'fa fa-pencil',
+      'dltrain': 'fa fa-lightbulb',
+      'sampling': 'fa fa-crosshairs'
+    };
+
+    return '<i class="'+icons[data]+'" title="'+tooltips[data]+'"></i>';
   };
 
   // Create the HTML for the ellipsis button
@@ -158,9 +205,9 @@ $(document).ready(function() {
     { data: "id", visible: false },
     { data: "admin", visible: false },
     { data: "disp_name" },
-    { data: "nspecimens" },
-    { data: "nblocks" },
-    { data: "nslides" },
+    { data: "nspecimens", width: "2em"  },
+    { data: "nblocks", width: "2em"  },
+    { data: "nslides", width: "2em"  },
     {
       data: null,
       className: "dt-center context-menu ellipsis",
@@ -172,11 +219,12 @@ $(document).ready(function() {
   // Column descriptions for the task table
   var task_col_desc = [
     { data: "id", visible: false },
+    { data: "admin", visible: false },
     { data: "mode", visible: false },
     { data: "name", render: fn_task_link_render },
-    { data: "nspecimens" },
-    { data: "nblocks" },
-    { data: "nslides" },
+    { data: "nspecimens", width: "2em" },
+    { data: "nblocks", width: "2em"  },
+    { data: "nslides", width: "2em"  },
     {
       data: null,
       className: "dt-center context-menu ellipsis",
@@ -263,6 +311,11 @@ $(document).ready(function() {
         window.location.href = url;
         return false;
       }
+      else if(ui.item[0].id === "mi-task-create") {
+        url = url_task_create.replace('XXXX', project);
+        window.location.href = url;
+        return false;
+      }
       return true;
     }
   });
@@ -271,6 +324,7 @@ $(document).ready(function() {
     select: function (event, ui) {
       var dialog = $("#dialog-task-context-menu");
       var task_id = dialog.data("task_id");
+      var project = dialog.data("project");
       dialog.dialog("close");
       if (ui.item[0].id === "mi-task-about") {
         // pop up a dialog with project info using ajax
@@ -297,6 +351,12 @@ $(document).ready(function() {
       else if(ui.item[0].id === "mi-task-all-samples" || ui.item[0].id === "mi-task-all-sroi") {
         url = url_task_all_samples.replace('999999', task_id);
         window.location.href = url;
+        return false;
+      }
+      else if(ui.item[0].id === "mi-task-edit") {
+        url = url_task_edit.replace('XXXX', project).replace('999999', task_id);
+        window.location.href = url;
+        window.open(url, '_blank', 'noopener');
         return false;
       }
       return true;
@@ -344,15 +404,11 @@ $(document).ready(function() {
     var row_data = t_project.row($(this).closest('tr')).data();
     dialog.data("project", row_data.id);
 
-    // Enable and disable menu items based on admin status
-    $("#proj-context-menu").children("li").each(function(idx) {
-      if($(this).data("isadmin") === 1 && row_data.admin !== 1) {
-        $(this).addClass('ui-state-disabled');
-      }
-      else {
-        $(this).removeClass('ui-state-disabled');
-      }
-    });
+    // Enable all the menu items based on admin status
+    $('.mi-p').hide();
+    if(row_data.admin)
+      $('.mi-p-admin').show();
+
     dialog.dialog("option", "position", pos).dialog("open");
     return false;
   });
@@ -384,19 +440,17 @@ $(document).ready(function() {
 
     // Set the project field so we know the context
     var row_data = t_task.row($(this).closest('tr')).data();
+    dialog.data("project", selected_prj);
     dialog.data("task_id", row_data.id);
 
-    // Toggle the visibility of different menu items
+    // Enable all the menu items based on admin status
+    $('.mi-t').hide();
+    if(row_data.admin)
+      $('.mi-t-admin').show();
     if(row_data.mode == 'dltrain')
-      $("#mi-task-all-samples").removeClass('ui-state-disabled');
-    else
-      $("#mi-task-all-samples").addClass('ui-state-disabled');
-
-    // Toggle the visibility of different menu items
+      $('.mi-t-dltrain').show();
     if(row_data.mode == 'sampling')
-      $("#mi-task-all-sroi").removeClass('ui-state-disabled');
-    else
-      $("#mi-task-all-sroi").addClass('ui-state-disabled');
+      $('.mi-t-sroi').show();
 
     // Show dialog
     dialog.dialog("option", "position", pos).dialog("open");
@@ -433,6 +487,8 @@ $(document).ready(function() {
     $('#span_project_name').text("");
     $('#d_tasks').css('display','none');
   });
+
+  $( document ).tooltip();
 } );
 </script>
 

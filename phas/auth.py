@@ -169,12 +169,21 @@ def site_admin_access_required(view):
 @cache_in_session
 def fetch_project_access(user_id, project, key):
     db = get_db()
-    rc = db.execute('SELECT * FROM effective_project_access WHERE user=? AND project=?',
+    rc = db.execute('SELECT * FROM effective_project_and_max_task_access WHERE user=? AND project=?',
                     (user_id, project)).fetchone()
     print(f'Fetched project access for user {user_id} project {project}: {rc}')
     return dict(rc) if rc is not None else None
 
-def _project_access_required(view, min_access_level, api_access_required=False):
+def _project_access_required(view, min_access_level, api_access_required=False, allow_on_task_access=False):
+    """
+    Check if user has access to the project resources at min_access_level. 
+    
+    :param view: Wrapped view
+    :param min_access_level: Minimum requested access (none,read,write,admin)
+    :param api_access_required: Check access to API resources 
+    :param allow_on_task_access: Allow access if at least one task in the project has min_access_level
+    :return: True if access allowed
+    """
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
@@ -189,50 +198,142 @@ def _project_access_required(view, min_access_level, api_access_required=False):
 
         project = kwargs['project']
         pa = fetch_project_access(g.user['id'], project, key=f'project_access_{project}')
-
+        
         error = None
-        if pa is None:
-            error = "No privileges on parent project"
-        elif AccessLevel.check_access(pa['access'], min_access_level) is False:
-            error = "Insufficient privileges on parent project"
-        elif api_access_required and pa['api_permission'] < 1:
-            error = "Missing API access permission"
-        if error is not None:
-            url = request.url if request is not None else None
-            current_app.logger.warning(f'Unauthorized {min_access_level} access to project {project} at URL {url}: {error}')
-            abort(403, "Insufficient privileges on project {project}")
+        if pa is not None:
+            # Do we have wildcat-level project access?
+            have_project_wc_access = AccessLevel.check_access(pa['project_access'], min_access_level)
+            
+            # Do we have access to any of the restricted tasks?
+            have_max_task_access = AccessLevel.check_access(pa['max_task_access'], min_access_level)
+
+            if have_project_wc_access or (allow_on_task_access and have_max_task_access):
+                if api_access_required is False or pa['api_permission'] > 0:
+                    return view(**kwargs)
+                else:
+                    error = "Missing API access permission"
+            else:
+                error = "Insufficient privileges on project"
         else:
-            return view(**kwargs)
+            error = "No privileges set for user on project"
+
+        url = request.url if request is not None else None
+        current_app.logger.warning(f'Unauthorized {min_access_level} access to project {project} at URL {url}: {error}')
+        abort(403, "Insufficient privileges on project {project}")
 
     return wrapped_view
 
 
-def access_project_read(view):
-    return _project_access_required(view, 'read')
+def access_project_read(api=False, allow_on_task=False):
+    def access_project_read_inner(view):
+        return _project_access_required(view, 'read', api_access_required=api, allow_on_task_access=allow_on_task)
+    return access_project_read_inner
 
-def access_project_write(view):
-    return _project_access_required(view, 'write')
+def access_project_write(api=False, allow_on_task=False):
+    def access_project_write_inner(view):
+        return _project_access_required(view, 'write', api_access_required=api, allow_on_task_access=allow_on_task)
+    return access_project_write_inner
 
-def access_project_admin(view):
-    return _project_access_required(view, 'admin')
+def access_project_admin(api=False, allow_on_task=False):
+    def access_project_admin_inner(view):
+        return _project_access_required(view, 'admin', api_access_required=api, allow_on_task_access=allow_on_task)
+    return access_project_admin_inner
 
-def api_access_project_read(view):
-    return _project_access_required(view, 'read', api_access_required=True)
 
-def api_access_project_write(view):
-    return _project_access_required(view, 'write', api_access_required=True)
+# Check if a user has access to a specific slide. This is governed by task, if a slide is in a task
+# then access should be granted
+@cache_in_session
+def fetch_slide_access(user_id, slide, key):
+    db = get_db()
+    rc = db.execute('SELECT * FROM effective_slide_access WHERE user=? AND slide=?',
+                    (user_id, slide)).fetchone()
+    print(f'Fetched project access for user {user_id} project {slide}: {rc}')
+    return dict(rc) if rc is not None else None
 
-def api_access_project_admin(view):
-    return _project_access_required(view, 'admin', api_access_required=True)
+
+def _slide_access_required(view, min_access_level, api_access_required=False):
+    """
+    Check if user has access to the project resources at min_access_level. 
+    
+    :param view: Wrapped view
+    :param min_access_level: Minimum requested access (none,read,write,admin)
+    :param api_access_required: Check access to API resources 
+    :return: True if access allowed
+    """
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+        # On the dzi worker node, there is no database, access is managed through
+        # nginx server and firewall
+        if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
+            return view(**kwargs)
+
+        # The project keyword must exist
+        if 'slide_id' not in kwargs:
+            abort(404, "Slide not specified")
+
+        slide = kwargs['slide_id']
+        sa = fetch_slide_access(g.user['id'], slide, key=f'slide_access_{slide}')
+        
+        error = None
+        if sa is not None:
+            # Do we have wildcat-level project access?
+            if AccessLevel.check_access(sa['slide_access'], min_access_level):
+                if api_access_required is False or sa['api_permission'] > 0:
+                    return view(**kwargs)
+                else:
+                    error = "Missing API access permission"
+            else:
+                error = "Insufficient privileges for slide"
+        else:
+            error = "No privileges set for user on slide"
+
+        url = request.url if request is not None else None
+        current_app.logger.warning(f'Unauthorized {min_access_level} access to slide {slide} at URL {url}: {error}')
+        abort(403, f"Insufficient privileges on slide {slide}")
+
+    return wrapped_view
+
+
+def access_slide_read(api=False):
+    def access_slide_read_inner(view):
+        return _slide_access_required(view, 'read', api_access_required=api)
+    return access_slide_read_inner
+
+
+def access_slide_write(api=False):
+    def access_slide_write_inner(view):
+        return _slide_access_required(view, 'write', api_access_required=api)
+    return access_slide_write_inner
+
+
+def access_slide_admin(api=False):
+    def access_slide_admin_inner(view):
+        return _slide_access_required(view, 'admin', api_access_required=api)
+    return access_slide_admin_inner
+
 
 # Load task/project access level (cached in session)
 @cache_in_session
 def fetch_task_access(user_id, task, key):
     db = get_db()
-    rc = db.execute('SELECT * FROM effective_task_project_access WHERE user=? AND task=?',
+    rc = db.execute('SELECT * FROM effective_task_access WHERE user=? AND task=?',
                     (user_id, task)).fetchone()
     print(f'Fetched task access for user {user_id} task {task}: {rc}')
     return dict(rc) if rc is not None else None
+
+
+def check_task_access(user_id, task_id, min_access_level, api_access_required=False):
+    ta = fetch_task_access(user_id, task_id, key=f'task_access_{task_id}')
+    if ta is None:
+        return False, "No privileges on task"
+    elif api_access_required and ta['api_permission'] < 1:
+        return False, "Missing API access permission"
+    elif AccessLevel.check_access(ta['access'], min_access_level) is False:
+        return False, "Insufficient privileges on task"
+    else :
+        return True, None
+
 
 def _task_access_required(view, min_access_level, api_access_required=False):
     @functools.wraps(view)
@@ -244,26 +345,12 @@ def _task_access_required(view, min_access_level, api_access_required=False):
             abort(404, "Task ID not specified")
 
         task_id = kwargs['task_id']
-        tpa = fetch_task_access(g.user['id'], task_id, key=f'task_access_{task_id}')
-
-        error = None
-        if tpa is None:
-            error = "No privileges on parent project"
-        elif api_access_required and tpa['api_permission'] < 1:
-            error = "Missing API access permission"
-        elif tpa['restrict_access'] > 0:
-            # Task has specific access control - use task-level access
-            if AccessLevel.check_access(tpa['task_access'], min_access_level) is False:
-                error = "Insufficient privileges on task"
-        else:
-            # Task does not have specific access control - use project-level access as wildcard
-            if AccessLevel.check_access(tpa['project_access'], min_access_level) is False:
-                error = "Insufficient privileges on parent project"
+        _, error = check_task_access(g.user['id'], task_id, min_access_level, api_access_required)
 
         if error is not None:
             url = request.url if request is not None else None
             current_app.logger.warning(f'Unauthorized {min_access_level} access to task {task_id} at URL {url}: {error}')
-            abort(403, "Insufficient privileges on task {task_id}")
+            abort(403, f"Insufficient privileges on task {task_id}")
 
         else:
             return view(**kwargs)

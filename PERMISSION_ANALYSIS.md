@@ -52,7 +52,7 @@ else:
 **Analysis:** No security issue because:
 - Access is still checked at the appropriate level (task or project)
 - The `restrict_access` flag controls which permission is checked
-- Both permissions are validated through the same SQL views (`effective_task_project_access`)
+- Both permissions are validated through the same SQL views (`effective_task_access`)
 
 #### 2. Information Disclosure
 **Concern:** Could users with task-only access see project-level information they shouldn't?

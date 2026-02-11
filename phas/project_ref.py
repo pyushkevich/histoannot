@@ -298,10 +298,14 @@ class ProjectRef:
         # Get the local file and remote blob
         f_local = self.get_resource_url(resource, d, True)
         f_remote = self.get_resource_url(resource, d, False)
+        if f_local is None or f_remote is None:
+            return 1.0
 
         # Get remote size
         sz_local = os.stat(f_local).st_size if os.path.exists(f_local) else 0
         sz_remote = self._url_handler.get_size(f_remote)
+        if sz_local is None or sz_remote is None:
+            return 1.0
 
         # Get the ratio
         return sz_local * 1.0 / sz_remote
@@ -421,6 +425,33 @@ class TaskRef:
     @property
     def read_only(self) -> bool:
         return self.mode == 'browse' or self.referenced_task is not None
+    
+    # Maximum download size allowed, or None if no limit
+    @property
+    def download_size_limit(self) -> int|None:
+        x = self.data.get('download-slide-size-limit', None)
+        if x is not None and x < 0:
+            x = None
+        return x
+    
+    # Name of the labelset used for this task, or None if not specified or relevant
+    @property
+    def labelset(self) -> str|None:
+        if self.mode == 'dltrain':
+            return self.data.get('dltrain', {}).get('labelset', None)
+        elif self.mode == 'sampling':
+            return self.data.get('sampling', {}).get('labelset', None)
+        else:
+            return None
+        
+    # Labelset id of the labelset used for this task, or None if not specified or relevant
+    @property
+    def labelset_id(self) -> int|None:
+        db = get_db()
+        labelset = self.labelset
+        if labelset is None:
+            return None
+        return db.execute('SELECT id FROM labelset_info WHERE name=? AND project=?', (labelset, self.project)).fetchone()['id']
 
     def __str__(self):
         return f"Task {self.id} in {self.project}"

@@ -107,6 +107,8 @@ def fetch_user_info(user_id, key):
     if row:
         d = dict(row)
         d.pop('password', None)  # Remove password hash from user data
+        fn = d['fullname']
+        d['display_name'] = fn if fn is not None and len(fn.strip()) > 0 else d['username']
         return d
     else:
         return None
@@ -139,7 +141,12 @@ def _login_required(view, site_admin=False):
         # The user must exist, if not redirect to the login page
         if g.user is None:
             current_app.logger.warning('Unauthorized access to %s' % request.url if request is not None else None)
-            return redirect(url_for('auth.login'))
+            landing_page = current_app.config.get('CUSTOM_LANDING_PAGE', None)
+            print(f'Landing page: {landing_page}')
+            if landing_page:
+                return redirect(landing_page)
+            else:
+                return redirect(url_for('auth.login'))
 
         # The user must be an administrator, eslse send a not found page
         if site_admin is True and g.user['site_admin'] < 1:
@@ -251,7 +258,84 @@ def fetch_slide_access(user_id, slide, key):
     return dict(rc) if rc is not None else None
 
 
-def _slide_access_required(view, min_access_level, api_access_required=False):
+# Check if a user has access to a specific slide within the context of a task
+@cache_in_session
+def fetch_slide_task_access(user_id, task_id, slide, key):
+    db = get_db()
+    rc = db.execute('SELECT * FROM task_slide_index TSI '
+                    '  LEFT JOIN effective_task_access TA ON TSI.task_id = TA.task '
+                    'WHERE task_id=? and slide=? and user=?', (task_id, slide, user_id)).fetchone()
+    print(f'Fetched project access for user {user_id} project {slide}: {rc}')
+    return dict(rc) if rc is not None else None
+
+
+def _slide_task_access_required(view, min_access_level, api_access_required=False, phi_required=False):
+    """
+    Check if user has access to a slide within the context of a task. They must have access to the
+    task, and the slide must be in the task
+    
+    :param view: Description
+    :param min_access_level: Description
+    :param api_access_required: Description
+    :param phi_required: Description
+    :return: Description
+    :rtype: Response
+    """
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+
+        # The slide keyword must exist
+        if 'slide_id' not in kwargs:
+            abort(404, "Slide not specified")
+            
+        if 'task_id' not in kwargs:
+            abort(404, "Task not specified")
+
+        task_id, slide = kwargs['task_id'], kwargs['slide_id']
+        sa = fetch_slide_task_access(g.user['id'], task_id, slide, key=f'slide_task_access_{slide}_{task_id}')
+        
+        error = None
+        if sa is not None:
+            if AccessLevel.check_access(sa['access'], min_access_level):
+                if api_access_required is False or sa['api_permission'] > 0:
+                    if phi_required is False or sa['anon_permission'] > 0:
+                        return view(**kwargs)
+                    else:
+                        error = "Missing permission to access private participant data"
+                else:
+                    error = "Missing API access permission"
+            else:
+                error = "Insufficient privileges for slide"
+        else:
+            error = "No privileges set for user on slide"
+
+        url = request.url if request is not None else None
+        current_app.logger.warning(f'Unauthorized {min_access_level} access to slide {slide} in task {task_id} at URL {url}: {error}')
+        abort(403, f"Insufficient privileges on slide {slide} in task {task_id}")
+
+    return wrapped_view
+
+
+def access_task_slide_read(api=False, phi=False):
+    def access_task_slide_read_inner(view):
+        return _slide_task_access_required(view, 'read', api_access_required=api, phi_required=phi)
+    return access_task_slide_read_inner
+
+
+def access_task_slide_write(api=False, phi=False):
+    def access_task_slide_write_inner(view):
+        return _slide_task_access_required(view, 'write', api_access_required=api, phi_required=phi)
+    return access_task_slide_write_inner
+
+
+def access_task_slide_admin(api=False, phi=False):
+    def access_task_slide_admin_inner(view):
+        return _slide_task_access_required(view, 'admin', api_access_required=api, phi_required=phi)
+    return access_task_slide_admin_inner
+
+
+def _slide_access_required(view, min_access_level, api_access_required=False, phi_required=False):
     """
     Check if user has access to the project resources at min_access_level. 
     
@@ -268,7 +352,7 @@ def _slide_access_required(view, min_access_level, api_access_required=False):
         if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
             return view(**kwargs)
 
-        # The project keyword must exist
+        # The slide keyword must exist
         if 'slide_id' not in kwargs:
             abort(404, "Slide not specified")
 
@@ -280,7 +364,10 @@ def _slide_access_required(view, min_access_level, api_access_required=False):
             # Do we have wildcat-level project access?
             if AccessLevel.check_access(sa['slide_access'], min_access_level):
                 if api_access_required is False or sa['api_permission'] > 0:
-                    return view(**kwargs)
+                    if phi_required is False or sa['anon_permission'] > 0:
+                        return view(**kwargs)
+                    else:
+                        error = "Missing permission to access private participant data"
                 else:
                     error = "Missing API access permission"
             else:
@@ -295,21 +382,21 @@ def _slide_access_required(view, min_access_level, api_access_required=False):
     return wrapped_view
 
 
-def access_slide_read(api=False):
+def access_slide_read(api=False, phi=False):
     def access_slide_read_inner(view):
-        return _slide_access_required(view, 'read', api_access_required=api)
+        return _slide_access_required(view, 'read', api_access_required=api, phi_required=phi)
     return access_slide_read_inner
 
 
-def access_slide_write(api=False):
+def access_slide_write(api=False, phi=False):
     def access_slide_write_inner(view):
-        return _slide_access_required(view, 'write', api_access_required=api)
+        return _slide_access_required(view, 'write', api_access_required=api, phi_required=phi)
     return access_slide_write_inner
 
 
-def access_slide_admin(api=False):
+def access_slide_admin(api=False, phi=False):
     def access_slide_admin_inner(view):
-        return _slide_access_required(view, 'admin', api_access_required=api)
+        return _slide_access_required(view, 'admin', api_access_required=api, phi_required=phi)
     return access_slide_admin_inner
 
 
@@ -407,15 +494,14 @@ def reset():
     return render_template('auth/request_reset.html', email=rq_email)
 
 
-def send_user_resetlink(user_id, email=None, expiry=86400):
+def send_user_resetlink(user_id, expiry=86400):
 
-    if email is None:
-        db=get_db()
-        rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
-        if rc is not None:
-            email = rc['email']
-        else:
-            return None
+    db=get_db()
+    rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
+    if rc is not None:
+        email = rc['email']
+    else:
+        raise ValueError(f'No email for user {user_id}')
 
     # Create a password reset link
     url = create_password_reset_link(user_id)
@@ -563,6 +649,8 @@ def edit_user_profile():
 
         # The user is posting a completed profile.
         rq_email = request.form['email']
+        rq_fullname = request.form['fullname']
+        rq_fullname = None if rq_fullname.strip() == '' else rq_fullname
 
         if not rq_email:
             error = 'Email address is required.'
@@ -573,11 +661,12 @@ def edit_user_profile():
         else:
 
             # Update user's profile
-            db.execute('UPDATE user SET email=?WHERE id=?', (rq_email, rc['id']))
+            db.execute('UPDATE user SET email=?, fullname=? WHERE id=?', (rq_email, rq_fullname, rc['id']))
             db.commit()
 
-            # Go to the home page
-            return redirect(url_for('index'))
+            # Redirect to the get version of this same page
+            flash('Profile updated successfully.')
+            return redirect(url_for('auth.edit_user_profile'))
 
     else:
         # If the user is missing some part of the profile, flash that
@@ -592,7 +681,7 @@ def edit_user_profile():
         flash(error)
 
     return render_template('auth/edit_profile.html',
-                           username=rc['username'],
+                           username=rc['username'], fullname=rc['fullname'] if rc['fullname'] is not None else '',
                            email = rq_email if rq_email is not None else rc['email'],
                            orcid_id = rc['oauth_id'],
                            oauth_only = rc['oauth_only'] > 0)
@@ -779,8 +868,8 @@ def orcid_oauth_callback():
         username = f'orcid_{orcid_id}'
         password = str(uuid.uuid4())  # Random password, will never be used
         rc = db.execute(
-            '''INSERT INTO user(username, password, is_group, oauth_only)
-            VALUES (?,?,0,1)''', (username, password))
+            '''INSERT INTO user(username, password, fullname, is_group, oauth_only)
+            VALUES (?,?,0,1)''', (username, password, name))
         user_id = rc.lastrowid
         
         # Link the ORCID ID to the user account
@@ -799,12 +888,20 @@ def orcid_oauth_callback():
     else:
         # Are we already logged in? In this case, we need to link the ORCID ID to the user account
         if g.user is not None:
+
+            # Link the ORCID ID to the user account
             rc = db.execute(
                 '''INSERT OR REPLACE INTO oauth_token(user, authority, oauth_id, access_token, refresh_token)
                 VALUES (?,?,?,?,?)''', (g.user['id'], 'orcid', orcid_id, r_json['access_token'], r_json['refresh_token']))
+            
+            # If the user's name is blank, update it from ORCID
+            if g.user['fullname'] is None or g.user['fullname'].strip() == '':
+                db.execute('UPDATE user SET fullname=? WHERE id=?', (name, g.user['id']))
+
             db.commit()
+            
             flash(f'ORCID ID {orcid_id} has been linked to your user account.')
-            return redirect(url_for('auth.edit_user_profile'))
+            return redirect(url_for('auth.edit_user_profile'))        
         
     # Check if the user with this ORCID ID exists and is enabled    
     user = db.execute(
@@ -813,6 +910,13 @@ def orcid_oauth_callback():
         WHERE authority="orcid" AND oauth_id = ? AND disabled = 0''', (orcid_id,)).fetchone()
     
     if user is not None:
+        
+        # If the user's name is blank, update it from ORCID
+        if user['fullname'] is None or user['fullname'].strip() == '':
+            db.execute('UPDATE user SET fullname=? WHERE id=?', (name, user['id']))
+
+        db.commit()
+        
         # Log the user in
         session.clear()
         session['user_id'] = user['id']

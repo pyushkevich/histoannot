@@ -19,18 +19,19 @@ import uuid
 
 from flask import(
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response,
-    current_app, send_from_directory, session, Response, jsonify
+    current_app, send_from_directory, session, Response, jsonify, send_file
 )
 from werkzeug.exceptions import abort
 
 from .auth import *
 from .db import get_db
 from .project_ref import ProjectRef, TaskRef
-from .slideref import SlideRef, get_slide_ref
+from .slideref import SlideRef, get_slide_ref, get_project_task_slide_ref
 from .project_cli import get_task_data, update_edit_meta, create_edit_meta, update_edit_meta_to_current, refresh_slide_db
 from .delegate import find_delegate_for_slide
 from .dzi import get_affine_matrix, get_random_patch, get_osl
 from .common import cache
+from .schemas import user_preferences_schema
 from io import BytesIO, StringIO
 from PIL import Image
 from threading import Thread
@@ -44,9 +45,8 @@ from flask.cli import with_appcontext
 import pandas
 import math
 import svgwrite
-import sys
-import urllib
 import io
+import re
 
 
 bp = Blueprint('slide', __name__)
@@ -817,22 +817,15 @@ def load_slide_into_cache(slide_id, sr, resource, socket_addr_list):
 def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the current task data
-    task = TaskRef(task_id)
-    pr = ProjectRef(task.project)
-
-    # Get the next/previous slides for this task
     try:
+        pr, tr, sr = get_project_task_slide_ref(task_id, slide_id)
         si, prev_slide, next_slide, stain_list, user_prefs = get_slide_info(task_id, slide_id)
     except ValueError as ve:
         abort(404, f'Error: {str(ve)}')
 
-    sr = get_slide_ref(slide_id, pr)
-    if sr is None:
-        abort(404, f'Error: Slide {slide_id} not found in project {task.project}')
-    
     # Check that the affine mode and resolution requested are available
     have_affine, have_x16 = False, False
-    if task.mode != 'dltrain':
+    if tr.mode != 'dltrain':
         have_affine = sr.resource_exists('affine', True) or sr.resource_exists('affine', False)
         have_x16 = sr.resource_exists('x16', True) or sr.resource_exists('x16', False)
 
@@ -850,7 +843,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     overlays = sr.get_available_overlays(local = False)
     
     # Get the list of other tasks available for this slide
-    other_tasks = get_available_tasks_for_slide(task.project, slide_id)
+    other_tasks = get_available_tasks_for_slide(tr.project, slide_id)
     other_tasks = { k:v for k,v in other_tasks.items() if k != task_id }
 
     # Remove the URL from the overlay dict - this is not for public consumption
@@ -866,7 +859,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     # Form the URL templates for preloading and actual dzi access, so that in JS we
     # can just do a quick substitution
     url_ctx = {
-            'project':task.project,
+            'project':tr.project,
+            'task_id':task_id,
             'slide_id':slide_id,
             'mode':affine_mode,
             'resource':'XXXXX',
@@ -881,9 +875,11 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
     url_tmpl_download_label = url_for('dzi.dzi_download_label_image', **url_ctx)
     url_tmpl_download_macro = url_for('dzi.dzi_download_macro_image', **url_ctx)
     url_tmpl_download_header = url_for('dzi.dzi_download_header', **url_ctx)
+    url_tmpl_download_annot = url_for('slide.api_get_annot_svg', **url_ctx)
+    url_tmpl_download_annot_fullres = url_for('slide.api_get_annot_svg_fullres', **url_ctx)
     
     # Determine if the task is read-only
-    read_only = task.read_only or check_task_access(g.user['id'], task_id, 'write')[0] == False
+    read_only = tr.read_only or check_task_access(g.user['id'], task_id, 'write')[0] == False
 
     # Build a dictionary to call
     context = {
@@ -897,7 +893,7 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'have_affine': have_affine,
         'have_x16': have_x16,
         'resolution': resolution,
-        'seg_mode': task.mode,
+        'seg_mode': tr.mode,
         'task_id': task_id,
         'project': si['project'],
         'project_name': pr.disp_name,
@@ -909,12 +905,15 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'url_tmpl_download_label': url_tmpl_download_label,
         'url_tmpl_download_macro': url_tmpl_download_macro,
         'url_tmpl_download_header': url_tmpl_download_header,
-        'task': task.data,
-        'fixed_box_size': get_dltrain_fixed_box_size(task.data),
+        'url_tmpl_download_annot': url_tmpl_download_annot,
+        'url_tmpl_download_annot_fullres': url_tmpl_download_annot_fullres,
+        'task': tr.data,
+        'fixed_box_size': get_dltrain_fixed_box_size(tr.data),
         'user_prefs': user_prefs,
         'overlays': overlays,
         'other_tasks': other_tasks,
-        'read_only': read_only
+        'read_only': read_only,
+        'download_size_limit' : tr.download_size_limit if tr.download_size_limit is not None else -1
     }
 
     # Load the metadata for the slide to get spacing information
@@ -1155,17 +1154,6 @@ def _do_update_annot(task_id, slide_id, annot, stats, metadata={}):
         json.dump(annot, outfile)
 
 
-# Schema for user preferences json
-user_preferences_schema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "object",
-    "properties": {
-        "rotation": {"type": "number"},
-        "flip": {"type": "boolean"}
-    }
-}
-
-
 # Receive user preferences for the slide, such as preferred rotation and flip
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/user_preferences/set', methods=('POST',))
 @access_task_read
@@ -1177,7 +1165,7 @@ def set_slide_user_preferences(task_id, slide_id):
     try:
         jsonschema.validate(data, user_preferences_schema)
     except jsonschema.ValidationError:
-        abort("Invalid JSON")
+        abort(404, "Invalid JSON")
 
     # Store the data for the user.
     db = get_db()
@@ -1268,25 +1256,36 @@ def api_get_annot_timestamp_by_slidename(task_id, slide_name):
         return api_get_annot_timestamp(task_id, rc['id'])
     else:
         return json.dumps({'timestamp': None}), 200, {'ContentType': 'application/json'}
-
-
-# API to get an SVG file
-@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/annot/svg', methods=('GET','POST'))
-@access_task_read
-@access_slide_read()
-def api_get_annot_svg(task_id, slide_id):
+    
+    
+def get_annot_svg_(task_id:int, slide_id:int, downsample:int):
 
     strip_width = request.form.get('strip_width', 0)
-    stroke_width = request.form.get('stroke_width', 48)
+    stroke_width = request.form.get('stroke_width', 480)
     font_size = request.form.get('font_size', "2000px")
     font_color = request.form.get('font_color', 'black')
+    
+    max_dim = None if downsample==0 else downsample
+    svg = extract_svg(task_id, slide_id, int(stroke_width), int(strip_width), font_size, font_color, max_dim)
+    
+    binout = io.BytesIO()
+    binout.write(svg.tostring().encode())
+    binout.seek(0)
 
-    svg = extract_svg(task_id, slide_id, int(stroke_width), int(strip_width), font_size, font_color)
-    txt = svg.tostring()
-    resp = make_response(txt)
+    return send_file(binout, mimetype='image/svg+xml', as_attachment=True, 
+                     download_name=f'slide_{slide_id}_annot_{downsample}.svg' if downsample>0 else f'slide_{slide_id}_annot.svg')
 
-    resp.mimetype = 'image/svg+xml'
-    return resp
+# API to get an SVG file
+@bp.route('/api/task/<int:task_id>/slide_<int:slide_id>_annot_<int:downsample>.svg', methods=('GET','POST'))
+@access_task_slide_read()
+def api_get_annot_svg(task_id, slide_id, downsample):
+    return get_annot_svg_(task_id, slide_id, downsample)
+
+
+@bp.route('/api/task/<int:task_id>/slide_<int:slide_id>_annot.svg', methods=('GET','POST'))
+@access_task_slide_read()
+def api_get_annot_svg_fullres(task_id, slide_id):
+    return get_annot_svg_(task_id, slide_id, 0)
 
 
 # API to get an SVG file
@@ -1313,10 +1312,9 @@ class PILBytesIO(BytesIO):
 
 # Serve label image if available
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>_thumbnail.png', methods=('GET',))
-@access_task_read
-@access_slide_read()
+@access_task_slide_read()
 def get_slide_thumbnail(task_id, slide_id):
-    sr = get_slide_ref(slide_id)
+    _,_,sr = get_project_task_slide_ref(task_id, slide_id)
     f_local = sr.get_local_copy('thumb')
     if f_local:
         im = Image.open(f_local)
@@ -1340,10 +1338,9 @@ def thumb(id):
 
 # Slide metadata
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/slide_admin_info', methods=('GET','POST'))
-@access_task_admin
-@access_slide_admin()
+@access_task_slide_admin()
 def api_get_slide_admin_info(task_id, slide_id):
-    sr = get_slide_ref(slide_id)
+    _,_,sr = get_project_task_slide_ref(task_id, slide_id)
     return jsonify({
         "id": slide_id,
         "specimen": sr.specimen, 
@@ -1358,31 +1355,15 @@ def api_get_slide_admin_info(task_id, slide_id):
 
 # Get a random patch from the slide
 @bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/random_patch/<int:width>', methods=('GET','POST'))
-@api_access_task_read
-@access_slide_read(api=True)
+@access_task_slide_read(api=True)
 def api_get_slide_random_patch(task_id, slide_id, width):
-    db = get_db()
 
     # Find out which machine the slide is currently being served from
     # Get the tiff image from which to sample the region of interest
-    sr = get_slide_ref(slide_id)
-
-    # Get the identifiers for the slide
-    # TODO: what to do with project here?
-    (project, specimen, block, slide_name, slide_ext) = sr.get_id_tuple()
-
-    # Are we de this slide to a different node?
-    del_url = find_delegate_for_slide(slide_id)
+    tr = TaskRef(task_id)
 
     # If local, call the method directly
-    rawbytes = None
-    if del_url is None:
-        rawbytes = get_random_patch(project, slide_id, 'raw', 0, width, 'png')
-    else:
-        url = '%s/dzi/random_patch/%s/%d/raw/0/%d.png' % (del_url, project, slide_id, width)
-        pr = sr.get_project_ref()
-        post_data = urllib.urlencode({'project_data': json.dumps(pr.get_dict())})
-        rawbytes = urllib.request.urlopen(url, post_data).read()
+    rawbytes = get_random_patch(tr.project, slide_id, 'raw', 0, width, 'png')
 
     # Send the patch
     resp = make_response(rawbytes)
@@ -1566,28 +1547,48 @@ def check_annot_child(x):
 
 
 # Generate an SVG from an annotation
-def extract_svg(task, slide_id, stroke_width, strip_width, font_size, font_color):
+def extract_svg(task_id, slide_id, stroke_width, strip_width, font_size='2000px', font_color='black', max_dim=None):
 
     # The return value
     svg = None
 
+    # Which task to obtain the annotation from? If referenced task, get that one
+    task = TaskRef(task_id)
+    ref_task_id = task.referenced_task if task.referenced_task is not None else task.id
+
     # Find the annotation in the database
     db = get_db()
     rc = db.execute('SELECT json FROM annot WHERE slide_id=? AND task_id=?',
-                    (slide_id, task)).fetchone()
+                    (slide_id, ref_task_id)).fetchone()
+
+    # Get the raw slide dimensions
+    sr = get_slide_ref(slide_id)
+    dims = sr.get_dims()
+    if dims is None:
+        raise ValueError("Missing slide dimensions information")
+
+    # Calculate scaling factor if max_dim is specified
+    scale = 1.0
+    if max_dim is not None:
+        scale = max_dim / max(dims[0], dims[1])
+        dims = (int(dims[0] * scale), int(dims[1] * scale))
+        stroke_width = max(int(stroke_width * scale), 1)
+        if strip_width:
+            strip_width = max(int(strip_width * scale), 1)
+        print(f'SVG: Scaling down by {scale}')
+            
+        # Apply scaling to the font size. First split into number and suffix
+        match = re.match(r'([0-9.]+)([a-z%]*)', str(font_size))
+        if match:
+            fs_num, fs_suffix = float(match.group(1)), match.group(2)
+            font_size = f'{int(fs_num * scale + 0.5)}{fs_suffix}'
+
+    # Start writing svg
+    svg = svgwrite.Drawing(size=(dims[0], dims[1]))
 
     if rc is not None:
         # Get the annotation
         data = json.loads(rc['json'])
-
-        # Get the raw slide dimensions
-        sr = get_slide_ref(slide_id)
-        dims = sr.get_dims()
-        if dims is None:
-            raise ValueError("Missing slide dimensions information")
-
-        # Start writing svg
-        svg = svgwrite.Drawing(size=(dims[0], dims[1]))
 
         # Write the paths
         if 'children' in data[0][1]:
@@ -1610,16 +1611,16 @@ def extract_svg(task, slide_id, stroke_width, strip_width, font_size, font_color
                             cmd = []
 
                             # Record the initial positioning
-                            cmd.append('M%f,%f' % (seg[0][0][0], seg[0][0][1]))
+                            cmd.append('M%f,%f' % (seg[0][0][0]*scale, seg[0][0][1]*scale))
 
                             # Record the control points
                             for i in range(1,len(seg)):
                                 # Get the handles from the control point
                                 P1 = seg[i-1][0]
                                 P2 = seg[i][0]
-                                D = [P2[0]-P1[0], P2[1]-P1[1]]
-                                V1 = seg[i-1][2]
-                                V2 = seg[i][1]
+                                D = [(P2[0]-P1[0])*scale, (P2[1]-P1[1])*scale]
+                                V1 = [seg[i-1][2][0]*scale, seg[i-1][2][1]*scale]
+                                V2 = [seg[i][1][0]*scale, seg[i][1][1]*scale]
                                 cmd.append('c%f,%f %f,%f %f,%f' %
                                         (V1[0], V1[1], D[0]+V2[0], D[1]+V2[1], D[0], D[1]));
 
@@ -1633,12 +1634,12 @@ def extract_svg(task, slide_id, stroke_width, strip_width, font_size, font_color
                             # Record the control points
                             for i in range(1,len(seg)):
                                 # Get the handles from the control point
-                                P1 = seg[i-1][0]
-                                P2 = seg[i][0]
+                                P1 = [seg[i-1][0][0]*scale, seg[i-1][0][1]*scale]
+                                P2 = [seg[i][0][0]*scale, seg[i][0][1]*scale]
 
                                 D = [P2[0]-P1[0], P2[1]-P1[1]]
-                                V1 = seg[i-1][2]
-                                V2 = seg[i][1]
+                                V1 = [seg[i-1][2][0]*scale, seg[i-1][2][1]*scale]
+                                V2 = [seg[i][1][0]*scale, seg[i][1][1]*scale]
 
                                 # Get the tangent vectors
                                 nV1 = math.sqrt(V1[0]*V1[0]+V1[1]*V1[1])
@@ -1683,17 +1684,16 @@ def extract_svg(task, slide_id, stroke_width, strip_width, font_size, font_color
 
                     elif x[0] == 'PointText':
 
-                        tpos = x[1]['matrix'][4:6]
+                        tpos = [x[1]['matrix'][4]*scale, x[1]['matrix'][5]*scale]
                         text = x[1]['content']
-                        svg.add(svg.text(text, insert=tpos, fill=font_color, stroke=font_color,
-                            font_size=font_size))
+                        svg.add(svg.text(text, insert=tpos, fill=font_color, stroke=font_color, font_size=font_size))
 
                         # ["PointText",
                         #  {"applyMatrix": false, "matrix": [1, 0, 0, 1, 1416.62777, 2090.96831], "content": "CA2",
                         #  "fontWeight": "bold", "fontSize": 44, "leading": 52.8, "justification": "center"}]
 
                 except TypeError:
-                    raise ValueError("Unreadable path %s in slide %d task %d" % (x, slide_id, task))
+                    raise ValueError("Unreadable path %s in slide %d task %d" % (x, slide_id, task_id))
 
     return svg
 

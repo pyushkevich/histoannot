@@ -356,7 +356,6 @@ $(document).ready(function() {
       else if(ui.item[0].id === "mi-task-edit") {
         url = url_task_edit.replace('XXXX', project).replace('999999', task_id);
         window.location.href = url;
-        window.open(url, '_blank', 'noopener');
         return false;
       }
       return true;

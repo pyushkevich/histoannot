@@ -490,17 +490,19 @@
             <fieldset>
                 <div class="pure-control-group">
                     <label for="dl_dialog_raw">Image to download:</label>
-                    <select id="dl_dialog_raw" class="pure-input-1-2" required>
-                        <option value="tiff">Downsampled .tiff</option>
-                        <option value="nii">Downsampled .nii.gz</option>
-                        <option value="fullres">Full-resolution .{{slide_ext}}</option>
-                        <option value="label">Label image</option>
-                        <option value="macro">Macro image</option>
+                    <select id="dl_dialog_raw" class="pure-input-1-2" required style="width: 20em;">
+                        <option value="tiff">Downsampled TIFF image</option>
+                        <option value="nii">Downsampled NIFTI image</option>
+                        <option value="fullres" id="dl_dialog_raw_fullres">Full-resolution slide (.{{slide_ext}})</option>
+                        <option value="label" id="dl_dialog_raw_label">Label image (.png)</option>
+                        <option value="macro" id="dl_dialog_raw_macro">Macro image (.png)</option>
+                        <option value="annot" id="dl_dialog_raw_annot">Downsampled Annotations (.svg)</option>
+                        <option value="annot_fullres" id="dl_dialog_raw_annot_fullres">Full-resolution annotations (.svg)</option>
                     </select>
                 </div>
-                <div class="pure-control-group">
+                <div class="pure-control-group" id="div_dl_dialog_width">
                     <label for="dl_dialog_width">Size (in pixels):</label>
-                    <input id="dl_dialog_width" name="dl_dialog_width" class="pure-input-1-2" value=1000>
+                    <input id="dl_dialog_width" name="dl_dialog_width" class="pure-input-1-2" type="number" min="0" value="1000" style="width: 20em;">
                 </div>
                 <div class="pure-controls">
                     <input type="submit" id="dl_dialog_submit" value="Download" class="pure-button pure-button-primary">
@@ -716,7 +718,6 @@ $(document).ready(function()
     };
 
     var mpp = parseFloat("{{ spacing[0] }}");
-    console.log("MPP", mpp);
     viewer.scalebar({
         pixelsPerMeter: mpp ? (1e3 / mpp) : 0,
 	    location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
@@ -848,9 +849,13 @@ $(document).ready(function()
     }
 
     // Handle loading of label and macro images
-    let load_label_or_macro_image = function(url, tab, image) {
+    let load_label_or_macro_image = function(url, resource) {
+        tab = $(`#display-opts-tab-${resource}`)
+        image = $(`#slide_${resource}`)
+        menuitem = $(`#dl_dialog_raw_${resource}`)
         tab.hide();
         image.hide();
+        menuitem.hide();
         $.ajax({
             url: url,
             type: 'HEAD', // Only fetch the headers to check if the file exists
@@ -859,18 +864,39 @@ $(document).ready(function()
                 image.attr("src", url);
                 tab.show();
                 image.show();
+                menuitem.show();
             },
             error: function() {}
         });
     }
 
-    load_label_or_macro_image(
-        "{{url_tmpl_download_label}}", 
-        $("#display-opts-tab-label"), $("#slide_label"));
-    load_label_or_macro_image(
-        "{{url_tmpl_download_macro}}", 
-        $("#display-opts-tab-macro"), $("#slide_macro"));
+    load_label_or_macro_image("{{url_tmpl_download_label}}", "label");
+    load_label_or_macro_image("{{url_tmpl_download_macro}}", "macro");
 
+    // Set limit on download size
+    let dl_size_limit = parseInt("{{download_size_limit}}");
+    if(dl_size_limit >= 0) {
+        $('#dl_dialog_width').attr("max", dl_size_limit);
+        $('#dl_dialog_raw_fullres').hide();
+    }
+
+    // Enable/disable annotation download
+    if(seg_mode != 'annot') {
+        $('#dl_dialog_raw_annot').hide();
+        $('#dl_dialog_raw_annot_fullres').hide();
+    }
+
+    // Smart toggle visibility of size control
+    $('#dl_dialog_raw').on('change', function() {
+        var sel = $(this).val();
+        if(sel.endsWith('fullres')) {
+            $('#div_dl_dialog_width').hide();
+        }
+        else {
+            $('#div_dl_dialog_width').show();
+        }
+    });
+    $('#dl_dialog_raw').trigger('change');
 
     // Slide header table
     let slide_header_table = make_slide_properties_table($("#slide_header"));
@@ -988,7 +1014,6 @@ $(document).ready(function()
             }
         })
         sel.change(function() {
-            console.log('Selected', $(this).val());
             if($(this).val() >= 0) {
                 download_other_task_annot($(this).val());
             }
@@ -1076,8 +1101,8 @@ $(document).ready(function()
             type: "POST",
             url: url,
             data: payload,
-            success: function(resp) { console.log('Success: ', resp); },
-            error: function(xhr,status,error) { console.log('Error: ', xhr, status, error); }
+            success: function(resp) { },
+            error: function(xhr,status,error) { }
             });
     };
 
@@ -1133,7 +1158,6 @@ $(document).ready(function()
                         overlay_layer.children.forEach(function(item, index) {
                             item.selected = false;
                             // Remove stray paths that cause layer to not display
-                            console.log(item._class, item.length);
                             if(item._class == 'Path' && !(item.length > 0)) {
                                 bad_items.push(item);
                             }
@@ -1371,7 +1395,6 @@ $(document).ready(function()
         this.delete_sample = function(box) {
 
             // Tell the server to delete this sample
-            console.log('Deleting ', box.data)
             if(box.data.id) {
                 box.remove();
                 $.ajax({
@@ -2375,7 +2398,6 @@ $(document).ready(function()
             show_marker_editor(event, null);
         }
         else if(curr_mode === 'FIXEDBOX') {
-            console.log(curr_box.data)
             sample_api.upload_new_sample(curr_box, function() {
                 do_delay(reload_label_and_sample_tables, 1000)
             });
@@ -2685,6 +2707,10 @@ $(document).ready(function()
             dlink_tmpl = "{{url_tmpl_download_label}}"
         else if(fmt == "macro")
             dlink_tmpl = "{{url_tmpl_download_macro}}"
+        else if(fmt == "annot")
+            dlink_tmpl = "{{url_tmpl_download_annot}}"
+        else if(fmt == "annot_fullres")
+            dlink_tmpl = "{{url_tmpl_download_annot_fullres}}"
 
         d_link = dlink_tmpl.replace("XXXXX", "{{resolution}}").replace("999999", ds.toString());
         dl_dialog.dialog("close");
@@ -3147,7 +3173,6 @@ $(document).ready(function()
         }
         else {
             add_overlay_dzi(overlays[ovl].pattern, function() {
-                console.log('Loaded overlay ', overlays[ovl].name);
 
                 // Populate the controls for this overlay
                 let opacity = overlay_opacity_slider.slider("value") / 255.0;

@@ -16,6 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import os
+import sys
 from flask import Flask, request, current_app
 from flask_pure import Pure
 from .common import cache
@@ -27,9 +28,21 @@ from . import dzi
 from . import delegate
 from . import project_cli
 from . import admin
+from . import frontend
 import click
 from flask.cli import with_appcontext
 
+from flask import before_render_template
+
+def debug_template_paths(sender, template, context, **extra):
+    # 'template' is the Jinja2 template object
+    # .filename is the absolute path on the disk
+    print(f"DEBUG: Rendering template '{template.name}' from path: {template.filename}")
+
+def is_running_under_uwsgi():
+    """Checks if the application is running in a uWSGI environment."""
+    # Check if 'uwsgi' is in the list of loaded modules
+    return 'uwsgi' in sys.modules 
 
 # Common configuration code
 def create_app(test_config = None):
@@ -53,9 +66,12 @@ def create_app(test_config = None):
     except OSError:
         pass
 
+    # Connect the function to the signal
+    before_render_template.connect(debug_template_paths)
+
     # Create an configure a cache
     uwsgi_cache_name = app.config.get('HISTOANNOT_UWSGI_CACHE_NAME', None)
-    if uwsgi_cache_name is not None:
+    if uwsgi_cache_name is not None and is_running_under_uwsgi():
         print(f"#### USING UWSGI CACHE {uwsgi_cache_name} ####")
         cache_config = {'CACHE_TYPE': 'UWSGICache', 
                         'CACHE_UWSGI_NAME': f'{uwsgi_cache_name}'}
@@ -86,6 +102,9 @@ def create_app(test_config = None):
 
     # Project CLI commands
     project_cli.init_app(app)
+    
+    # Customizable front-end pages
+    app.register_blueprint(frontend.bp)
 
     # Auth blueprint
     app.register_blueprint(auth.bp)

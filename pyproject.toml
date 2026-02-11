@@ -24,7 +24,8 @@ dependencies = [
     'sortedcontainers',
     'imagecodecs',
     'gspread',
-    'httpx'
+    'httpx',
+    'markdown'
 ]
 readme = "README.md"
 requires-python = ">=3.8"

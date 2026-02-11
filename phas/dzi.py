@@ -32,9 +32,9 @@ from random import randint
 
 # from openslide import OpenSlide
 # from openslide.deepzoom import DeepZoomGenerator
-from .slideref import SlideRef,get_slide_ref
-from .project_ref import ProjectRef
-from .auth import access_slide_read, access_slide_admin
+from .slideref import SlideRef,get_slide_ref,get_project_task_slide_ref
+from .project_ref import ProjectRef, TaskRef
+from .auth import access_slide_read, access_slide_admin, access_task_slide_read, access_task_slide_admin
 from .common import cache
 from google.cloud import storage
 
@@ -192,23 +192,27 @@ def pil_to_nifti_gz(image, spacing):
 
 
 # Download image data
-def dzi_download(project, slide_id, resource, downsample, extension):
+def dzi_download(task_id:int, slide_id:int, resource:str, downsample:int, extension:str):
 
     # Get a project reference, using either local database or remotely supplied dict
-    pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
+    pr,tr,sr = get_project_task_slide_ref(task_id, slide_id)
+    
+    # Check the maximum allowed download size
+    if tr.download_size_limit is not None and (downsample > tr.download_size_limit or downsample == 0):
+        abort(404, f"Requested dimensions exceed permitted download size ({tr.download_size_limit})")
 
     # If no downsample, send raw file
     if downsample == 0:
         # TODO: downloads are broken now
         tiff_file = sr.get_local_copy(resource, check_hash=True)
         if tiff_file is None:
-            return f'Resource {resource} not available for slide {slide_id}', 400
+            abort(404, f'Resource {resource} not available for slide {slide_id}')
         if not tiff_file.lower().endswith(extension.lower()):
-            return "Wrong extension requested", 400
+            abort(404, "Wrong extension requested")
 
         # MRXS files will require special handling
         if extension.lower() == ".mrxs":
-            return "Cannot download .mrxs files", 400
+            abort(404, "Cannot download .mrxs files")
 
         return send_file(tiff_file)
 
@@ -233,33 +237,61 @@ def dzi_download(project, slide_id, resource, downsample, extension):
             return resp
 
         elif extension == 'nii.gz':
+            if mpp is not None:
+                abort(404, 'Missing pixel dimension metadata to create NIFTI file')
             spacing = [ os.dimensions[d] * mpp[d] / thumb.size[d] for d in (0,1) ]
             data = pil_to_nifti_gz(thumb, spacing) 
             resp = make_response(data)
             resp.mimetype = 'application/octet-stream'
             return resp
+        
+        else:
+            abort(404, 'Wrong extension requested')
+        
             
 
 
 # Download a thumbnail for the slide
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
 @access_slide_read()
-def dzi_download_tiff(project, slide_id, resource, downsample):
-    return dzi_download(project, slide_id, resource, downsample, 'tiff')
+def dzi_download_tiff_deprecated(project, slide_id, resource, downsample):
+    abort(404, 'Deprecated API endpoint')
 
 
 # Download a thumbnail for the slide, in NIFTI format
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_<int:downsample>.nii.gz', methods=('GET', 'POST'))
 @access_slide_read()
-def dzi_download_nii_gz(project, slide_id, resource, downsample):
-    return dzi_download(project, slide_id, resource, downsample, 'nii.gz')
+def dzi_download_nii_gz_deprecated(project, slide_id, resource, downsample):
+    abort(404, 'Deprecated API endpoint')
 
 
 # Download a full-resolution slide, in whatever format the slide is in
 @bp.route('/dzi/download/<project>/slide_<int:slide_id>_<resource>_fullres.<extension>', methods=('GET', 'POST'))
-@access_slide_read()
-def dzi_download_fullres(project, slide_id, resource, extension):
-    return dzi_download(project, slide_id, resource, 0, extension)
+@access_slide_read(phi=True)
+def dzi_download_fullres_deprecated(project, slide_id, resource, extension):
+    abort(404, 'Deprecated API endpoint')
+
+
+# Download a thumbnail for the slide
+@bp.route('/dzi/download/task/<int:task_id>/slide_<int:slide_id>_<resource>_<int:downsample>.tiff', methods=('GET', 'POST'))
+@access_task_slide_read()
+def dzi_download_tiff(task_id, slide_id, resource, downsample):
+    return dzi_download(task_id, slide_id, resource, downsample, 'tiff')
+
+
+# Download a thumbnail for the slide, in NIFTI format
+@bp.route('/dzi/download/task/<int:task_id>/slide_<int:slide_id>_<resource>_<int:downsample>.nii.gz', methods=('GET', 'POST'))
+@access_task_slide_read()
+def dzi_download_nii_gz(task_id, slide_id, resource, downsample):
+    return dzi_download(task_id, slide_id, resource, downsample, 'nii.gz')
+
+
+# Download a full-resolution slide, in whatever format the slide is in
+@bp.route('/dzi/download/task/<int:task_id>/slide_<int:slide_id>_<resource>_fullres.<extension>', methods=('GET', 'POST'))
+@access_task_slide_read(phi=True)
+def dzi_download_fullres(task_id, slide_id, resource, extension):
+    return dzi_download(task_id, slide_id, resource, 0, extension)
+
 
 
 class PILBytesIO(BytesIO):
@@ -378,7 +410,11 @@ def get_random_patch_endpoint(project, slide_id, resource, level, width, format)
 
 
 def dzi_download_thumblike_image(project, slide_id, resource, extension):
-
+    
+    # Restrict access to some resources
+    if g.anonymize and resource.lower() != 'thumb':
+        return f'Resource {resource} not available in anonymized mode', 400
+        
     # Get a project reference, using either local database or remotely supplied dict
     pr, sr = dzi_get_project_and_slide_ref(project, slide_id)
     osl = get_osl(slide_id, sr)
@@ -571,11 +607,11 @@ class OpenSlideRequestHandler(socketserver.BaseRequestHandler):
                 
             @property
             def properties(self):
-                return dict({k:v for (k,v) in OpenSlide.properties.fget(self).items()})
+                return dict(super().properties)
 
             @property
             def associated_images(self):
-                return dict({k:v for (k,v) in OpenSlide.associated_images.fget(self).items()})
+                return dict(super().associated_images)
 
         # Block to receive request
         self.data = pickle.loads(self.request.recv(4096))
@@ -734,8 +770,24 @@ def delegate_dzi_ping_command():
         except urllib.error.URLError as e:
             print(e)
         time.sleep(30)
+        
+        
+# Command to report on associated images
+@click.command('slide-assoc-images')
+@click.argument('project', type=click.STRING)
+@click.argument('slide_id', type=click.INT)
+@with_appcontext
+def list_slide_associated_images(project, slide_id):
+    """List associated images for a slide"""
+    _, sr = dzi_get_project_and_slide_ref(project, slide_id)
+    osl = get_osl(slide_id, sr)
+    assoc = osl.associated_images
+    for k, v in assoc.items():
+        print(f'{k}: {v}')
+    
 
 # CLI stuff
 def init_app(app):
     app.cli.add_command(delegate_dzi_ping_command)
     app.cli.add_command(run_slide_server)
+    app.cli.add_command(list_slide_associated_images)

@@ -27,9 +27,10 @@ import pandas as pd
 import click
 from flask import current_app, g
 from flask.cli import with_appcontext
+from collections.abc import Iterable
 
 import time
-import urllib.request
+import urllib.request, urllib.error
 import logging
 import json
 from jsonschema import validate
@@ -43,6 +44,7 @@ from .gcs_handler import GCSHandler
 from .auth import get_user_id
 from .common import AccessLevel
 from .gspread_support import GoogleSheetManifest
+from .schemas import task_schema, label_schema, project_schema, slide_json_schema
 
 def init_db_dltrain():
     db = get_db()
@@ -116,19 +118,6 @@ def init_db_views_command():
     """Clear the existing data related to DL training and create new tables."""
     init_db_views()
     click.echo('Initialized the database views.')
-
-
-# A schema against which the JSON is validated
-project_schema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "object",
-    "properties": {
-        "disp_name": {"type": "string", "minLength": 2, "maxLength": 80},
-        "desc": {"type": "string", "maxLength": 1024},
-        "base_url": {"type": "string"},
-        "url_schema": {"type": "object"}},
-    "required": ["disp_name", "desc", "base_url"]
-}
 
 
 def add_project(name, json_file, update_existing=False):
@@ -324,7 +313,7 @@ def load_url(url, parent_dir=None):
                     url = os.path.join(parent_dir, url)
                 with open(url) as f:
                     return f.read()
-        except urllib.request.URLError:
+        except urllib.error.URLError:
             print('Attempt %d to open URL %s failed' % (attempt+1,url))
 
     return None
@@ -411,24 +400,6 @@ def rebuild_project_slice_indices(project, specific_task_id=None):
         if specific_task_id is None or specific_task_id == row['id']:
             n = rebuild_task_slide_index(row['id'])
             print('Index for task %d rebuilt with %d slides' % (row['id'], n))
-
-
-# A schema against which to validate per-slide JSON files
-# A schema against which the JSON is validated
-slide_json_schema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "object",
-    "properties": {
-        "specimen": {"type": "string" },
-        "block": {"type": "string"},
-        "stain": {"type": "string"},
-        "section": {"type": "integer"},
-        "slide_number": {"type": "integer"},
-        "cert": {"type": "string"},
-        "tags": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": [ "specimen", "block", "stain" ]
-}
 
 
 # Imports a single slide into the database
@@ -583,7 +554,9 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                             continue
 
                         # Tags should be a set
-                        data['tags'] = set(data.get('tags', []))
+                        tags = data.get('tags', [])
+                        if isinstance(tags, Iterable):
+                            data['tags'] = set(tags)
 
                         # Load the slide
                         refresh_slide(pr, sr, slide_name=p.stem, check_hash=check_hash, **data)
@@ -629,7 +602,7 @@ def refresh_slide_db(project, manifest, single_specimen=None, check_hash=True):
                 # Read the elements from the string into a dict, ignoring blank lines or other
                 # lines that cannot be parsed
                 try:
-                    data = dict(zip(
+                    data:dict[str, str|int|set[str]] = dict(zip(
                         ['slide_name', 'stain', 'block', 'section', 'slide_number', 'cert'],
                         [str(sl[0]), str(sl[1]), str(sl[2]), int(sl[3]), int(sl[4]), str(sl[5])]))
                 except ValueError:
@@ -774,57 +747,6 @@ def rebuild_task_slide_index_command(project, task):
 # TASKS
 # --------------------------------
 
-# A schema against which the JSON is validated
-task_schema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "object",
-    "properties": {
-        "name": {"type": "string", "minLength": 2, "maxLength": 80},
-        "desc": {"type": "string", "maxLength": 1024},
-        "mode": {"type": "string", "enum": ["annot", "dltrain", "browse", "sampling"]},
-        "reference-task": {"type": "string"},
-        "dltrain": {
-            "type": "object",
-            "properties": {
-                "labelset": {"type": "string"},
-                "min-size": {"type": "integer"},
-                "max-size": {"type": "integer"},
-                "display-patch-size": {"type": "integer"}
-            },
-            "required": ["labelset"]
-        },
-        "sampling": {
-            "type": "object",
-            "properties": {
-                "labelset": {"type": "string"}
-            },
-            "required": ["labelset"]
-        },
-        "restrict-access": {"type": "boolean"},
-        "anonymize": {"type": "boolean"},
-        "stains": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-        "tags": {
-            "type": "object",
-            "properties": {
-                "any": {"type": "array", "items": {"type": "string"}},
-                "all": {"type": "array", "items": {"type": "string"}},
-                "not": {"type": "array", "items": {"type": "string"}}
-            }
-        },
-        "specimens": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        }
-    },
-    "required": ["name", "mode", "restrict-access"]
-}
 
 
 # Add a new task (or update existing task) based on a JSON specifier. We
@@ -845,12 +767,12 @@ def add_task(project, task_dict, update_existing_task_id=None):
         # Insert the JSON
         rc = db.execute('INSERT INTO task(name,json,restrict_access) VALUES (?,?,?)',
                         (task_dict['name'], json.dumps(task_dict), task_dict['restrict-access']))
+        task_id = rc.lastrowid
 
         # Associate the task with the project
         rc = db.execute('INSERT INTO project_task (project, task_id, task_name) VALUES (?,?,?)',
                         (project, rc.lastrowid, task_dict['name']))
 
-        task_id = rc.lastrowid
         print("Successfully inserted task %s with id %d" % (task_dict['name'], task_id))
 
     else:
@@ -958,6 +880,37 @@ def print_tasks_command(task):
         print(json.dumps(json.loads(rc['json']), indent=4))
     else:
         print('Task %d does not exist' % (int(task),))
+        
+        
+def delete_task_cascade(task_id):
+    """Delete a task and all its dependent records."""
+    db = get_db()
+    
+    # Execute deletions in dependency order
+    db.execute('DELETE FROM task_ref WHERE task = ? OR referenced_task = ?', (task_id, task_id))
+    db.execute('DELETE FROM task_access WHERE task = ?', (task_id,))
+    db.execute('DELETE FROM annot WHERE task_id = ?', (task_id,))
+    db.execute('DELETE FROM project_task WHERE task_id = ?', (task_id,))
+    db.execute('DELETE FROM user_task_slide_preferences WHERE task_id = ?', (task_id,))
+    db.execute('DELETE FROM task_slide_index WHERE task_id = ?', (task_id,))
+    db.execute('DELETE FROM training_sample WHERE task = ?', (task_id,))
+    db.execute('DELETE FROM sampling_roi WHERE task = ?', (task_id,))
+    db.execute('DELETE FROM task WHERE id = ?', (task_id,))
+    
+    db.commit()
+    
+@click.command('tasks-delete')
+@click.option('--task', prompt='ID of the task to delete')
+@click.option('--confirm', is_flag=True, help='Confirm deletion of the task and all its dependent records')
+@with_appcontext
+def delete_tasks_command(task, confirm=False):
+    """Delete a task and all its dependent records."""
+    # Interactively prompt user to type "yes" to confirm deletion
+    if confirm or click.confirm('Are you sure you want to delete task %d and all its dependent records?' % int(task)):
+        delete_task_cascade(int(task))
+        click.echo('Task %d deleted successfully.' % int(task))
+    else:
+        click.echo('Deletion cancelled.')
 
 
 # --------------------------------
@@ -1011,21 +964,6 @@ def dump_labelset_command(id):
 
     print(json.dumps(d))
 
-
-# A schema for importing labels
-label_schema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string", "minLength": 2, "maxLength": 80},
-            "description": {"type": "string", "maxLength": 1024},
-            "color": {"type": "string", "minLength": 2, "maxLength": 80}
-        },
-        "required": ["name", "color"]
-    }
-}
 
 
 # Shared code for updating labelset
@@ -1371,21 +1309,17 @@ def users_list_permissions(username):
     # List all projects that the user has access to (either via project or task access)
     rc = db.execute(
         'SELECT * FROM effective_project_and_max_task_access '
-        'WHERE user=? AND (max_task_access != "none" OR project_access != "none"', (user_id,))
+        'WHERE user=? AND (max_task_access != "none" OR project_access != "none")', (user_id,))
     for row in rc.fetchall():
         prj = row['project']
         print('Project: %20s   Access level: %5s   PHI: %d   API: %d' % (prj, row['project_access'], row['anon_permission'], row['api_permission']))
         rc2 = db.execute('SELECT TI.name, TI.id, TI.restrict_access, TA.access '
                          'FROM task_info TI left join effective_task_access TA on TI.id = TA.task '
-                         'WHERE TI.project = ? AND TA.user=? AND TA.access != "none")',
+                         'WHERE TI.project = ? AND TA.user=? AND TA.access != "none"',
                          (prj, user_id))
         for row_t in rc2.fetchall():
             # For access-controlled tasks, use task_access; otherwise use project_access
-            if row_t['restrict_access'] > 0 and row_t['task_access'] is not None and row_t['task_access'] != "none":
-                access = row_t['task_access']
-            else:
-                access = row_t['project_access'] if row_t['project_access'] is not None else row['access']
-            print('  Task: %03d [%40s]   Access level: %s' % (row_t['id'], row_t['name'], access))
+            print('  Task: %03d [%40s]   Access level: %s' % (row_t['id'], row_t['name'], row_t['access']))
 
 
 # ---------------------
@@ -1439,6 +1373,7 @@ def init_app(app):
     app.cli.add_command(update_task_command)
     app.cli.add_command(list_tasks_command)
     app.cli.add_command(print_tasks_command)
+    app.cli.add_command(delete_tasks_command)
     app.cli.add_command(list_labelsets_command)
     app.cli.add_command(print_labelset_labels_command)
     app.cli.add_command(dump_labelset_command)

@@ -323,7 +323,7 @@ def get_labelset_for_task(task_id):
 
 
 @bp.route('/dltrain/<project>/add_labelset', methods=('POST',))
-@access_project_write
+@access_project_write()
 def add_labelset(project):
 
     # Read form
@@ -365,7 +365,7 @@ def add_labelset_label(task_id):
 
 
 @bp.route('/dltrain/api/<project>/label/<int:label_id>/update', methods=('POST',))
-@access_project_admin
+@access_project_admin()
 def project_update_label(project, label_id):
     db = get_db()
     db.execute("UPDATE label SET name=?, description=?, color=? WHERE id=?",
@@ -375,7 +375,7 @@ def project_update_label(project, label_id):
 
 
 @bp.route('/dltrain/api/<project>/label/<int:label_id>/delete', methods=('POST',))
-@access_project_admin
+@access_project_admin()
 def project_delete_label(project, label_id):
     db = get_db()
 
@@ -390,7 +390,7 @@ def project_delete_label(project, label_id):
 
 
 @bp.route('/dltrain/api/<project>/labelset/<int:labelset_id>/add_label', methods=('POST',))
-@access_project_admin
+@access_project_admin()
 def project_labelset_add_label(project, labelset_id):
     db = get_db()
 
@@ -414,7 +414,7 @@ def project_labelset_add_label(project, labelset_id):
 
 # Get a listing of labelsets with statistics
 @bp.route('/dltrain/api/<project>/labelsets', methods=('GET',))
-@access_project_read
+@access_project_read(allow_on_task=True)
 def get_project_labelset_listing(project):
     db = get_db()
 
@@ -436,7 +436,7 @@ def get_project_labelset_listing(project):
 
 
 @bp.route('/dltrain/api/<project>/labelset/<int:lset>/labels', methods=('GET',))
-@access_project_read
+@access_project_read(allow_on_task=True)
 def get_labelset_label_listing(project, lset):
     db = get_db()
 
@@ -1116,7 +1116,7 @@ def make_thumbnail_for_sampling_roi(task_id, sroi_id):
 # Web pages
 # --------------------------------
 @bp.route('/dltrain/<project>/labelsets')
-@access_project_admin
+@access_project_admin()
 def labelset_editor(project):
 
     # Read the project ref

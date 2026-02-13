@@ -17,13 +17,14 @@
 #
 from flask import(
     Blueprint, flash, g, redirect, render_template, request, url_for, make_response,
-    current_app, send_from_directory, session, send_file
+    current_app, send_from_directory, session, send_file, abort, jsonify
 )
 
-from .auth import site_admin_access_required, create_password_reset_link, add_user, send_user_invitation
+from .auth import site_admin_access_required, create_password_reset_link, add_user, send_user_invitation, access_task_admin
 from .db import get_db
 from .common import abort_json, success_json
-from .project_ref import ProjectRef
+from .project_ref import ProjectRef, TaskRef
+from .project_cli import add_task
 import json
 import re
 
@@ -212,6 +213,7 @@ def user_delete(user_id):
     db.execute('DELETE FROM project_access WHERE user=?', (user_id,))
     db.execute('DELETE FROM user_task_slide_preferences WHERE user=?', (user_id,))
     db.execute('DELETE FROM user WHERE id=?', (user_id,))
+    db.execute('DELETE FROM oauth_token WHERE user=?', (user_id,))
     db.commit()
 
     # Return success
@@ -355,3 +357,179 @@ def user_set_user_group_membership(user_id, group_id, membership):
         'WHERE G.is_group = TRUE AND G.id=? ',
         (user_id, group_id)).fetchone()
     return json.dumps(group_membership_row_to_json(row))
+
+def task_edit_response_to_json(form_data, d={}):
+    print(f'task_edit_response_to_json: initial dict: {d}')
+    print(f'task_edit_response_to_json: form: {dict(form_data)}')
+    
+    def upd(d, key):
+        if key in form_data:
+            val = form_data.get(key)
+            if key in d:
+                del d[key]
+            if len(val) > 0:
+                d[key] = val
+
+    # Add the normal fields
+    for x in ('name', 'mode', 'desc', 'reference-task'):
+        upd(d, x)
+            
+    # Get the updated mode
+    mode = d.get('mode')
+            
+    # Handle the checkboxes
+    for x in ('restrict-access',):
+        if x in form_data:
+            d[x] = form_data.get(x, 'off') == 'on'        
+        
+    # Handle the size restriction
+    for x in ('download-slide-size-limit',):
+        if x in form_data:
+            v = form_data.get(x, '')
+            d[x] = int(v) if len(v) > 0 else -1
+        
+    # Handle the dltrain parameters
+    if mode == 'dltrain':
+        d[mode] = d.get(mode, {})
+        for x in ('min-size', 'max-size', 'display-patch-size'):
+            upd(d['dltrain'], x)
+
+    # Handle the labelset for dltrain and sampling modes                
+    if mode == 'dltrain' or mode == 'sampling':
+        d[mode] = d.get(mode, {})
+        labelset_id = form_data.get('labelset')
+        if labelset_id is not None:
+            if labelset_id == '':
+                raise Exception('Missing labelset ID')
+
+            # Look up the labelset name from the database
+            db = get_db()
+            row = db.execute('SELECT name FROM labelset_info WHERE id=?', (labelset_id,)).fetchone()
+            if row is not None:
+                d[mode]['labelset'] = row['name']
+            else:
+                raise Exception('Invalid labelset ID')
+        
+    # Add the tags, which come in a weird 'value': 'tag' format
+    for field in 'stains', 'tags_any', 'tags_all', 'tags_not', 'specimens':
+        if field in form_data:
+            val = form_data.get(field)
+            d_field = json.loads(val) if len(val) > 0 else []
+            tags = [ x['value'] for x in d_field ]
+            if field.startswith('tags_'):
+                subfield = field.replace('tags_','')
+                if 'tags' not in d:
+                    d['tags'] = {}
+                d['tags'][subfield] = tags
+            else:
+                d[field] = tags
+    
+    print(f'task_edit_response_to_json: final dict: {d}')
+         
+    return d
+
+
+def _get_candidate_reference_tasks(project, task_id=None):
+    db = get_db()
+
+    # Get the list of tasks in the project
+    rc = db.execute('SELECT id, name, json FROM task_info WHERE project=? ORDER BY id', (project,))
+    
+    # Filter the tasks that have correct mode
+    listing = []
+    for row in rc.fetchall():
+        if task_id != row['id']:
+            d = json.loads(row['json'])
+            listing.append({'id': row['id'], 'name': row['name'], 'mode': d['mode']})
+    return listing
+
+
+def _get_labelsets(project):
+    db = get_db()
+
+    # Get the list of tasks in the project
+    rc = db.execute('SELECT * FROM labelset_info WHERE project=? ORDER BY id', (project,))
+    
+    # Filter the tasks that have correct mode
+    listing = []
+    for row in rc.fetchall():
+        listing.append({k: row[k] for k in ('id', 'name', 'description')})
+    return listing
+
+
+def render_edit_task_template(project:str, task_id:int|None):
+    task = TaskRef(task_id) if task_id is not None else None
+    return render_template('admin/edit_task.html', 
+                           task_id=task_id, project=project, 
+                           d=task.data if task is not None else dict(), 
+                           existing=task_id is not None,
+                           labelsets = _get_labelsets(project),
+                           labelset_id = task.labelset_id if task is not None else None,
+                           candidate_reference_tasks = _get_candidate_reference_tasks(project, task_id))
+    
+
+@bp.route('/admin/api/project/<project>/task/<int:task_id>/edit', methods=('GET','POST'))
+
+
+
+@bp.route('/admin/project/<project>/task/<int:task_id>/edit', methods=('GET','POST'))
+@site_admin_access_required
+def admin_edit_task(project, task_id):
+    
+    try:
+        task = TaskRef(task_id)
+    except Exception as e:
+        abort(404, f'Task {task_id} not found')
+    
+    if request.method == 'POST':
+        # Try creating the task
+        task_dict = None
+        try:
+            # Convert form data to task dict
+            task_dict = task_edit_response_to_json(request.form, task.data)
+
+            # Update the task        
+            task_id = add_task(project, task_dict, update_existing_task_id=task_id)
+            flash(f'Task {task_id} has been updated')
+            return {'task_id': task_id}
+        
+        except Exception as e:
+            # Print the stack trace in the output
+            import traceback
+            traceback.print_exc()
+            
+            # Show the error to the user
+            return jsonify({'error': str(e)}), 400
+        
+    else:
+        return render_edit_task_template(project, task_id)
+
+
+@bp.route('/admin/project/<project>/create_task', methods=('GET','POST'))
+@site_admin_access_required
+def admin_create_task(project):
+    if request.method == 'POST':
+        
+        # Try creating the task
+        task_dict = None
+        try:
+            # Convert form data to task dict
+            task_dict = task_edit_response_to_json(request.form)
+        
+            # Create the task
+            task_id = add_task(project, task_dict)
+            
+            # Return successful task creation
+            flash(f'Created new task: {task_id}')
+            return {'task_id': task_id}
+        
+        except Exception as e:
+            # Print the stack trace in the output
+            import traceback
+            traceback.print_exc()
+            
+            # Show the error to the user
+            return jsonify({'error': str(e)}), 400
+    
+    else:
+        return render_edit_task_template(project, None)

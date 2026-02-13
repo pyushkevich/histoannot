@@ -32,6 +32,7 @@ import click
 import uuid
 import json
 import pandas
+import httpx
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -99,9 +100,16 @@ def cache_in_session(fetch_function):
         
 @cache_in_session
 def fetch_user_info(user_id, key):
-    row = get_db().execute('SELECT * FROM user WHERE id = ? AND disabled=0', (user_id,)).fetchone()
+    row = get_db().execute("""
+                           SELECT U.*, MAX(PA.anon_permission) as max_anon_permission, MAX(PA.api_permission) as max_api_permission 
+                           FROM user U LEFT JOIN project_access PA on U.id = PA.user
+                           WHERE U.id = ? AND disabled=0""", (user_id,)).fetchone()
     if row:
-        return dict(row)
+        d = dict(row)
+        d.pop('password', None)  # Remove password hash from user data
+        fn = d['fullname']
+        d['display_name'] = fn if fn is not None and len(fn.strip()) > 0 else d['username']
+        return d
     else:
         return None
 
@@ -133,7 +141,12 @@ def _login_required(view, site_admin=False):
         # The user must exist, if not redirect to the login page
         if g.user is None:
             current_app.logger.warning('Unauthorized access to %s' % request.url if request is not None else None)
-            return redirect(url_for('auth.login'))
+            landing_page = current_app.config.get('CUSTOM_LANDING_PAGE', None)
+            print(f'Landing page: {landing_page}')
+            if landing_page:
+                return redirect(landing_page)
+            else:
+                return redirect(url_for('auth.login'))
 
         # The user must be an administrator, eslse send a not found page
         if site_admin is True and g.user['site_admin'] < 1:
@@ -163,12 +176,21 @@ def site_admin_access_required(view):
 @cache_in_session
 def fetch_project_access(user_id, project, key):
     db = get_db()
-    rc = db.execute('SELECT * FROM effective_project_access WHERE user=? AND project=?',
+    rc = db.execute('SELECT * FROM effective_project_and_max_task_access WHERE user=? AND project=?',
                     (user_id, project)).fetchone()
     print(f'Fetched project access for user {user_id} project {project}: {rc}')
     return dict(rc) if rc is not None else None
 
-def _project_access_required(view, min_access_level, api_access_required=False):
+def _project_access_required(view, min_access_level, api_access_required=False, allow_on_task_access=False):
+    """
+    Check if user has access to the project resources at min_access_level. 
+    
+    :param view: Wrapped view
+    :param min_access_level: Minimum requested access (none,read,write,admin)
+    :param api_access_required: Check access to API resources 
+    :param allow_on_task_access: Allow access if at least one task in the project has min_access_level
+    :return: True if access allowed
+    """
     @functools.wraps(view)
     @login_required
     def wrapped_view(**kwargs):
@@ -183,50 +205,222 @@ def _project_access_required(view, min_access_level, api_access_required=False):
 
         project = kwargs['project']
         pa = fetch_project_access(g.user['id'], project, key=f'project_access_{project}')
-
+        
         error = None
-        if pa is None:
-            error = "No privileges on parent project"
-        elif AccessLevel.check_access(pa['access'], min_access_level) is False:
-            error = "Insufficient privileges on parent project"
-        elif api_access_required and pa['api_permission'] < 1:
-            error = "Missing API access permission"
-        if error is not None:
-            url = request.url if request is not None else None
-            current_app.logger.warning(f'Unauthorized {min_access_level} access to project {project} at URL {url}: {error}')
-            abort(403, "Insufficient privileges on project {project}")
+        if pa is not None:
+            # Do we have wildcat-level project access?
+            have_project_wc_access = AccessLevel.check_access(pa['project_access'], min_access_level)
+            
+            # Do we have access to any of the restricted tasks?
+            have_max_task_access = AccessLevel.check_access(pa['max_task_access'], min_access_level)
+
+            if have_project_wc_access or (allow_on_task_access and have_max_task_access):
+                if api_access_required is False or pa['api_permission'] > 0:
+                    return view(**kwargs)
+                else:
+                    error = "Missing API access permission"
+            else:
+                error = "Insufficient privileges on project"
         else:
-            return view(**kwargs)
+            error = "No privileges set for user on project"
+
+        url = request.url if request is not None else None
+        current_app.logger.warning(f'Unauthorized {min_access_level} access to project {project} at URL {url}: {error}')
+        abort(403, "Insufficient privileges on project {project}")
 
     return wrapped_view
 
 
-def access_project_read(view):
-    return _project_access_required(view, 'read')
+def access_project_read(api=False, allow_on_task=False):
+    def access_project_read_inner(view):
+        return _project_access_required(view, 'read', api_access_required=api, allow_on_task_access=allow_on_task)
+    return access_project_read_inner
 
-def access_project_write(view):
-    return _project_access_required(view, 'write')
+def access_project_write(api=False, allow_on_task=False):
+    def access_project_write_inner(view):
+        return _project_access_required(view, 'write', api_access_required=api, allow_on_task_access=allow_on_task)
+    return access_project_write_inner
 
-def access_project_admin(view):
-    return _project_access_required(view, 'admin')
+def access_project_admin(api=False, allow_on_task=False):
+    def access_project_admin_inner(view):
+        return _project_access_required(view, 'admin', api_access_required=api, allow_on_task_access=allow_on_task)
+    return access_project_admin_inner
 
-def api_access_project_read(view):
-    return _project_access_required(view, 'read', api_access_required=True)
 
-def api_access_project_write(view):
-    return _project_access_required(view, 'write', api_access_required=True)
+# Check if a user has access to a specific slide. This is governed by task, if a slide is in a task
+# then access should be granted
+@cache_in_session
+def fetch_slide_access(user_id, slide, key):
+    db = get_db()
+    rc = db.execute('SELECT * FROM effective_slide_access WHERE user=? AND slide=?',
+                    (user_id, slide)).fetchone()
+    print(f'Fetched project access for user {user_id} project {slide}: {rc}')
+    return dict(rc) if rc is not None else None
 
-def api_access_project_admin(view):
-    return _project_access_required(view, 'admin', api_access_required=True)
+
+# Check if a user has access to a specific slide within the context of a task
+@cache_in_session
+def fetch_slide_task_access(user_id, task_id, slide, key):
+    db = get_db()
+    rc = db.execute('SELECT * FROM task_slide_index TSI '
+                    '  LEFT JOIN effective_task_access TA ON TSI.task_id = TA.task '
+                    'WHERE task_id=? and slide=? and user=?', (task_id, slide, user_id)).fetchone()
+    print(f'Fetched project access for user {user_id} project {slide}: {rc}')
+    return dict(rc) if rc is not None else None
+
+
+def _slide_task_access_required(view, min_access_level, api_access_required=False, phi_required=False):
+    """
+    Check if user has access to a slide within the context of a task. They must have access to the
+    task, and the slide must be in the task
+    
+    :param view: Description
+    :param min_access_level: Description
+    :param api_access_required: Description
+    :param phi_required: Description
+    :return: Description
+    :rtype: Response
+    """
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+
+        # The slide keyword must exist
+        if 'slide_id' not in kwargs:
+            abort(404, "Slide not specified")
+            
+        if 'task_id' not in kwargs:
+            abort(404, "Task not specified")
+
+        task_id, slide = kwargs['task_id'], kwargs['slide_id']
+        sa = fetch_slide_task_access(g.user['id'], task_id, slide, key=f'slide_task_access_{slide}_{task_id}')
+        
+        error = None
+        if sa is not None:
+            if AccessLevel.check_access(sa['access'], min_access_level):
+                if api_access_required is False or sa['api_permission'] > 0:
+                    if phi_required is False or sa['anon_permission'] > 0:
+                        return view(**kwargs)
+                    else:
+                        error = "Missing permission to access private participant data"
+                else:
+                    error = "Missing API access permission"
+            else:
+                error = "Insufficient privileges for slide"
+        else:
+            error = "No privileges set for user on slide"
+
+        url = request.url if request is not None else None
+        current_app.logger.warning(f'Unauthorized {min_access_level} access to slide {slide} in task {task_id} at URL {url}: {error}')
+        abort(403, f"Insufficient privileges on slide {slide} in task {task_id}")
+
+    return wrapped_view
+
+
+def access_task_slide_read(api=False, phi=False):
+    def access_task_slide_read_inner(view):
+        return _slide_task_access_required(view, 'read', api_access_required=api, phi_required=phi)
+    return access_task_slide_read_inner
+
+
+def access_task_slide_write(api=False, phi=False):
+    def access_task_slide_write_inner(view):
+        return _slide_task_access_required(view, 'write', api_access_required=api, phi_required=phi)
+    return access_task_slide_write_inner
+
+
+def access_task_slide_admin(api=False, phi=False):
+    def access_task_slide_admin_inner(view):
+        return _slide_task_access_required(view, 'admin', api_access_required=api, phi_required=phi)
+    return access_task_slide_admin_inner
+
+
+def _slide_access_required(view, min_access_level, api_access_required=False, phi_required=False):
+    """
+    Check if user has access to the project resources at min_access_level. 
+    
+    :param view: Wrapped view
+    :param min_access_level: Minimum requested access (none,read,write,admin)
+    :param api_access_required: Check access to API resources 
+    :return: True if access allowed
+    """
+    @functools.wraps(view)
+    @login_required
+    def wrapped_view(**kwargs):
+        # On the dzi worker node, there is no database, access is managed through
+        # nginx server and firewall
+        if current_app.config['HISTOANNOT_SERVER_MODE'] == 'dzi_node':
+            return view(**kwargs)
+
+        # The slide keyword must exist
+        if 'slide_id' not in kwargs:
+            abort(404, "Slide not specified")
+
+        slide = kwargs['slide_id']
+        sa = fetch_slide_access(g.user['id'], slide, key=f'slide_access_{slide}')
+        
+        error = None
+        if sa is not None:
+            # Do we have wildcat-level project access?
+            if AccessLevel.check_access(sa['slide_access'], min_access_level):
+                if api_access_required is False or sa['api_permission'] > 0:
+                    if phi_required is False or sa['anon_permission'] > 0:
+                        return view(**kwargs)
+                    else:
+                        error = "Missing permission to access private participant data"
+                else:
+                    error = "Missing API access permission"
+            else:
+                error = "Insufficient privileges for slide"
+        else:
+            error = "No privileges set for user on slide"
+
+        url = request.url if request is not None else None
+        current_app.logger.warning(f'Unauthorized {min_access_level} access to slide {slide} at URL {url}: {error}')
+        abort(403, f"Insufficient privileges on slide {slide}")
+
+    return wrapped_view
+
+
+def access_slide_read(api=False, phi=False):
+    def access_slide_read_inner(view):
+        return _slide_access_required(view, 'read', api_access_required=api, phi_required=phi)
+    return access_slide_read_inner
+
+
+def access_slide_write(api=False, phi=False):
+    def access_slide_write_inner(view):
+        return _slide_access_required(view, 'write', api_access_required=api, phi_required=phi)
+    return access_slide_write_inner
+
+
+def access_slide_admin(api=False, phi=False):
+    def access_slide_admin_inner(view):
+        return _slide_access_required(view, 'admin', api_access_required=api, phi_required=phi)
+    return access_slide_admin_inner
+
 
 # Load task/project access level (cached in session)
 @cache_in_session
 def fetch_task_access(user_id, task, key):
     db = get_db()
-    rc = db.execute('SELECT * FROM effective_task_project_access WHERE user=? AND task=?',
+    rc = db.execute('SELECT * FROM effective_task_access WHERE user=? AND task=?',
                     (user_id, task)).fetchone()
     print(f'Fetched task access for user {user_id} task {task}: {rc}')
     return dict(rc) if rc is not None else None
+
+
+def check_task_access(user_id, task_id, min_access_level, api_access_required=False):
+    ta = fetch_task_access(user_id, task_id, key=f'task_access_{task_id}')
+    if ta is None:
+        return False, "No privileges on task"
+    elif api_access_required and ta['api_permission'] < 1:
+        return False, "Missing API access permission"
+    elif AccessLevel.check_access(ta['access'], min_access_level) is False:
+        return False, "Insufficient privileges on task"
+    else :
+        return True, None
+
 
 def _task_access_required(view, min_access_level, api_access_required=False):
     @functools.wraps(view)
@@ -238,22 +432,12 @@ def _task_access_required(view, min_access_level, api_access_required=False):
             abort(404, "Task ID not specified")
 
         task_id = kwargs['task_id']
-        tpa = fetch_task_access(g.user['id'], task_id, key=f'task_access_{task_id}')
-
-        error = None
-        if tpa is None:
-            error = "No privileges on parent project"
-        elif AccessLevel.check_access(tpa['project_access'], min_access_level) is False:
-            error = "Insufficient privileges on parent project"
-        elif api_access_required and tpa['api_permission'] < 1:
-            error = "Missing API access permission"
-        elif tpa['restrict_access'] > 0 and AccessLevel.check_access(tpa['task_access'], min_access_level) is False:
-            error = "Insufficient privileges on task"
+        _, error = check_task_access(g.user['id'], task_id, min_access_level, api_access_required)
 
         if error is not None:
             url = request.url if request is not None else None
             current_app.logger.warning(f'Unauthorized {min_access_level} access to task {task_id} at URL {url}: {error}')
-            abort(403, "Insufficient privileges on task {task_id}")
+            abort(403, f"Insufficient privileges on task {task_id}")
 
         else:
             return view(**kwargs)
@@ -297,7 +481,10 @@ def reset():
     rc = db.execute('SELECT * FROM user WHERE email=? AND disabled = 0 COLLATE NOCASE', (rq_email,)).fetchone()
 
     if rc is None:
-        error = "There is no active user with email address %s" % (rq_email,)
+        error = f"There is no active user with email address {rq_email}"
+        
+    elif rc['oauth_only'] > 0:
+        error = f"The account associated with email address {rq_email} does not support password login. Please use ORCID iD to login."
 
     else:
         send_user_resetlink(rc['id'])
@@ -307,15 +494,14 @@ def reset():
     return render_template('auth/request_reset.html', email=rq_email)
 
 
-def send_user_resetlink(user_id, email=None, expiry=86400):
+def send_user_resetlink(user_id, expiry=86400):
 
-    if email is None:
-        db=get_db()
-        rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
-        if rc is not None:
-            email = rc['email']
-        else:
-            return None
+    db=get_db()
+    rc=db.execute('SELECT * FROM user WHERE id=? AND email IS NOT NULL AND disabled=0', (user_id,)).fetchone()
+    if rc is not None:
+        email = rc['email']
+    else:
+        raise ValueError(f'No email for user {user_id}')
 
     # Create a password reset link
     url = create_password_reset_link(user_id)
@@ -453,7 +639,9 @@ def edit_user_profile():
         return redirect(url_for('auth.login'))
 
     # Get the user information
-    rc = db.execute('SELECT U.* FROM user U where U.id = ? ', (g.user['id'],)).fetchone()
+    rc = db.execute('SELECT U.*, OAT.oauth_id '
+                    'FROM user U LEFT JOIN (SELECT * FROM oauth_token WHERE authority="orcid") OAT ON U.id = OAT.user '
+                    'WHERE U.id = ?', (g.user['id'],)).fetchone()
 
     error = None
     rq_email = None
@@ -461,6 +649,8 @@ def edit_user_profile():
 
         # The user is posting a completed profile.
         rq_email = request.form['email']
+        rq_fullname = request.form['fullname']
+        rq_fullname = None if rq_fullname.strip() == '' else rq_fullname
 
         if not rq_email:
             error = 'Email address is required.'
@@ -471,11 +661,12 @@ def edit_user_profile():
         else:
 
             # Update user's profile
-            db.execute('UPDATE user SET email=?WHERE id=?', (rq_email, rc['id']))
+            db.execute('UPDATE user SET email=?, fullname=? WHERE id=?', (rq_email, rq_fullname, rc['id']))
             db.commit()
 
-            # Go to the home page
-            return redirect(url_for('index'))
+            # Redirect to the get version of this same page
+            flash('Profile updated successfully.')
+            return redirect(url_for('auth.edit_user_profile'))
 
     else:
         # If the user is missing some part of the profile, flash that
@@ -490,8 +681,10 @@ def edit_user_profile():
         flash(error)
 
     return render_template('auth/edit_profile.html',
-                           username=rc['username'],
-                           email = rq_email if rq_email is not None else rc['email'])
+                           username=rc['username'], fullname=rc['fullname'] if rc['fullname'] is not None else '',
+                           email = rq_email if rq_email is not None else rc['email'],
+                           orcid_id = rc['oauth_id'],
+                           oauth_only = rc['oauth_only'] > 0)
 
 
 @bp.route('/api/generate_key', methods=('GET', 'POST'))
@@ -576,7 +769,212 @@ def get_project_private_access(project:str):
         if pa is not None and pa['anon_permission'] > 0:
             return jsonify({'private_access': True})
     return jsonify({'private_access': False})
+
+def login_or_create_account_with_orcid(create_new: bool):
+    if not current_app.config.get('HISTOANNOT_ALLOW_ORCID_LOGIN', False):
+        abort(403, description="ORCID OAuth login is not enabled.")
+    orcid_client_id = current_app.config.get('ORCID_CLIENT_ID', None)
+    public_url = current_app.config.get('HISTOANNOT_PUBLIC_URL', None)
+    if orcid_client_id is None or public_url is None:
+        abort(500, description="ORCID OAuth client ID is not configured.")
+        
+    return redirect(f'https://orcid.org/oauth/authorize?client_id={orcid_client_id}' 
+                    f'&response_type=code&scope=/authenticate' 
+                    f'&redirect_uri={public_url}/auth/api/oauth/orcid/callback' 
+                    f'&state={"create_account" if create_new else "login"}')
+
+
+@bp.route('/api/oauth/orcid/login', methods=('GET',))
+def login_with_orcid():
+    return login_or_create_account_with_orcid(False)
+
+@bp.route('/api/oauth/orcid/create_account', methods=('GET',))
+def create_account_with_orcid():
+    return login_or_create_account_with_orcid(True)
+
+@bp.route('/api/oauth/orcid/callback', methods=('GET',))
+def orcid_oauth_callback():
+    if not current_app.config.get('HISTOANNOT_ALLOW_ORCID_LOGIN', False):
+        abort(403, description="ORCID OAuth login is not enabled.")
+
+    # Get the authorization code from the request
+    code = request.args.get('code', None)
     
+    # Read the state from the request - do we need to create a new account?
+    create_new = request.args.get('state', '') == 'create_account'
+    if code is None:
+        abort(400, description="Missing authorization code from ORCID.")
+        
+    # If there is already a user logged in, we are linking the ORCID ID to the account
+    # and the create_new flag cannot be set
+    if g.user is not None and create_new is True:
+        abort(400, description="Cannot create a new account when already logged in.")
+        
+    if create_new is True and not current_app.config.get('HISTOANNOT_ALLOW_NEW_ACCOUNTS', False):
+        abort(403, description="Creating new accounts is not allowed.")
+        
+    # Now, we need to generate the following request:
+    orcid_client_id = current_app.config.get('ORCID_CLIENT_ID', None)
+    public_url = current_app.config.get('HISTOANNOT_PUBLIC_URL', None)
+    r = httpx.post(
+        'https://orcid.org/oauth/token',
+        headers={
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        data={
+            'client_id': orcid_client_id,
+            'client_secret': current_app.config.get('ORCID_CLIENT_SECRET', ''),
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': f"{public_url}/auth/api/oauth/orcid/callback"
+        })
+    
+    if r.status_code != 200:
+        abort(500, description=f"ORCID token request failed with status code {r.status_code}: {r.text}")
+        
+    # Parse the json response
+    r_json = r.json()
+    name = r_json.get('name', None)
+    orcid_id = r_json.get('orcid', None)
+    print(f'ORCID OAuth login for ORCID ID {orcid_id}, name={name}, json={r_json}')
+    
+    # Process the ORCID ID
+    db = get_db()
+    
+    # Are we logging in or creating a new account?
+    if create_new is True:
+        # Check if the user with this ORCID ID already exists in the system
+        user = db.execute(
+            '''SELECT * 
+            FROM user U LEFT JOIN oauth_token OAT ON U.id = OAT.user 
+            WHERE authority="orcid" AND oauth_id = ?''', (orcid_id,)).fetchone()
+        
+        if user is not None:
+            # Redirect to login page with error message
+            flash(f'An account associated with ORCID ID {orcid_id} already exists. Please use the "Existing Users" tab to sign in.')
+            return redirect(url_for('auth.login'))
+        
+        # Check that there is a valid group for new accounts
+        new_user_group = current_app.config.get('HISTOANNOT_NEW_USER_GROUP', None)
+        if new_user_group is None:
+            abort(500, description="New user group is not configured, cannot create new account.")
+        rc = db.execute('SELECT * FROM user WHERE username=? AND is_group=1', (new_user_group,)).fetchone()
+        if rc is None:
+            abort(500, description=f"New user group '{new_user_group}' does not exist, cannot create new account.")
+        group_id = rc['id']
+            
+        # Create a new user account
+        username = f'orcid_{orcid_id}'
+        password = str(uuid.uuid4())  # Random password, will never be used
+        rc = db.execute(
+            '''INSERT INTO user(username, password, fullname, is_group, oauth_only)
+            VALUES (?,?,0,1)''', (username, password, name))
+        user_id = rc.lastrowid
+        
+        # Link the ORCID ID to the user account
+        rc = db.execute(
+            '''INSERT INTO oauth_token(user, authority, oauth_id, access_token, refresh_token)
+            VALUES (?,?,?,?,?)''', (user_id, 'orcid', orcid_id, r_json['access_token'], r_json['refresh_token']))
+        
+        # Add the user to the new user group
+        rc = db.execute(
+            '''INSERT INTO group_membership(user_id,group_id)
+            VALUES (?,?)''', (user_id, group_id))
+        
+        # Commit the changes
+        db.commit()
+        
+    else:
+        # Are we already logged in? In this case, we need to link the ORCID ID to the user account
+        if g.user is not None:
+
+            # Link the ORCID ID to the user account
+            rc = db.execute(
+                '''INSERT OR REPLACE INTO oauth_token(user, authority, oauth_id, access_token, refresh_token)
+                VALUES (?,?,?,?,?)''', (g.user['id'], 'orcid', orcid_id, r_json['access_token'], r_json['refresh_token']))
+            
+            # If the user's name is blank, update it from ORCID
+            if g.user['fullname'] is None or g.user['fullname'].strip() == '':
+                db.execute('UPDATE user SET fullname=? WHERE id=?', (name, g.user['id']))
+
+            db.commit()
+            
+            flash(f'ORCID ID {orcid_id} has been linked to your user account.')
+            return redirect(url_for('auth.edit_user_profile'))        
+        
+    # Check if the user with this ORCID ID exists and is enabled    
+    user = db.execute(
+        '''SELECT * 
+        FROM user U LEFT JOIN oauth_token OAT ON U.id = OAT.user 
+        WHERE authority="orcid" AND oauth_id = ? AND disabled = 0''', (orcid_id,)).fetchone()
+    
+    if user is not None:
+        
+        # If the user's name is blank, update it from ORCID
+        if user['fullname'] is None or user['fullname'].strip() == '':
+            db.execute('UPDATE user SET fullname=? WHERE id=?', (name, user['id']))
+
+        db.commit()
+        
+        # Log the user in
+        session.clear()
+        session['user_id'] = user['id']
+        session['user_is_site_admin'] = user['site_admin']
+        session['user_api_key'] = False
+        return redirect(url_for('index'))
+    
+    # Redirect to login page with error message
+    flash(f'No user account is associated with ORCID ID {orcid_id}. Please login with your username and password to link your ORCID ID to your user account.')
+    return redirect(url_for('auth.login'))
+
+    
+@bp.route('/api/oauth/orcid/unlink', methods=('GET','POST'))
+@login_required
+def unlink_orcid():
+    db = get_db()
+    
+    # Get the current token and check that the user can actually be removed
+    rc = db.execute(
+        '''SELECT U.*, OAT.* 
+           FROM user U LEFT JOIN oauth_token OAT on U.id = OAT.user
+           WHERE user=? AND authority="orcid"''', (g.user['id'],)).fetchone()
+    if rc is None:
+        flash('No ORCID ID is linked to your user account.')
+        return redirect(url_for('auth.edit_user_profile'))
+    if rc['oauth_only'] > 0:
+        flash('Cannot unlink ORCID ID from an OAuth-only account.')
+        return redirect(url_for('auth.edit_user_profile'))
+
+    orcid_id = rc['oauth_id']
+    
+    # Revoke the token at ORCID
+    orcid_client_id = current_app.config.get('ORCID_CLIENT_ID', None)
+    r = httpx.post(
+        'https://orcid.org/oauth/revoke',
+        headers={
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        data={
+            'client_id': orcid_client_id,
+            'client_secret': current_app.config.get('ORCID_CLIENT_SECRET', ''),
+            'token': rc['access_token']
+        })
+    
+    # Print what was sent to the ORCID server
+    print(f'Revoking ORCID token for ORCID ID {orcid_id}, client_id={orcid_client_id}, token={rc["refresh_token"]}')
+
+    if r.status_code != 200:
+        abort(500, description=f"ORCID token request failed with status code {r.status_code}: {r.text}")
+    else:
+        print(f'ORCID token for ORCID ID {orcid_id} revoked successfully with status code {r.status_code}: {r.text}')
+    
+    db.execute('DELETE FROM oauth_token WHERE user=? AND authority="orcid"', (g.user['id'],))
+    db.commit()
+    flash('Your ORCID ID has been unlinked from your user account.')
+    return redirect(url_for('auth.edit_user_profile'))
+
 
 def check_anon(project):
     """
@@ -586,6 +984,10 @@ def check_anon(project):
     Parameters:
     - project: project name
     """
+    # Check config
+    if current_app.config.get('HISTOANNOT_DISABLE_ANONYMIZATION', False) is True:
+        return False
+    
     if g.get('in_request', False) is False:
         # Not in a request context, CLI command, private access is allowed
         return False

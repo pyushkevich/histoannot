@@ -10,16 +10,33 @@ Specimen Listing - {{task['name']}}
 .zoom {
   transition: transform .2s; /* Animation */
   max-width: 200px;
-  height: 75px;
+  height: 3em;
 }
 
 .zoom:hover {
-  transform: scale(2.56) translate(5pt,0pt); /* (150% zoom - Note: if the zoom is too large, it will go outside of the viewport) */
-  position: absolute;
+  cursor: pointer;
+  opacity: 0.85;
 }
 
 .spanner {
-  height: 75px;
+  height: 3em;
+}
+
+/* Floating preview for zoomed thumbnails so they are not clipped by table cells */
+#thumb_preview {
+  position: absolute;
+  border: 1px solid #ccc;
+  background: #fff;
+  padding: 2px;
+  z-index: 9999;
+  display: none;
+}
+
+#thumb_preview img {
+  max-width: 400px;
+  height: auto;
+  display: block;
+  image-rendering: smooth;
 }
 </style>
 
@@ -114,6 +131,9 @@ Specimen Listing - {{task['name']}}
   </div>
 </div>
 
+<!-- Floating zoom preview for slide thumbnails -->
+<div id="thumb_preview"><img src="" alt="Slide thumbnail preview"></div>
+
 <!-- DataTable support -->
 <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='DataTables/datatables.min.css') }}"/>
 <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='jquery-3.6.4.min.js') }}"></script>
@@ -167,13 +187,13 @@ $(document).ready(function() {
   // Column descriptions for different tables
   col_desc = [ 
     { data: "specimen_display" }, 
-    { data: "nblocks" }, 
-    { data: "nslides" },
+    { data: "nblocks", width: "2em" }, 
+    { data: "nslides", width: "2em" },
   ];
 
   blk_col_desc = [ 
     { data: "block_name" }, 
-    { data: "nslides" } 
+    { data: "nslides", width: "2em" } 
   ];
 
   sld_col_desc = [
@@ -184,20 +204,20 @@ $(document).ready(function() {
   ];
 
   if(mode === 'annot') {
-    col_desc.push({ data: "nannot"});
-    blk_col_desc.push({ data: "nannot"});
+    col_desc.push({ data: "nannot", width: "2em"});
+    blk_col_desc.push({ data: "nannot", width: "2em"});
     sld_col_desc.push({ data: "n_annot"});
     sld_col_desc.push({ data: "id", render: fn_annot_link});
   }
   else if(mode === 'dltrain') {
-    col_desc.push({ data: "nsamples"});
-    blk_col_desc.push({ data: "nsamples"});
+    col_desc.push({ data: "nsamples", width: "2em"});
+    blk_col_desc.push({ data: "nsamples", width: "2em"});
     sld_col_desc.push({ data: "n_samples"});
     sld_col_desc.push({ data: "id", render: fn_dltrain_link});
   }
   else if(mode === 'sampling') {
-    col_desc.push({ data: "nsamples"});
-    blk_col_desc.push({ data: "nsamples"});
+    col_desc.push({ data: "nsamples", width: "2em"});
+    blk_col_desc.push({ data: "nsamples", width: "2em"});
     sld_col_desc.push({ data: "n_samples"});
     sld_col_desc.push({ data: "id", render: fn_sroi_link});
   }
@@ -324,6 +344,26 @@ $(document).ready(function() {
     selected_blk = null;
     $('#span_block_name').text("");
     $('#d_slides').css('display','none');
+  });
+
+  // Show a floating, larger preview of thumbnails on hover so they are not clipped by table layout
+  var $thumbPreview = $('#thumb_preview');
+  var $thumbImg = $('#thumb_preview img');
+
+  $('body').on('mouseenter', 'img.zoom', function(e) {
+    var src = $(this).attr('src');
+    $thumbImg.attr('src', src);
+    $thumbPreview
+      .show()
+      .css({ top: e.pageY + 10, left: e.pageX + 10 });
+  });
+
+  $('body').on('mousemove', 'img.zoom', function(e) {
+    $thumbPreview.css({ top: e.pageY + 10, left: e.pageX + 10 });
+  });
+
+  $('body').on('mouseleave', 'img.zoom', function() {
+    $thumbPreview.hide();
   });
 
   // Handle preferred resolution by modifying all the URLs in the rightmost table

@@ -490,17 +490,19 @@
             <fieldset>
                 <div class="pure-control-group">
                     <label for="dl_dialog_raw">Image to download:</label>
-                    <select id="dl_dialog_raw" class="pure-input-1-2" required>
-                        <option value="tiff">Downsampled .tiff</option>
-                        <option value="nii">Downsampled .nii.gz</option>
-                        <option value="fullres">Full-resolution .{{slide_ext}}</option>
-                        <option value="label">Label image</option>
-                        <option value="macro">Macro image</option>
+                    <select id="dl_dialog_raw" class="pure-input-1-2" required style="width: 20em;">
+                        <option value="tiff">Downsampled TIFF image</option>
+                        <option value="nii">Downsampled NIFTI image</option>
+                        <option value="fullres" id="dl_dialog_raw_fullres">Full-resolution slide (.{{slide_ext}})</option>
+                        <option value="label" id="dl_dialog_raw_label">Label image (.png)</option>
+                        <option value="macro" id="dl_dialog_raw_macro">Macro image (.png)</option>
+                        <option value="annot" id="dl_dialog_raw_annot">Downsampled Annotations (.svg)</option>
+                        <option value="annot_fullres" id="dl_dialog_raw_annot_fullres">Full-resolution annotations (.svg)</option>
                     </select>
                 </div>
-                <div class="pure-control-group">
+                <div class="pure-control-group" id="div_dl_dialog_width">
                     <label for="dl_dialog_width">Size (in pixels):</label>
-                    <input id="dl_dialog_width" name="dl_dialog_width" class="pure-input-1-2" value=1000>
+                    <input id="dl_dialog_width" name="dl_dialog_width" class="pure-input-1-2" type="number" min="0" value="1000" style="width: 20em;">
                 </div>
                 <div class="pure-controls">
                     <input type="submit" id="dl_dialog_submit" value="Download" class="pure-button pure-button-primary">
@@ -525,18 +527,21 @@
 
 <button id="nav_button" class="bottom_button enabled active">&nbsp Zoom and Pan (Z) &nbsp</button>
 
-{% if seg_mode == 'annot' %}
-<button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</button>
-<button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</button>
-{% elif seg_mode == 'dltrain' %}
-<button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
-{% elif seg_mode == 'sampling' %}
-<button id="trap_button" class="bottom_button enabled">&nbsp Draw Trapezoid (T) &nbsp</button>
-<button id="poly_button" class="bottom_button enabled">&nbsp Draw Polygon (P) &nbsp</button>
-{% endif %}
+{# Annotation/placement controls are hidden in read-only mode #}
+{% if not read_only %}
+    {% if seg_mode == 'annot' %}
+    <button id="draw_button" class="bottom_button enabled">&nbsp Draw Lines (L) &nbsp</button>
+    <button id="marker_button" class="bottom_button enabled">&nbsp Place Marker (M) &nbsp</button>
+    {% elif seg_mode == 'dltrain' %}
+    <button id="box_button" class="bottom_button enabled">&nbsp Place Box (B) &nbsp</button>
+    {% elif seg_mode == 'sampling' %}
+    <button id="trap_button" class="bottom_button enabled">&nbsp Draw Trapezoid (T) &nbsp</button>
+    <button id="poly_button" class="bottom_button enabled">&nbsp Draw Polygon (P) &nbsp</button>
+    {% endif %}
 
-{% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
-<button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
+    {% if seg_mode == 'dltrain' or seg_mode == 'annot' or seg_mode == 'sampling' %}
+    <button id="del_button" class="bottom_button disabled">&nbsp Delete (Del) &nbsp</button>
+    {% endif %}
 {% endif %}
 
 <div id="hovertooltip">Hover text goes here</div>
@@ -547,6 +552,7 @@ $(document).ready(function()
     // Segmentation/interaction mode
     const task_id = parseInt('{{task_id}}');
     const seg_mode='{{seg_mode}}';
+    const read_only = {{ 'true' if read_only else 'false' }};
 
     // Mode-specific properties
     let fixed_box_size = 0;
@@ -712,7 +718,6 @@ $(document).ready(function()
     };
 
     var mpp = parseFloat("{{ spacing[0] }}");
-    console.log("MPP", mpp);
     viewer.scalebar({
         pixelsPerMeter: mpp ? (1e3 / mpp) : 0,
 	    location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
@@ -844,9 +849,13 @@ $(document).ready(function()
     }
 
     // Handle loading of label and macro images
-    let load_label_or_macro_image = function(url, tab, image) {
+    let load_label_or_macro_image = function(url, resource) {
+        tab = $(`#display-opts-tab-${resource}`)
+        image = $(`#slide_${resource}`)
+        menuitem = $(`#dl_dialog_raw_${resource}`)
         tab.hide();
         image.hide();
+        menuitem.hide();
         $.ajax({
             url: url,
             type: 'HEAD', // Only fetch the headers to check if the file exists
@@ -855,18 +864,39 @@ $(document).ready(function()
                 image.attr("src", url);
                 tab.show();
                 image.show();
+                menuitem.show();
             },
             error: function() {}
         });
     }
 
-    load_label_or_macro_image(
-        "{{url_tmpl_download_label}}", 
-        $("#display-opts-tab-label"), $("#slide_label"));
-    load_label_or_macro_image(
-        "{{url_tmpl_download_macro}}", 
-        $("#display-opts-tab-macro"), $("#slide_macro"));
+    load_label_or_macro_image("{{url_tmpl_download_label}}", "label");
+    load_label_or_macro_image("{{url_tmpl_download_macro}}", "macro");
 
+    // Set limit on download size
+    let dl_size_limit = parseInt("{{download_size_limit}}");
+    if(dl_size_limit >= 0) {
+        $('#dl_dialog_width').attr("max", dl_size_limit);
+        $('#dl_dialog_raw_fullres').hide();
+    }
+
+    // Enable/disable annotation download
+    if(seg_mode != 'annot') {
+        $('#dl_dialog_raw_annot').hide();
+        $('#dl_dialog_raw_annot_fullres').hide();
+    }
+
+    // Smart toggle visibility of size control
+    $('#dl_dialog_raw').on('change', function() {
+        var sel = $(this).val();
+        if(sel.endsWith('fullres')) {
+            $('#div_dl_dialog_width').hide();
+        }
+        else {
+            $('#div_dl_dialog_width').show();
+        }
+    });
+    $('#dl_dialog_raw').trigger('change');
 
     // Slide header table
     let slide_header_table = make_slide_properties_table($("#slide_header"));
@@ -984,7 +1014,6 @@ $(document).ready(function()
             }
         })
         sel.change(function() {
-            console.log('Selected', $(this).val());
             if($(this).val() >= 0) {
                 download_other_task_annot($(this).val());
             }
@@ -1072,8 +1101,8 @@ $(document).ready(function()
             type: "POST",
             url: url,
             data: payload,
-            success: function(resp) { console.log('Success: ', resp); },
-            error: function(xhr,status,error) { console.log('Error: ', xhr, status, error); }
+            success: function(resp) { },
+            error: function(xhr,status,error) { }
             });
     };
 
@@ -1129,7 +1158,6 @@ $(document).ready(function()
                         overlay_layer.children.forEach(function(item, index) {
                             item.selected = false;
                             // Remove stray paths that cause layer to not display
-                            console.log(item._class, item.length);
                             if(item._class == 'Path' && !(item.length > 0)) {
                                 bad_items.push(item);
                             }
@@ -1367,7 +1395,6 @@ $(document).ready(function()
         this.delete_sample = function(box) {
 
             // Tell the server to delete this sample
-            console.log('Deleting ', box.data)
             if(box.data.id) {
                 box.remove();
                 $.ajax({
@@ -2193,6 +2220,10 @@ $(document).ready(function()
         // Record the event
         viewer_mouse_pos = ev_point(event);
 
+        if(read_only) {
+            return;
+        }
+
         if(curr_mode === 'DRAW') {
             curr_path.add(ev_point(event));
             paper.view.draw();
@@ -2245,6 +2276,11 @@ $(document).ready(function()
 
     // Update current mode, setting the sticky tag if needed
     let update_current_mode = function(new_mode) {
+        // In read-only mode, force NAV and ignore tool modes
+        if(read_only && new_mode !== 'NAV') {
+            return;
+        }
+
         // Second click on a tool puts it into sticky mode
         sticky_tool_mode = (new_mode !== 'NAV') && (new_mode === curr_mode);
         curr_mode = new_mode;
@@ -2258,6 +2294,9 @@ $(document).ready(function()
     };
 
     var dragEnd_handler = function(event) {
+        if(read_only) {
+            return;
+        }
         if(curr_mode === 'DRAW') {
             curr_path.simplify(10);
             upload_annot();
@@ -2303,6 +2342,9 @@ $(document).ready(function()
     };
 
     var show_marker_editor = function(event, target_item) {
+        if(read_only) {
+            return;
+        }
         var p = ev_point(event);
         var input = document.getElementById("marker");
         input.style.left = "" + event.position.x - 50 + "px";
@@ -2345,6 +2387,9 @@ $(document).ready(function()
     };
 
     var release_handler = function(event) {
+        if(read_only) {
+            return;
+        }
         if(curr_mode === 'NAV' && moving_object) {
             if(!moving_object_moved)
                 moving_object.selected = false;
@@ -2353,7 +2398,6 @@ $(document).ready(function()
             show_marker_editor(event, null);
         }
         else if(curr_mode === 'FIXEDBOX') {
-            console.log(curr_box.data)
             sample_api.upload_new_sample(curr_box, function() {
                 do_delay(reload_label_and_sample_tables, 1000)
             });
@@ -2460,6 +2504,9 @@ $(document).ready(function()
     };
 
     let dblClick_handler = function(event) {
+        if(read_only) {
+            return;
+        }
         if(curr_mode === 'NAV') {
             hit = my_hit_test(ev_point(event));
             if(hit && hit.item instanceof paper.PointText) {
@@ -2493,13 +2540,14 @@ $(document).ready(function()
 
     // Update button active state
     var fn_update_button_state = function() {
+        var del_btn = document.getElementById("del_button");
+        if(!del_btn)
+            return;
         // Is there an active selection
         if(get_number_selected_manipulables() > 0)
-            document.getElementById("del_button").className =
-                document.getElementById("del_button").className.replace(" disabled", " enabled");
+            del_btn.className = del_btn.className.replace(" disabled", " enabled");
         else
-            document.getElementById("del_button").className =
-                document.getElementById("del_button").className.replace(" enabled", " disabled");
+            del_btn.className = del_btn.className.replace(" enabled", " disabled");
 
     }
 
@@ -2519,6 +2567,7 @@ $(document).ready(function()
 
     // Event handler
     var draw_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
         update_current_mode('DRAW');
@@ -2540,6 +2589,7 @@ $(document).ready(function()
     };
 
     var marker_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
         update_current_mode('MARKER');
@@ -2548,6 +2598,7 @@ $(document).ready(function()
     };
 
     var box_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
 
@@ -2568,6 +2619,7 @@ $(document).ready(function()
     };
 
     var trapezoid_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
 
@@ -2581,6 +2633,7 @@ $(document).ready(function()
     };
 
     var polygon_pressed_handler = function(options) {
+        if(read_only) return;
         set_slide_mouse_nav(false);
         viewer.outerTracker.setTracking(false);
 
@@ -2594,6 +2647,7 @@ $(document).ready(function()
     };
 
     var del_pressed_handler = function(options) {
+        if(read_only) return;
         if(document.getElementById("del_button").className.includes(" enabled")) {
             var selected = paper.project.selectedItems;
             if(seg_mode === 'annot') {
@@ -2653,6 +2707,10 @@ $(document).ready(function()
             dlink_tmpl = "{{url_tmpl_download_label}}"
         else if(fmt == "macro")
             dlink_tmpl = "{{url_tmpl_download_macro}}"
+        else if(fmt == "annot")
+            dlink_tmpl = "{{url_tmpl_download_annot}}"
+        else if(fmt == "annot_fullres")
+            dlink_tmpl = "{{url_tmpl_download_annot_fullres}}"
 
         d_link = dlink_tmpl.replace("XXXXX", "{{resolution}}").replace("999999", ds.toString());
         dl_dialog.dialog("close");
@@ -2689,46 +2747,52 @@ $(document).ready(function()
         Mousetrap.bind('>', function() {$("form#form-next").submit();});
 
     if (seg_mode=='annot') {
-        var drawButton = add_seadragon_button(
-            'draw_button', 
-            'Draw line segments on the slide', 
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            draw_pressed_handler);
-        Mousetrap.bind('l', function() { draw_pressed_handler() });
+        if(!read_only) {
+            var drawButton = add_seadragon_button(
+                'draw_button', 
+                'Draw line segments on the slide', 
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                draw_pressed_handler);
+            Mousetrap.bind('l', function() { draw_pressed_handler() });
 
-        var markerButton = add_seadragon_button(
-            'marker_button', 
-            'Place anatomical marker', 
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            marker_pressed_handler);
-        Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
+            var markerButton = add_seadragon_button(
+                'marker_button', 
+                'Place anatomical marker', 
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                marker_pressed_handler);
+            Mousetrap.bind(['m', 'esc'], function() { marker_pressed_handler() });
+        }
     }
 
     else if(seg_mode=='dltrain') {
-        var boxButton = add_seadragon_button(
-            'box_button',
-            'Draw boxes for training classes',
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            box_pressed_handler);
-        Mousetrap.bind('b', function() { box_pressed_handler(); });
+        if(!read_only) {
+            var boxButton = add_seadragon_button(
+                'box_button',
+                'Draw boxes for training classes',
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                box_pressed_handler);
+            Mousetrap.bind('b', function() { box_pressed_handler(); });
+        }
     }
 
     else if(seg_mode=='sampling') {
-        var trapButton = add_seadragon_button(
-            'trap_button',
-            'Draw sampling trapezoid',
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            trapezoid_pressed_handler);
-        var polyButton = add_seadragon_button(
-            'poly_button',
-            'Draw sampling polygon',
-            OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
-            polygon_pressed_handler);
-        Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
-        Mousetrap.bind('p', function() { polygon_pressed_handler(); });
+        if(!read_only) {
+            var trapButton = add_seadragon_button(
+                'trap_button',
+                'Draw sampling trapezoid',
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                trapezoid_pressed_handler);
+            var polyButton = add_seadragon_button(
+                'poly_button',
+                'Draw sampling polygon',
+                OpenSeadragon.ControlAnchor.BOTTOM_LEFT, 
+                polygon_pressed_handler);
+            Mousetrap.bind('t', function() { trapezoid_pressed_handler(); });
+            Mousetrap.bind('p', function() { polygon_pressed_handler(); });
+        }
     }
 
-    if(seg_mode == 'annot' || seg_mode == 'dltrain' || seg_mode == 'sampling') {
+    if(!read_only && (seg_mode == 'annot' || seg_mode == 'dltrain' || seg_mode == 'sampling')) {
         var delButton = add_seadragon_button(
             'del_button', 
             'Delete selected line or text', 
@@ -3109,7 +3173,6 @@ $(document).ready(function()
         }
         else {
             add_overlay_dzi(overlays[ovl].pattern, function() {
-                console.log('Loaded overlay ', overlays[ovl].name);
 
                 // Populate the controls for this overlay
                 let opacity = overlay_opacity_slider.slider("value") / 255.0;

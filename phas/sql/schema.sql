@@ -21,6 +21,8 @@ CREATE TABLE user (
   disabled BOOLEAN NOT NULL DEFAULT (0),
   site_admin BOOLEAN NOT NULL DEFAULT(0),
   is_group BOOLEAN NOT NULL DEFAULT(0),
+  oauth_only BOOLEAN NOT NULL DEFAULT(0),
+  fullname TEXT
 );
 
 DROP TABLE IF EXISTS group_membership;
@@ -47,6 +49,17 @@ CREATE TABLE user_api_key (
   api_key TEXT PRIMARY KEY,
   user INT NOT NULL,
   t_expires INTEGER NOT NULL,
+  FOREIGN KEY(user) REFERENCES user(id)
+);
+
+DROP TABLE IF EXISTS oauth_token;
+CREATE TABLE oauth_token (
+  user INTEGER NOT NULL,
+  authority TEXT NOT NULL,
+  oauth_id TEXT NOT NULL,
+  access_token TEXT,
+  refresh_token TEXT,
+  PRIMARY KEY(user, authority),
   FOREIGN KEY(user) REFERENCES user(id)
 );
 
@@ -100,9 +113,19 @@ CREATE TABLE task (
   name TEXT NOT NULL,
   json TEXT NOT NULL,
   restrict_access BOOLEAN NOT NULL,
-  anonymize BOOLEAN DEFAULT(0) NOT NULL
+  anonymize BOOLEAN DEFAULT(0) NOT NULL,
+  disabled BOOLEAN DEFAULT(0) NOT NULL
 );
 
+/* Table to reference another task from a task */
+DROP TABLE IF EXISTS task_ref;
+CREATE TABLE task_ref (
+  task INTEGER NOT NULL,
+  referenced_task INTEGER NOT NULL,
+  PRIMARY KEY (task),
+  FOREIGN KEY (task) REFERENCES task (id),
+  FOREIGN KEY (referenced_task) REFERENCES task (id)
+);
 
 DROP TABLE IF EXISTS task_access;
 CREATE TABLE task_access (
@@ -240,3 +263,69 @@ CREATE TABLE task_slide_index (
     FOREIGN KEY (task_id) REFERENCES task(id)
 );
 
+DROP TABLE IF EXISTS labelset;
+CREATE TABLE labelset (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT
+);
+
+DROP TABLE IF EXISTS label;
+CREATE TABLE label (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  labelset INTEGER NOT NULL,
+  parent_id INTEGER,
+  name TEXT NOT NULL,
+  description TEXT,
+  color TEXT NOT NULL,
+  FOREIGN KEY (labelset) REFERENCES labelset(id),
+  FOREIGN KEY (parent_id) REFERENCES label(id),
+  UNIQUE (labelset, name)
+);
+
+DROP TABLE IF EXISTS training_sample;
+CREATE TABLE training_sample (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  x0 REAL NOT NULL,
+  y0 REAL NOT NULL,
+  x1 REAL NOT NULL,
+  y1 REAL NOT NULL,
+  label INTEGER NOT NULL,
+  slide INTEGER NOT NULL,
+  task INTEGER NOT NULL,
+  meta_id INTEGER NOT NULL,
+  have_patch BOOLEAN DEFAULT FALSE NOT NULL,
+  FOREIGN KEY (label) REFERENCES label(id),
+  FOREIGN KEY (slide) REFERENCES slide(id),
+  FOREIGN KEY (task) REFERENCES task(id),
+  FOREIGN KEY (meta_id) REFERENCES edit_meta(id)
+);
+
+DROP TABLE IF EXISTS project_labelset;
+CREATE TABLE project_labelset (
+  project TEXT NOT NULL,
+  labelset_name TEXT NOT NULL,
+  labelset_id INT NOT NULL,
+  PRIMARY KEY(project,labelset_name),
+  FOREIGN KEY(project) REFERENCES project(id),
+  FOREIGN KEY(labelset_name) REFERENCES labelset(name),
+  FOREIGN KEY(labelset_id) REFERENCES labelset(id)
+);
+
+DROP TABLE IF EXISTS sampling_roi;
+CREATE TABLE sampling_roi (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  x0 REAL NOT NULL,
+  y0 REAL NOT NULL,
+  x1 REAL NOT NULL,
+  y1 REAL NOT NULL,
+  label INTEGER NOT NULL,
+  slide INTEGER NOT NULL,
+  task INTEGER NOT NULL,
+  meta_id INTEGER NOT NULL,
+  json BLOB,
+  FOREIGN KEY (label) REFERENCES label(id),
+  FOREIGN KEY (slide) REFERENCES slide(id),
+  FOREIGN KEY (task) REFERENCES task(id),
+  FOREIGN KEY (meta_id) REFERENCES edit_meta(id)
+);

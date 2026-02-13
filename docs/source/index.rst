@@ -13,6 +13,7 @@ PICSL Histology Annotation Server
    About PHAS <about>
    Quick Start <quick_start>
    org_data_local
+   permissions
    gcs
    production
    upgrading

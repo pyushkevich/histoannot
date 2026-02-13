@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block header %}
+  {% block title %}PICSL Histology Archive{% endblock %}
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h1>About PICSL Histology Annotation Server</h1>
+  
+  <p class="lead">
+    PHAS (PICSL Histology Annotation Server) is a web-based platform for viewing, annotating, 
+    and analyzing large-scale histology slide images.
+  </p>
+  
+  <h2>Key Features</h2>
+  <ul>
+    <li><strong>High-Resolution Viewing:</strong> Seamlessly navigate whole-slide images using OpenSeadragon's deep zoom technology</li>
+    <li><strong>Annotation Tools:</strong> Create and manage annotations on histology slides</li>
+    <li><strong>Deep Learning Integration:</strong> Support for segmentation and classification workflows</li>
+    <li><strong>Project Management:</strong> Organize slides into projects with user access control</li>
+    <li><strong>Cloud Storage:</strong> Integration with Google Cloud Storage for scalable data management</li>
+  </ul>
+  
+  <h2>Technology</h2>
+  <p>
+    PHAS is built with Python Flask and leverages OpenSlide for efficient processing of 
+    whole-slide imaging formats. The platform supports distributed processing and 
+    collaborative workflows for histology research.
+  </p>
+</div></p>
+{% endblock %}

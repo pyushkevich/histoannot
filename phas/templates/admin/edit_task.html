@@ -1,0 +1,263 @@
+{% extends 'base.html' %}
+
+{% block header %}
+  {% block title %}{% if existing %}Task {{task_id}} Properties {% else %} Create New Task {% endif %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+<!-- among the usual imports, import tagify for showing tags -->
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-ui/jquery-ui.css') }}">
+<link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-3.6.4.min.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='jquery-ui/jquery-ui.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+<script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.polyfills.min.js"></script>
+
+<style>
+.pure-form input[type="text"] {
+    height: 2.25em;
+}
+
+.tagified input {
+    border-radius: 9px;
+}
+</style>
+
+<div>
+<form method="post" class="pure-form pure-form-stacked">
+    <fieldset>
+    <div class="pure-g" style="max-width: 1024px;">
+        <div class="pure-u-1 pure-u-md-11-24">
+          <label for="name">Task Name:</label>
+          <input name="name" class="pure-u-24-24" type="text" id="name" value="{{ d.get('name','') }}" required>
+        </div>
+        <div class="pure-u-1 pure-u-md-2-24"></div>
+        <div class="pure-u-1 pure-u-md-11-24">
+          <label for="mode">Mode:</label>
+          <select name="mode" id="mode" class="pure-u-24-24 freeze-existing" title="The type of task. Task modes include browsing, anatomical annotation, deep learning classifier training, and sampling ROI placement">
+            <option value="annot" {% if d.get('mode') == 'annot' %}selected{% endif %}>Anatomy Annotation</option>
+            <option value="dltrain" {% if d.get('mode') == 'dltrain' %}selected{% endif %}>DL Classifier Training</option>
+            <option value="browse" {% if d.get('mode') == 'browse' %}selected{% endif %}>Browse</option>
+            <option value="sampling" {% if d.get('mode') == 'sampling' %}selected{% endif %}>Sampling ROI Placement</option>
+          </select>
+        </div>
+
+        <div class="pure-u-1">
+          <label for="desc">Description:</label>
+          <textarea name="desc" id="desc" class="pure-u-24-24" rows="3">{{ d.get('desc','') }}</textarea>
+        </div>
+
+        <div class="pure-u-1 pure-u-md-7-24">
+          <label for="reference-task">Reference Task:</label>
+          <select name="reference-task" id="reference-task" class="pure-u-24-24" title="The name of a task to use as a reference for this task (e.g., to display annotations as overlays).">            
+          </select>
+        </div>
+        <div class="pure-u-1 pure-u-md-2-24"></div>
+        <div class="pure-u-1 pure-u-md-7-24">
+          <label for="reference-task">Access Control:</label>
+          <select name="restrict-access" id="restrict-access" class="pure-u-24-24" value="{{'on' if d.get('restrict-access') else 'off'}}"
+                  title="Whether access is managed at the task level or inherited from project-level access level">
+                  <option value="off" {% if not d.get('restrict-access') %}selected{% endif %}>Inherit from project</option>
+                  <option value="on" {% if d.get('restrict-access') %}selected{% endif %}>Task-specific access</option>
+          </select>
+        </div>
+        <div class="pure-u-1 pure-u-md-2-24"></div>
+        <div class="pure-u-1 pure-u-md-6-24">
+          <label for="download-size-limit">Download size restriction:</label>
+          <input id="download-slide-size-limit" type="number" name="download-slide-size-limit" class="minus-one-for-none"
+                 value="{{ d.get('download-slide-size-limit',-1) }}"
+                 title="Maximum dimensions of the slide that users are allowed to download. Leave blank for no restriction.">
+        </div>
+
+        <div class="pure-u-1 pure-u-md-7-24 if-labelset">
+          <label for="labelset">Label Set:</label>
+          <select name="labelset" id="labelset" class="pure-u-24-24 freeze-existing" title="Labelset to use for this task">
+            <option value="" {% if not d.get('labelset') %}selected{% endif %}>(None)</option>
+            {% for labelset in labelsets %}
+              {% if labelset_id == labelset['id'] %}
+                <option value="{{ labelset['id'] }}" selected>{{ labelset['name'] }}</option>
+              {% else %}
+                  <option value="{{ labelset['id'] }}">{{ labelset['name'] }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="pure-u-1 pure-u-md-2-24 if-labelset"></div>
+        <div class="pure-u-1 pure-u-md-4-24 if-dltrain">
+          <label for="dltrain-min-size">Min Size:</label>
+          <input id="dltrain-min-size" type="number" name="dltrain-min-size" class="freeze-existing minus-one-for-none"
+                 value="{{ d.get('dltrain',{}).get('min-size',-1) }}"
+                 title="Smallest allowed size of the training rectangle.">
+        </div>
+        <div class="pure-u-1 pure-u-md-1-24 if-labelset"></div>
+        <div class="pure-u-1 pure-u-md-4-24 if-dltrain">
+          <label for="dltrain-max-size">Max Size:</label>
+          <input id="dltrain-max-size" type="number" name="dltrain-max-size" class="freeze-existing minus-one-for-none"
+                 value="{{ d.get('dltrain',{}).get('max-size',-1) }}"
+                 title="Largest allowed size of the training rectangle.">
+        </div>
+        <div class="pure-u-1 pure-u-md-1-24 if-labelset"></div>
+        <div class="pure-u-1 pure-u-md-5-24 if-dltrain">
+          <label for="dltrain-display-size">Display Patch Size:</label>
+          <input id="dltrain-display-size" type="number" name="dltrain-display-size" class="freeze-existing minus-one-for-none"
+                 value="{{ d.get('dltrain',{}).get('display-patch-size',-1) }}"
+                 title="Size of the patch that is sampled for display in the UI.">
+        </div>
+
+        <div class="pure-u-1" title="If specified, only slides with at least one of the listed stains will be included in the task.">
+          <label for="stains">Stain Filter:</label>
+          <input name="stains" class="pure-u-24-24 tagified" type="text" id="stains" value="{{ d.get('stains', []) | join(', ') }}">
+        </div>
+
+        <div class="pure-u-1">
+          <label>Tag Filter:</label>
+        </div>
+        <div class="pure-u-1 pure-u-md-8-24" title="If specified, only slides with at least one of the listed tags will be included in the task.">
+          <label for="tags_any">Any:</label>
+          <input name="tags_any" class="pure-u-24-24 tagified" type="text" id="tags_any" value="{{ d.get('tags', {}).get('any', []) | join(', ') }}">
+        </div>
+        <div class="pure-u-1 pure-u-md-1-24"></div>
+        <div class="pure-u-1 pure-u-md-7-24" title="If specified, only slides with all of the listed tags will be included in the task.">
+          <label for="tags_all">All:</label>
+          <input name="tags_all" class="pure-u-24-24 tagified" type="text" id="tags_all" value="{{ d.get('tags', {}).get('all', []) | join(', ') }}">
+        </div>
+        <div class="pure-u-1 pure-u-md-1-24"></div>
+        <div class="pure-u-1 pure-u-md-7-24" title="If specified, slides with any of the listed tags will be excluded from the task.">
+          <label for="tags_not">Not:</label>
+          <input name="tags_not" class="pure-u-24-24 tagified" type="text" id="tags_not" value="{{ d.get('tags', {}).get('not', []) | join(', ') }}">
+        </div>
+
+        <div class="pure-u-1" title="If specified, only slides from the listed specimens will be included in the task.">
+          <label for="specimens">Specimen Filter:</label>
+          <input name="specimens" class="pure-u-24-24 tagified" type="text" id="specimens" value="{{ d.get('specimens', []) | join(', ') }}">
+        </div>
+
+        <div class="pure-u-1" style="margin-top: 1.5em;">
+          <button type="submit" class="pure-button pure-button-primary">Save Changes</button>
+          {% if existing %}
+          <button class="pure-button" id="btn-go-to-task">Go to Task</button>
+          {% endif %}
+        </div>
+  
+    </div>
+    </fieldset>
+</form>
+</div>
+
+<script type="text/javascript" charset="utf8">
+$(document).ready(function() {
+
+  // Read the candidate reference tasks from the server-rendered data
+  var candidate_reference_tasks = JSON.parse('{{ candidate_reference_tasks | tojson | safe}}');
+  var current_reference_task_name = '{{ d.get("reference-task","") }}';
+  var labelsets = JSON.parse('{{ labelsets | tojson | safe }}');
+  var existing = {{ 'true' if existing else 'false' }};
+
+  // Handle form submission via AJAX
+  $('form').on('submit', function(e) {
+    e.preventDefault();
+    
+    var formData = new FormData(this);
+    
+    $.ajax({
+      url: $(this).attr('action') || window.location.href,
+      type: 'POST',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: function(response) {
+        // Read task_id from the response json
+        var task_id = response['task_id'];
+
+        // Redirect to the edit page for the created/edited task
+        var edit_url = '{{ url_for(".admin_edit_task", project=project, task_id=999999) }}'.replace('999999', task_id);
+        window.location.href = edit_url;
+      },
+      error: function(xhr, status, error) {
+        // Show error message to the user
+        console.log(xhr);
+        console.log(status);
+        console.log(error);
+        alert('Error submitting form: ' + xhr.responseJSON.error);
+      }
+    });
+  });
+
+  // If the "Go to Task" button exists, add a click handler to redirect to the task page
+  $('#btn-go-to-task').on('click', function(e) {
+    e.preventDefault();
+    var task_url = '{{ url_for("slide.task_detail", project=project, task_id=999999) }}'.replace('999999', "{{ task_id if task_id else 'null' }}");
+    window.location.href = task_url;
+  });
+  
+  $('.tagified').each(function() {
+    new Tagify(this);
+  });
+
+  $('.freeze-existing').each(function() {
+    if(existing) {
+      $(this).prop('disabled', true);
+    }
+  });
+
+
+  $( document ).tooltip();
+
+  // Function to initialize the reference task select based on the current mode
+  let update_reference_task_select = function(mode) {
+    var reference_task_select = $('#reference-task');
+    reference_task_select.empty();
+    reference_task_select.append($('<option>', { value: '', text: '(None)' }));
+    candidate_reference_tasks.forEach(function(task) {
+      if (task.mode == mode) {
+        reference_task_select.append($('<option>', { value: task.name, text: task.name }));
+        if (task.name == current_reference_task_name) 
+          reference_task_select.val(task.name);            
+      }
+    });
+  };
+
+  // Function to update the visibility of labelset-related inputs based on the current mode
+  let update_labelset_related_inputs = function(mode) {
+    if (mode == 'dltrain') {
+      $('.if-dltrain').show();
+      $('.if-labelset').show();
+    } else if (mode == 'sampling') {
+      $('.if-dltrain').hide();
+      $('.if-labelset').show();      
+    } else {
+      $('.if-dltrain').hide();
+      $('.if-labelset').hide();
+    }
+  };
+
+  // Handle all updates when mode changes
+  let handle_mode_change = function() {
+    var mode = $(this).val();
+    update_reference_task_select(mode)
+    update_labelset_related_inputs(mode);
+  };
+
+  // Add a handler for change events on the mode select to show/hide the reference task input
+  $('#mode').on('change', handle_mode_change);
+
+  // We also want the hadler to run on page load to initialize the reference task select
+  $('#mode').trigger('change');
+
+  // Special handler for negative values in numerical inputs
+  let enforce_minus_one_for_one = function() {
+    var input = $(this);  
+    if(parseInt(input.val()) < 0) {
+      input.val('');
+    }
+  };
+
+  $('.minus-one-for-none').on('change', enforce_minus_one_for_one);
+  $('.minus-one-for-none').trigger('change');
+
+});
+
+</script>
+
+{% endblock %}
+

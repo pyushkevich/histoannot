@@ -413,17 +413,18 @@ class Slide:
             # Break the image region into tiles
             full_image = None
             tiles_x, tiles_y = np.arange(0, size[0], tile_size), np.arange(0, size[1], tile_size)
+            scale = self.level_downsamples[level]
             for x in tiles_x:
                 w = np.minimum(size[0] - x, tile_size)
-                cx = center[0] + x - 0.5 * (size[0] - w)
+                cx = center[0] + scale * (x - 0.5 * (size[0] - w))
                 for y in tiles_y:
                     h = np.minimum(size[1] - y, tile_size)
-                    cy = center[1] + y - 0.5 * (size[1] - h)
+                    cy = center[1] + scale * (y - 0.5 * (size[1] - h))
                     r = self.client._get('dzi', get_patch_endpoint, 
                                  project=self.project, slide_id=self.slide_id, resource='raw',
                                  level=level, ctrx=cx, ctry=cy, w=w, h=h, format='png')
                     tile = Image.open(BytesIO(r.content))
-                    print(f'Requesting region {cx-w/2,cy-w/2,w,h} from image, tile {tile} pasting at {x,y}')
+                    print(f'Requesting region with center {cx, cy} size {w,h} from image, tile {tile} pasting at {x,y}')
                     if full_image is None:
                         full_image = Image.new(tile.mode, (size[0], size[1]))
                     full_image.paste(tile, (x, y))

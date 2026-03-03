@@ -812,7 +812,7 @@ def load_slide_into_cache(slide_id, sr, resource, socket_addr_list):
 
 # Discover GeoJSON overlays (e.g., contours) in the same directory as .svs
 def get_geojson_overlays(sr, slide_id, task_id):
-    """Find GeoJSON files matching {slide_name}_*.geojson pattern."""
+    """Find GeoJSON files matching {slide_name}_boundaries.geojson pattern."""
     import glob
     overlays = {}
     try:
@@ -822,7 +822,7 @@ def get_geojson_overlays(sr, slide_id, task_id):
             base_path = base_path[:-4]  # Remove .svs extension
         
         # Search for matching GeoJSON files
-        pattern = base_path + '_*.geojson'
+        pattern = base_path + '_boundaries.geojson'
         for geojson_file in glob.glob(pattern):
             overlay_name = os.path.basename(geojson_file).replace('.geojson', '')
             overlays[overlay_name] = {

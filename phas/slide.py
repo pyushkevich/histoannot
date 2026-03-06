@@ -812,22 +812,14 @@ def load_slide_into_cache(slide_id, sr, resource, socket_addr_list):
 
 # Discover GeoJSON overlays (e.g., contours) in the same directory as .svs
 def get_geojson_overlays(sr, slide_id, task_id):
-    """Find GeoJSON files matching {slide_name}_boundaries.geojson pattern."""
-    import glob
+    """Find GeoJSON contour overlays from neuseg_contour resource schema."""
     overlays = {}
     try:
-        # Get base path (histo_raw directory)
-        base_path = sr.get_resource_url('raw', True)  # Local file path
-        if base_path.endswith('.svs'):
-            base_path = base_path[:-4]  # Remove .svs extension
-        
-        # Search for matching GeoJSON files
-        pattern = base_path + '_boundaries.geojson'
-        for geojson_file in glob.glob(pattern):
-            overlay_name = os.path.basename(geojson_file).replace('.geojson', '')
-            overlays[overlay_name] = {
-                'name': overlay_name,
-                'url': url_for('slide.api_get_geojson_overlay', task_id=task_id, slide_id=slide_id, overlay_name=overlay_name)
+        contour_path = sr.get_resource_url('neuseg_contour', True)
+        if contour_path and os.path.exists(contour_path):
+            overlays['neuseg_contour'] = {
+                'name': 'GM/WM Contour',
+                'url': url_for('slide.api_get_geojson_overlay', task_id=task_id, slide_id=slide_id, overlay_name='neuseg_contour')
             }
     except:
         pass
@@ -836,28 +828,19 @@ def get_geojson_overlays(sr, slide_id, task_id):
 
 # Discover nuclei morphometric heatmaps in the same directory as .svs
 def resolve_nuclei_heatmap_path(sr, kind):
-    import glob
-    suffix_map = {
-        'density': '_soma_density_heatmap.png',
-        'size': '_soma_size_heatmap.png'
+    resource_map = {
+        'density': 'neuseg_density',
+        'size': 'neuseg_size'
     }
-    if kind not in suffix_map:
+    if kind not in resource_map:
         return None
 
-    base_path = sr.get_resource_url('raw', True)
-    base_root, _ = os.path.splitext(base_path)
-    suffix = suffix_map[kind]
-
-    # Prefer exact basename match with the raw slide.
-    direct_match = base_root + suffix
-    if os.path.exists(direct_match):
-        return direct_match
-
-    # Fallback: scan the slide directory for same suffix.
-    dir_path = os.path.dirname(base_path)
-    matches = sorted(glob.glob(os.path.join(dir_path, '*' + suffix)))
-    if matches:
-        return matches[0]
+    try:
+        f_neuseg = sr.get_resource_url(resource_map[kind], True)
+        if f_neuseg and os.path.exists(f_neuseg):
+            return f_neuseg
+    except:
+        pass
     return None
 
 
@@ -1396,13 +1379,13 @@ class PILBytesIO(BytesIO):
 @access_task_slide_read()
 def api_get_geojson_overlay(task_id, slide_id, overlay_name):
     _,_,sr = get_project_task_slide_ref(task_id, slide_id)
-    
-    # Construct GeoJSON file path
-    base_path = sr.get_resource_url('raw', True)
-    dir_path = os.path.dirname(base_path)
-    geojson_path = os.path.join(dir_path, overlay_name + '.geojson')
-    
-    if os.path.exists(geojson_path):
+
+    if overlay_name != 'neuseg_contour':
+        abort(404, f'Unsupported GeoJSON overlay: {overlay_name}')
+
+    geojson_path = sr.get_resource_url('neuseg_contour', True)
+
+    if geojson_path and os.path.exists(geojson_path):
         with open(geojson_path, 'r') as f:
             return Response(f.read(), mimetype='application/json')
     else:

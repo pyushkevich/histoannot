@@ -770,7 +770,12 @@ $(document).ready(function()
         // Handle markers
         let markers = paper.project.getItems({class: paper.PointText});
         for (let i = 0; i < markers.length; i++) {
-            markers[i].style.fontSize = get_width_in_canvas_units(10);
+            if(markers[i].data && markers[i].data.edge_measure) {
+                // Edge-measure labels should shrink as zoom increases.
+                markers[i].style.fontSize = zoom_paperjs_scaling_fn(8, 0, paperZoom);
+            } else {
+                markers[i].style.fontSize = get_width_in_canvas_units(10);
+            }
             markers[i].style.leading = markers[i].style.fontSize * 1.2;
         }
 
@@ -838,6 +843,11 @@ $(document).ready(function()
     };
 
     var mpp = parseFloat("{{ spacing[0] }}");
+    if(!Number.isFinite(mpp) || mpp <= 0) mpp = 0;
+    var mpp_x = parseFloat("{{ spacing[0] }}");
+    var mpp_y = parseFloat("{{ spacing[1] }}");
+    if(!Number.isFinite(mpp_x) || mpp_x <= 0) mpp_x = mpp;
+    if(!Number.isFinite(mpp_y) || mpp_y <= 0) mpp_y = mpp;
     viewer.scalebar({
         pixelsPerMeter: mpp ? (1e3 / mpp) : 0,
 	    location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
@@ -2163,6 +2173,12 @@ $(document).ready(function()
         // A paper path object representing the line from the last vertex to the mouse cursor
         moving_edge = null;
 
+        // A floating text showing the current in-progress edge length
+        moving_edge_label = null;
+
+        // Labels for committed polygon edges during drawing
+        edge_labels = [];
+
         // The API that handles server communication, etc
         constructor(sroi_api) {
             this.sroi_api = sroi_api;
@@ -2178,6 +2194,62 @@ $(document).ready(function()
             let d = x_start.getDistance(x);
             let d_max = zoom_paperjs_scaling_fn(dist_screen, 0, get_image_zoomlevel());
             return (d <= d_max);
+        }
+
+        // Edge length in micrometers
+        edge_length_um(p0, p1) {
+            let dx_mm = (p1.x - p0.x) * mpp_x;
+            let dy_mm = (p1.y - p0.y) * mpp_y;
+            return 1000.0 * Math.sqrt(dx_mm * dx_mm + dy_mm * dy_mm);
+        }
+
+        // Place the label slightly "above" edge and keep offset visually stable while zooming.
+        edge_label_pos(p0, p1) {
+            let dx = p1.x - p0.x;
+            let dy = p1.y - p0.y;
+            let L = Math.sqrt(dx * dx + dy * dy);
+            let mid = new paper.Point((p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
+            if(L < 1e-6) return mid;
+            let nx = -dy / L;
+            let ny = dx / L;
+            let off = zoom_paperjs_scaling_fn(14, 0, get_image_zoomlevel());
+            return new paper.Point(mid.x + nx * off, mid.y + ny * off);
+        }
+
+        edge_length_text(p0, p1) {
+            let um = this.edge_length_um(p0, p1);
+            if(!Number.isFinite(um) || um <= 0) return "n/a µm";
+            return `${um.toFixed(1)} µm`;
+        }
+
+        create_edge_label() {
+            let lbl = new paper.PointText(new paper.Point(0, 0));
+            lbl.style = {
+                fillColor: 'black',
+                fontWeight: 'bold',
+                fontSize: zoom_paperjs_scaling_fn(17, 0, get_image_zoomlevel()),
+                justification: 'center'
+            };
+            lbl.locked = true;
+            lbl.data.edge_measure = true;
+            return lbl;
+        }
+
+        set_edge_label(lbl, p0, p1) {
+            // Keep label size responsive to current zoom while drawing.
+            lbl.style.fontSize = zoom_paperjs_scaling_fn(17, 0, get_image_zoomlevel());
+            lbl.style.leading = lbl.style.fontSize * 1.2;
+            lbl.point = this.edge_label_pos(p0, p1);
+            lbl.content = this.edge_length_text(p0, p1);
+        }
+
+        clear_edge_labels() {
+            if(this.moving_edge_label) {
+                this.moving_edge_label.remove();
+                this.moving_edge_label = null;
+            }
+            this.edge_labels.forEach(function(lbl) { lbl.remove(); });
+            this.edge_labels = [];
         }
 
         // Press event handler
@@ -2196,11 +2268,16 @@ $(document).ready(function()
                 let dspc = zoom_paperjs_scaling_fn(5, 0, get_image_zoomlevel());
                 this.moving_edge.dashArray = [dspc, dspc];
                 set_paperjs_item_strokewidth(this.moving_edge, 2);
+                this.moving_edge_label = this.create_edge_label();
+                this.set_edge_label(this.moving_edge_label, x, x);
             } 
             else {
                 let p = this.curr_polygon.polygon;
                 if(p.segments.length > 2 && this.check_snap_to_closing(x, 10)) {
                     // Path is completed
+                    this.set_edge_label(this.moving_edge_label, p.lastSegment.point, p.firstSegment.point);
+                    this.edge_labels.push(this.moving_edge_label);
+                    this.moving_edge_label = null;
                     p.add(p.firstSegment.point);
 
                     // Send path to server
@@ -2211,14 +2288,19 @@ $(document).ready(function()
                     // Reset to initial state
                     this.moving_edge.remove(); 
                     this.moving_edge = null;
+                    this.clear_edge_labels();
                     this.curr_polygon = null;
 
                     // Reset mode to zoom/pan
                     update_current_mode('NAV');
                 } else {
+                    this.set_edge_label(this.moving_edge_label, p.lastSegment.point, x);
+                    this.edge_labels.push(this.moving_edge_label);
+                    this.moving_edge_label = this.create_edge_label();
                     p.add(x);
                     this.moving_edge.segments[0].point = x;
                     this.moving_edge.segments[1].point = x;
+                    this.set_edge_label(this.moving_edge_label, x, x);
                 }                
             }
 
@@ -2239,6 +2321,13 @@ $(document).ready(function()
                     }
                     else {
                         this.moving_edge.strokeColor = 'black';
+                    }
+                    if(this.moving_edge_label) {
+                        this.set_edge_label(
+                            this.moving_edge_label,
+                            this.moving_edge.segments[0].point,
+                            this.moving_edge.segments[1].point
+                        );
                     }
                     paper.view.draw();
                 }

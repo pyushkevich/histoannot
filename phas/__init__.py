@@ -16,6 +16,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import os
+import sys
 from flask import Flask, request, current_app
 from flask_pure import Pure
 from .common import cache
@@ -29,7 +30,12 @@ from . import project_cli
 from . import admin
 import click
 from flask.cli import with_appcontext
+import importlib.util
 
+def is_running_under_uwsgi():
+    """Checks if the application is running in a uWSGI environment."""
+    # Check if 'uwsgi' is in the list of loaded modules
+    return 'uwsgi' in sys.modules 
 
 # Common configuration code
 def create_app(test_config = None):
@@ -55,7 +61,7 @@ def create_app(test_config = None):
 
     # Create an configure a cache
     uwsgi_cache_name = app.config.get('HISTOANNOT_UWSGI_CACHE_NAME', None)
-    if uwsgi_cache_name is not None:
+    if uwsgi_cache_name is not None and is_running_under_uwsgi():
         print(f"#### USING UWSGI CACHE {uwsgi_cache_name} ####")
         cache_config = {'CACHE_TYPE': 'UWSGICache', 
                         'CACHE_UWSGI_NAME': f'{uwsgi_cache_name}'}

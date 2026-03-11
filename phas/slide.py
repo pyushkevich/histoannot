@@ -404,9 +404,13 @@ def task_all_slides(task_id):
     # Get the current task data
     project,task = get_task_data(task_id)
     pr = ProjectRef(project)
+    
+    # Check if we have access to PHI for this task
+    anon = check_anon(project)
+    
     return render_template('slide/task_slide_listing.html',
                            project=project, project_name=pr.disp_name,
-                           task=task, task_id=task_id)
+                           task=task, task_id=task_id, anon=anon)
 
 
 
@@ -650,7 +654,8 @@ def task_slide_listing(task_id):
 
     # Run the main query
     slides = db.execute(
-        f"""SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain 
+        f"""SELECT S.id, S.specimen_display, S.block_name, S.section, S.slide, S.stain, 
+                   CASE WHEN slide_name IS NOT NULL THEN concat(slide_name,".",slide_ext) else NULL END AS filename
             FROM {tsi_view} S
             WHERE S.task_id = ? {search_clause}
             ORDER BY {(order_column+1):d} {order_dir} LIMIT {paging_start:d},{paging_length:d}""", 

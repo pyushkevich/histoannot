@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='pure/layouts/marketing.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='ellipsis_button.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='toggle_checkbox.css') }}">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css">
   <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='ellipsis_button.js') }}"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
@@ -31,14 +31,14 @@
       <a class="pure-menu-heading" href="/" style="padding-left:0px">
         <img src="{{ url_for('static', filename='icons/microscope_icon_40.png') }}"
              alt="Microscope icon" style="vertical-align:middle"></img>
-        PICSL Histology Annotator
+        {{ config.CUSTOM_SITE_HEADING | default("PICSL Histology Annotator") }}
       </a>
       <!-- Add a toggle button to the left of the next menu item -->
       
       <ul class="pure-menu-list" style="position:absolute; top:50%; left:100%; transform: translate(-100%,-50%);">
         {% if g.user %}
           <li class="pure-menu-item pure-menu-has-children pure-menu-allow-hover">
-            <a href="#" class="pure-menu-link">{{ g.user['username'] }}</a>
+            <a href="#" class="pure-menu-link">{{ g.user['display_name'] }}</a>
             <ul class="pure-menu-children" style="background-color: rgb(250, 250, 255);">
                 <li class="pure-menu-item">
                     <a href="{{ url_for('auth.edit_user_profile') }}" class="pure-menu-link">Account Settings ...</a>
@@ -71,6 +71,7 @@
         {% else %}
           <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('auth.login') }}">Sign In</a>
         {% endif %}
+          <li class="pure-menu-item"><a class="pure-menu-link" href="{{ url_for('frontend.about') }}">About</a>
       </ul>
     </div>
 

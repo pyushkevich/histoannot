@@ -298,10 +298,14 @@ class ProjectRef:
         # Get the local file and remote blob
         f_local = self.get_resource_url(resource, d, True)
         f_remote = self.get_resource_url(resource, d, False)
+        if f_local is None or f_remote is None:
+            return 1.0
 
         # Get remote size
         sz_local = os.stat(f_local).st_size if os.path.exists(f_local) else 0
         sz_remote = self._url_handler.get_size(f_remote)
+        if sz_local is None or sz_remote is None:
+            return 1.0
 
         # Get the ratio
         return sz_local * 1.0 / sz_remote
@@ -316,15 +320,14 @@ class ProjectRef:
         return rc['id'] if rc is not None else None
 
     def user_set_access_level(self, user, access_level, anon_permission=0, api_permission=0):
-        """Provide access to a user with level (none,read,write,admin) """
+        """Provide access to a user with level (none,read,write,admin) 
+        
+        Project-level access acts as a wildcard for tasks without specific access restrictions.
+        Task-level access can be higher than project-level access when a task has restrict_access enabled.
+        """
         db=get_db()
         if access_level is not None and not AccessLevel.is_valid(access_level):
             raise ValueError("Invalid access level %s" % access_level)
-
-        # Get the list of tasks in this project with access for this user
-        rc1 = db.execute('SELECT TA.* FROM task_info TI '
-                         '  LEFT JOIN task_access TA on TI.id = TA.task '
-                         'WHERE TI.project=? and TA.user=?', (self.name, user))
         
         # Update the access level and permissions
         row = db.execute('SELECT * FROM project_access WHERE user=? AND project=?', (user, self.name)).fetchone()        
@@ -340,14 +343,6 @@ class ProjectRef:
                         access_level if access_level is not None else row['access'],
                         anon_permission if anon_permission >= 0 else row['anon_permission'],
                         api_permission if api_permission >= 0 else row['api_permission']))
-            
-        # For each task, make sure its access level is <= that of the project access level
-        if access_level is not None:
-            for row in rc1.fetchall():
-                if AccessLevel.to_int(row['access']) > AccessLevel.to_int(access_level):
-                    print("Lowering access ", access_level, row['task'], user)
-                    db.execute('UPDATE task_access SET access=? WHERE task=? and user=?',
-                            (access_level, row['task'], user))
 
         db.commit()
 
@@ -358,7 +353,12 @@ class ProjectRef:
         return [ int(x['id']) for x in rc.fetchall() ]
 
     def user_set_task_access_level(self, task, user, access_level, increase_only=False):
-        """Provide access to a user with level (none,read,write,admin) """
+        """Provide access to a user with level (none,read,write,admin)
+        
+        Task-level access can be set independently of project-level access.
+        When a task has restrict_access enabled, the task-level access takes precedence.
+        If the user has no project access record, one will be created with 'none' access.
+        """
         if not AccessLevel.is_valid(access_level):
             raise ValueError("Invalid access level %s" % access_level)
 
@@ -380,17 +380,12 @@ class ProjectRef:
         db.execute('INSERT OR REPLACE INTO task_access (user,task,access) VALUES (?,?,?)',
                    (user, task, access_level))
 
-        # Make sure the project access is at least as high as the task access
+        # Ensure the user has a project access record (with 'none' if not present)
         row = db.execute('SELECT * FROM project_access WHERE project=? AND user=?',
                          (self.name, user)).fetchone()
         if row is None:
             db.execute('INSERT INTO project_access (user,project,access,anon_permission,api_permission) VALUES (?,?,?,0,0)',
-                       (user, self.name, access_level))
-        else:
-            val_project = AccessLevel.to_int(row['access'])
-            if val_project < val_new:
-                db.execute('UPDATE project_access SET access=? WHERE project=? AND user=?',
-                        (access_level, self.name, user))
+                       (user, self.name, "none"))
 
         # Commit
         db.commit()
@@ -401,7 +396,65 @@ class ProjectRef:
             self.user_set_task_access_level(t, user, access_level)
 
 
+class TaskRef:
+    """
+    This class represents a reference to a task within a project.
+    It wraps a ProjectRef and provides task-specific functionality.
+    """
 
+    def __init__(self, task_id):
+        self.id = task_id
+        db = get_db()
+
+        rc = db.execute('SELECT * FROM task_info WHERE id = ?', (task_id,)).fetchone()
+        if rc is None:
+            raise ValueError("Task %d not found" % (task_id,))
+        self.project = rc['project']
+        self.name = rc['name']
+        self.restrict_access = rc['restrict_access']
+        self.anonymize = rc['anonymize']
+        self.data = json.loads(rc['json'])
+        self.referenced_task = rc['referenced_task']
+        
+    # Property to access the task mode
+    @property
+    def mode(self) -> str:
+        return self.data.get('mode', None)
+    
+    # Whether the task is read-only
+    @property
+    def read_only(self) -> bool:
+        return self.mode == 'browse' or self.referenced_task is not None
+    
+    # Maximum download size allowed, or None if no limit
+    @property
+    def download_size_limit(self) -> int|None:
+        x = self.data.get('download-slide-size-limit', None)
+        if x is not None and x < 0:
+            x = None
+        return x
+    
+    # Name of the labelset used for this task, or None if not specified or relevant
+    @property
+    def labelset(self) -> str|None:
+        if self.mode == 'dltrain':
+            return self.data.get('dltrain', {}).get('labelset', None)
+        elif self.mode == 'sampling':
+            return self.data.get('sampling', {}).get('labelset', None)
+        else:
+            return None
+        
+    # Labelset id of the labelset used for this task, or None if not specified or relevant
+    @property
+    def labelset_id(self) -> int|None:
+        db = get_db()
+        labelset = self.labelset
+        if labelset is None:
+            return None
+        return db.execute('SELECT id FROM labelset_info WHERE name=? AND project=?', (labelset, self.project)).fetchone()['id']
+
+    def __str__(self):
+        return f"Task {self.id} in {self.project}"
 
 
 

@@ -17,21 +17,18 @@
 #
 from urllib.parse import urlparse
 
-from .project_ref import ProjectRef
+from .project_ref import ProjectRef, TaskRef
 from .db import get_db
 import os
 import json
 from flask import g, current_app
-
+from typing import Tuple
 
 
 
 # This class is used to describe a histology slide and associated data that resides in
 # a remote (cloud-based) location and may be cached locally
 class SlideRef:
-
-    # Project reference
-    _proj = None  # type: ProjectRef
 
     # Initialize a slide reference with a remote URL.
     # slide_info is a dict with fields specimen, block, slide_name, slide_ext
@@ -158,7 +155,7 @@ def get_slide_ref(slice_id, project=None):
 
     # Handle missing data
     if row is None:
-        return None
+        raise ValueError(f'Slide {slice_id} is not in the database')
 
     # Create a project reference
     if project is None:
@@ -168,3 +165,8 @@ def get_slide_ref(slice_id, project=None):
     return SlideRef(project, row['specimen_private'], row['block_name'], row['slide_name'], row['slide_ext'])
 
 
+def get_project_task_slide_ref(task_id:int, slide_id:int) -> tuple[ProjectRef, TaskRef, SlideRef]:
+    task = TaskRef(task_id)
+    pr = ProjectRef(task.project)
+    sr = get_slide_ref(slide_id, pr)
+    return pr, task, sr

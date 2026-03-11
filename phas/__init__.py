@@ -28,9 +28,16 @@ from . import dzi
 from . import delegate
 from . import project_cli
 from . import admin
+from . import frontend
 import click
 from flask.cli import with_appcontext
 import importlib.util
+from flask import before_render_template
+
+def debug_template_paths(sender, template, context, **extra):
+    # 'template' is the Jinja2 template object
+    # .filename is the absolute path on the disk
+    print(f"DEBUG: Rendering template '{template.name}' from path: {template.filename}")
 
 def is_running_under_uwsgi():
     """Checks if the application is running in a uWSGI environment."""
@@ -58,6 +65,9 @@ def create_app(test_config = None):
         os.makedirs(app.instance_path)
     except OSError:
         pass
+
+    # Connect the function to the signal
+    before_render_template.connect(debug_template_paths)
 
     # Create an configure a cache
     uwsgi_cache_name = app.config.get('HISTOANNOT_UWSGI_CACHE_NAME', None)
@@ -92,6 +102,9 @@ def create_app(test_config = None):
 
     # Project CLI commands
     project_cli.init_app(app)
+    
+    # Customizable front-end pages
+    app.register_blueprint(frontend.bp)
 
     # Auth blueprint
     app.register_blueprint(auth.bp)

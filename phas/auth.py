@@ -125,8 +125,6 @@ def load_logged_in_user():
         g.user = fetch_user_info(user_id, key='user_data')
         g.login_via_api_key = session.get('user_api_key', False)
         g.anonymize = session.get('anonymize', False)
-        if g.user is not None:
-            print(f'User {g.user["username"]} loaded, anonymize={g.anonymize}')
 
 
 def _login_required(view, site_admin=False):

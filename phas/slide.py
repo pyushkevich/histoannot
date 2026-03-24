@@ -803,7 +803,7 @@ def get_available_tasks_for_slide(project, slide_id):
     task_mode_dict = {}
     for row in rc.fetchall():
         task = json.loads(row['json'])
-        task_mode_dict[row['id']] = { k : task[k] for k in ('mode', 'name', 'desc') }
+        task_mode_dict[row['id']] = { k : task.get(k) for k in ('mode', 'name', 'desc') }
         
     return task_mode_dict
 

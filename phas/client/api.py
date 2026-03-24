@@ -191,7 +191,8 @@ class Task:
         
     def slide_manifest(self, specimen=None, block=None, 
                        section=None, slide=None, stain=None, 
-                       min_paths=None, min_markers=None, min_sroi=None):
+                       min_paths=None, min_markers=None, min_sroi=None,
+                       tags_any=None, tags_all=None, tags_none=None):
         """A detailed listing of the slides in the task.
         
         Args:
@@ -203,6 +204,9 @@ class Task:
             min_paths (int, optional): Only list slides with at least so many annotation paths
             min_markers (int, optional): Only list slides with at least so many annotation markers
             min_sroi (int, optional): Only list slides with at least so many sampling ROIs
+            tags_any (list of str, optional): Only list slides that have at least one of the tags in this list
+            tags_all (list of str, optional): Only list slides that have all the tags in this list
+            tags_none (list of str, optional): Only list slides that have none of the tags in this list
         Returns:
             A ``dict`` with slide details that can be passed to a pandas DataFrame constructor
         """
@@ -361,6 +365,7 @@ class Slide:
         self._header = None
         self._osl_header = None
         self._fullpath = None
+        self._tags = None
         
     def __str__(self):
         o = StringIO()
@@ -439,6 +444,11 @@ class Slide:
         if self._osl_header is None:
             self._osl_header = self.client._get('dzi', dzi_download_header, project=self.project, slide_id=self.slide_id, resource='raw').json()
         return self._osl_header
+    
+    def _get_tags(self):
+        if self._tags is None:
+            self._tags = self.client._get('slide', get_slide_tags, task_id=self.task_id, slide_id=self.slide_id).json()
+        return self._tags
         
     @property
     def dimensions(self):
@@ -502,6 +512,11 @@ class Slide:
     def slide_number(self):
         """Number of the slide within the section (int)"""
         return self.detail['slide']
+    
+    @property
+    def tags(self):
+        """List of tags associated with the slide. Tags are arbitrary strings that can be used to label slides and filter them when listing slides in a task."""
+        return self._get_tags()
 
 
 class SamplingROIPatchExtractor:

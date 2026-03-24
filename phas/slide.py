@@ -287,8 +287,10 @@ def task_slide_listing_csv(task_id):
 
 # Command to generate a slide listing in CSV format
 def generate_detailed_slide_listing(
-    task, specimen, block, section, slide, stain,
-    min_paths, min_markers, min_sroi, csv):    
+    task, specimen=None, block=None, section=None, slide=None, stain=None,
+    min_paths=None, min_markers=None, min_sroi=None, 
+    tags_any=None, tags_all=None, tags_none=None, 
+    csv=None):    
 
     # Create a DB view of slide details
     db=get_db()
@@ -304,16 +306,30 @@ def generate_detailed_slide_listing(
              ('n_paths >= ?', min_paths), 
              ('n_markers >= ?', min_markers),
              ('n_sampling_rois >= ?', min_sroi)]))
-
+    
+    # Handle tags_any
+    if tags_any is not None and len(tags_any) > 0:
+        qq = ','.join('?' for _ in tags_any)
+        w.append((f'EXISTS ( SELECT 1 FROM slide_tags T WHERE T.slide = V.id AND T.tag IN ({qq}) )', tags_any))
+        
+    if tags_all is not None and len(tags_all) > 0:
+        qq = ','.join('?' for _ in tags_all)
+        w.append((f'EXISTS ( SELECT 1 FROM slide_tags T WHERE T.slide = V.id AND T.tag IN ({qq}) GROUP BY T.slide HAVING COUNT(DISTINCT T.tag) = ? )', tags_all + [len(tags_all)]))
+        
+    if tags_none is not None and len(tags_none) > 0:
+        qq = ','.join('?' for _ in tags_none)
+        w.append((f'NOT EXISTS ( SELECT 1 FROM slide_tags T WHERE T.slide = V.id AND T.tag IN ({qq}) )', tags_none))
+        
     if len(w) > 0:
         w_sql,w_prm = zip(*w)
         w_clause = 'WHERE %s' % ' AND '.join(w_sql)
+        w_prm = tuple([item for sublist in w_prm for item in (sublist if isinstance(sublist, (list,tuple)) else [sublist])])
     else:
         w_clause = ''
         w_prm = ()
-
+        
     # Create a Pandas data frame
-    df = pandas.read_sql_query( "SELECT * FROM v_full %s" % w_clause, db, params=w_prm)
+    df = pandas.read_sql_query( "SELECT V.* FROM v_full V %s" % w_clause, db, params=w_prm)
 
     # Dump the database entries
     if csv is not None:
@@ -336,6 +352,17 @@ def task_get_slide_info(task_id, slide_id):
     return json.dumps(d)  
 
 
+# Get the tags assigned to a slide
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/tags', methods=('GET',))
+@access_task_slide_admin()
+@access_slide_admin(api=True, phi=True)
+def get_slide_tags(task_id, slide_id):
+    db = get_db()
+    rc = db.execute('SELECT tag FROM slide_tags WHERE slide=? AND external=1', (slide_id,)).fetchall()
+    tags = [row['tag'] for row in rc]
+    return json.dumps(tags)
+
+
 # Slide listing for a task - simple
 @bp.route('/api/task/<int:task_id>/slide_detailed_manifest.csv')
 @api_access_task_read
@@ -343,11 +370,15 @@ def get_slide_detailed_manifest(task_id:int):
 
     # Parameters to read from the request
     keys = ['specimen', 'block', 'section', 'slide', 'stain', 'min_paths', 'min_markers', 'min_sroi']
-    param: dict[str, int | str | None] = { k:None for k in keys }
+    param: dict[str, int | str | list[str] | None] = { }
     
     for k in keys:
         if k in request.args:
             param[k] = int(request.args[k]) if k.startswith('min_') else request.args[k]
+            
+    for k in ['tags_any', 'tags_all', 'tags_none']:
+        if k in request.args:
+            param[k] = request.args.getlist(k)
     
     # Call the main command
     out = StringIO()
@@ -1330,7 +1361,7 @@ def get_slide_thumbnail(task_id, slide_id):
         return resp
     else:
         abort(404)
-
+        
 
 # Serve up quick, locally cached thumbnails
 # TODO: need API keys!

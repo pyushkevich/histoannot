@@ -107,7 +107,7 @@ def fetch_user_info(user_id, key):
     if row:
         d = dict(row)
         d.pop('password', None)  # Remove password hash from user data
-        fn = d['fullname']
+        fn = d.get('fullname')
         d['display_name'] = fn if fn is not None and len(fn.strip()) > 0 else d['username']
         return d
     else:

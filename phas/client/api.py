@@ -159,7 +159,13 @@ class Labelset:
         self.labelset_id = labelset_id
         
     def label_listing(self):
-        r = self.client._get('dltrain', get_labelset_label_listing, 
+        """List all labels in this labelset.
+
+        Returns:
+            A ``list`` of dicts, each describing a label with fields such as ``id``, ``name``,
+            and ``color``.
+        """
+        r = self.client._get('dltrain', get_labelset_label_listing,
                              project = self.project, lset=self.labelset_id)
         return r.json()
 
@@ -529,15 +535,15 @@ class Slide:
         return o.getvalue()
     
     def thumbnail_nifti_image(self, filename:str=None, max_dim:int=1000):
-        """Generate a NIFTI image of the sampling ROIs on a slide.
-        
+        """Download a thumbnail of the slide as a NIfTI image.
+
         Args:
-            filename (str, optional): File where to save the image, if not specified ``bytes``
-                containing the image are returned
-            max_dim (int, optional): Maximum image dimension, defaults to 1000.
-        
+            filename (str, optional): File where to save the image. If not specified, raw
+                ``bytes`` containing the image are returned.
+            max_dim (int, optional): Maximum image dimension in pixels, defaults to 1000.
+
         Returns:
-            raw image data as ``bytes`` or None if filename provided
+            Raw image data as ``bytes``, or ``None`` if filename was provided.
         """
         r = self.client._get('dzi', dzi_download_nii_gz, 
                              project=self.project, slide_id=self.slide_id, resource='raw', downsample=max_dim)
@@ -612,17 +618,17 @@ class Slide:
     
     @property
     def level_dimensions(self):
-        """Slide pixel spacing in millimeters."""
+        """Pixel dimensions at each OpenSlide downsample level (list of (width, height) tuples)."""
         return self._get_openslide_header()['level_dimensions']
-    
+
     @property
     def level_downsamples(self):
-        """Slide pixel spacing in millimeters."""
+        """Downsample factor for each OpenSlide level relative to level 0 (list of float)."""
         return self._get_openslide_header()['level_downsamples']
-    
+
     @property
     def properties(self):
-        """Slide pixel spacing in millimeters."""
+        """OpenSlide properties dict for the slide (e.g. scanner metadata, MPP values)."""
         return self._get_openslide_header()['properties']
     
     # TODO: need to implement fine-grained permissions

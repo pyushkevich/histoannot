@@ -58,6 +58,99 @@
         margin: 0 5px 5px 5px;
         padding: 2px 0 2px 0;
         cursor: pointer;
+        display: inline-block;
+    }
+
+    button.geojson-toggle {
+        margin: 0 !important;
+        width: 100%;
+        box-sizing: border-box;
+        white-space: nowrap;
+        z-index: 1000;
+        position: static !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        display: inline-block !important;
+    }
+
+    .geojson-controls-stack {
+        position: fixed;
+        right: 10px;
+        bottom: 10px;
+        width: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+        z-index: 999;
+    }
+
+    .geojson-controls-stack .geojson-width-label {
+        font-weight: bold;
+        font-size: 14px;
+        background: white;
+        color: black;
+        padding: 5px 8px;
+        border-radius: 3px;
+        text-align: center;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .geojson-controls-stack .geojson-width-slider {
+        width: 100%;
+        vertical-align: middle;
+        margin: 0;
+    }
+
+    button.nuclei-toggle {
+        margin: 0 !important;
+        width: 100%;
+        box-sizing: border-box;
+        white-space: nowrap;
+    }
+
+    .nuclei-controls-stack {
+        position: fixed;
+        right: 10px;
+        bottom: 114px;
+        width: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+        z-index: 1001;
+    }
+
+    .nuclei-opacity-label {
+        font-weight: bold;
+        font-size: 14px;
+        background: white;
+        color: black;
+        padding: 5px 8px;
+        border-radius: 3px;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    .nuclei-opacity-slider {
+        width: 100%;
+        margin: 0;
+        vertical-align: middle;
+    }
+
+    .nuclei-checkboxes {
+        background: white;
+        border-radius: 3px;
+        padding: 6px 8px;
+        box-sizing: border-box;
+    }
+
+    .nuclei-checkboxes label {
+        display: block;
+        font-size: 12px;
+        margin: 4px 0;
+        color: black;
     }
 
     button.enabled {
@@ -625,6 +718,32 @@
     {% endif %}
 {% endif %}
 
+{# Nuclei Morphometric heatmap controls #}
+{% if nuclei_heatmap_overlays %}
+<div class="nuclei-controls-stack">
+    <label class="nuclei-opacity-label" for="nuclei-opacity-slider">Opacity: <span id="nuclei-opacity-value">60</span>%</label>
+    <input type="range" class="nuclei-opacity-slider" id="nuclei-opacity-slider" min="0" max="100" step="1" value="60">
+    <button id="nuclei-morphometric-toggle" class="bottom_button enabled nuclei-toggle">&nbsp Nuclei Morphometric (N) &nbsp</button>
+    <div class="nuclei-checkboxes">
+        <label><input type="checkbox" class="nuclei-overlay-choice" value="density" {% if 'density' in nuclei_heatmap_overlays %}checked{% else %}disabled{% endif %}> Nuclei Density</label>
+        <label><input type="checkbox" class="nuclei-overlay-choice" value="size" {% if 'size' in nuclei_heatmap_overlays and 'density' not in nuclei_heatmap_overlays %}checked{% endif %} {% if 'size' not in nuclei_heatmap_overlays %}disabled{% endif %}> Nuclei Size</label>
+    </div>
+</div>
+{% endif %}
+
+{# GeoJSON overlay toggles #}
+{% if geojson_overlays %}
+    {% for overlay_name, overlay_info in geojson_overlays.items() %}
+    <div class="geojson-controls-stack">
+        <span class="geojson-width-label">Width: <span id="width-value">30</span>px</span>
+        <input type="range" class="geojson-width-slider" id="geojson-width-slider" min="0" max="60" step="0.5" value="30" data-overlay="{{ overlay_name }}">
+        <button class="bottom_button enabled geojson-toggle" data-overlay="{{ overlay_name }}">&nbsp GM/WM Contour (C) &nbsp</button>
+    </div>
+    {% endfor %}
+{% else %}
+<!-- DEBUG: geojson_overlays is empty or not defined -->
+{% endif %}
+
 <div id="hovertooltip">Hover text goes here</div>
 
 <script type="text/javascript">
@@ -646,6 +765,7 @@ $(document).ready(function()
     const init_rotation = user_prefs.rotation || 0;
     const init_flip = user_prefs.flip || false;
     const overlays = {{overlays|tojson}};
+    const nuclei_heatmap_overlays = {{nuclei_heatmap_overlays|tojson}};
     const other_tasks_dict = {{other_tasks|tojson}};
 
     // Common URLs
@@ -731,7 +851,12 @@ $(document).ready(function()
         // Handle markers
         let markers = paper.project.getItems({class: paper.PointText});
         for (let i = 0; i < markers.length; i++) {
-            markers[i].style.fontSize = get_width_in_canvas_units(10);
+            if(markers[i].data && markers[i].data.edge_measure) {
+                // Edge-measure labels should shrink as zoom increases.
+                markers[i].style.fontSize = zoom_paperjs_scaling_fn(8, 0, paperZoom);
+            } else {
+                markers[i].style.fontSize = get_width_in_canvas_units(10);
+            }
             markers[i].style.leading = markers[i].style.fontSize * 1.2;
         }
 
@@ -799,6 +924,11 @@ $(document).ready(function()
     };
 
     var mpp = parseFloat("{{ spacing[0] }}");
+    if(!Number.isFinite(mpp) || mpp <= 0) mpp = 0;
+    var mpp_x = parseFloat("{{ spacing[0] }}");
+    var mpp_y = parseFloat("{{ spacing[1] }}");
+    if(!Number.isFinite(mpp_x) || mpp_x <= 0) mpp_x = mpp;
+    if(!Number.isFinite(mpp_y) || mpp_y <= 0) mpp_y = mpp;
     viewer.scalebar({
         pixelsPerMeter: mpp ? (1e3 / mpp) : 0,
 	    location: OpenSeadragon.ScalebarLocation.BOTTOM_RIGHT,
@@ -836,6 +966,9 @@ $(document).ready(function()
         // Does some important calibration of canvas and paperjs
         overlay.resize();
         overlay.resizecanvas();
+
+        // Load GeoJSON overlays after Paper.js is initialized
+        load_geojson_overlays();
 
         // Get the initial data
         if (seg_mode === 'annot') {
@@ -2121,6 +2254,12 @@ $(document).ready(function()
         // A paper path object representing the line from the last vertex to the mouse cursor
         moving_edge = null;
 
+        // A floating text showing the current in-progress edge length
+        moving_edge_label = null;
+
+        // Labels for committed polygon edges during drawing
+        edge_labels = [];
+
         // The API that handles server communication, etc
         constructor(sroi_api) {
             this.sroi_api = sroi_api;
@@ -2136,6 +2275,62 @@ $(document).ready(function()
             let d = x_start.getDistance(x);
             let d_max = zoom_paperjs_scaling_fn(dist_screen, 0, get_image_zoomlevel());
             return (d <= d_max);
+        }
+
+        // Edge length in micrometers
+        edge_length_um(p0, p1) {
+            let dx_mm = (p1.x - p0.x) * mpp_x;
+            let dy_mm = (p1.y - p0.y) * mpp_y;
+            return 1000.0 * Math.sqrt(dx_mm * dx_mm + dy_mm * dy_mm);
+        }
+
+        // Place the label slightly "above" edge and keep offset visually stable while zooming.
+        edge_label_pos(p0, p1) {
+            let dx = p1.x - p0.x;
+            let dy = p1.y - p0.y;
+            let L = Math.sqrt(dx * dx + dy * dy);
+            let mid = new paper.Point((p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
+            if(L < 1e-6) return mid;
+            let nx = -dy / L;
+            let ny = dx / L;
+            let off = zoom_paperjs_scaling_fn(14, 0, get_image_zoomlevel());
+            return new paper.Point(mid.x + nx * off, mid.y + ny * off);
+        }
+
+        edge_length_text(p0, p1) {
+            let um = this.edge_length_um(p0, p1);
+            if(!Number.isFinite(um) || um <= 0) return "n/a µm";
+            return `${um.toFixed(1)} µm`;
+        }
+
+        create_edge_label() {
+            let lbl = new paper.PointText(new paper.Point(0, 0));
+            lbl.style = {
+                fillColor: 'black',
+                fontWeight: 'bold',
+                fontSize: zoom_paperjs_scaling_fn(17, 0, get_image_zoomlevel()),
+                justification: 'center'
+            };
+            lbl.locked = true;
+            lbl.data.edge_measure = true;
+            return lbl;
+        }
+
+        set_edge_label(lbl, p0, p1) {
+            // Keep label size responsive to current zoom while drawing.
+            lbl.style.fontSize = zoom_paperjs_scaling_fn(17, 0, get_image_zoomlevel());
+            lbl.style.leading = lbl.style.fontSize * 1.2;
+            lbl.point = this.edge_label_pos(p0, p1);
+            lbl.content = this.edge_length_text(p0, p1);
+        }
+
+        clear_edge_labels() {
+            if(this.moving_edge_label) {
+                this.moving_edge_label.remove();
+                this.moving_edge_label = null;
+            }
+            this.edge_labels.forEach(function(lbl) { lbl.remove(); });
+            this.edge_labels = [];
         }
 
         // Press event handler
@@ -2154,11 +2349,16 @@ $(document).ready(function()
                 let dspc = zoom_paperjs_scaling_fn(5, 0, get_image_zoomlevel());
                 this.moving_edge.dashArray = [dspc, dspc];
                 set_paperjs_item_strokewidth(this.moving_edge, 2);
+                this.moving_edge_label = this.create_edge_label();
+                this.set_edge_label(this.moving_edge_label, x, x);
             } 
             else {
                 let p = this.curr_polygon.polygon;
                 if(p.segments.length > 2 && this.check_snap_to_closing(x, 10)) {
                     // Path is completed
+                    this.set_edge_label(this.moving_edge_label, p.lastSegment.point, p.firstSegment.point);
+                    this.edge_labels.push(this.moving_edge_label);
+                    this.moving_edge_label = null;
                     p.add(p.firstSegment.point);
 
                     // Send path to server
@@ -2169,14 +2369,19 @@ $(document).ready(function()
                     // Reset to initial state
                     this.moving_edge.remove(); 
                     this.moving_edge = null;
+                    this.clear_edge_labels();
                     this.curr_polygon = null;
 
                     // Reset mode to zoom/pan
                     update_current_mode('NAV');
                 } else {
+                    this.set_edge_label(this.moving_edge_label, p.lastSegment.point, x);
+                    this.edge_labels.push(this.moving_edge_label);
+                    this.moving_edge_label = this.create_edge_label();
                     p.add(x);
                     this.moving_edge.segments[0].point = x;
                     this.moving_edge.segments[1].point = x;
+                    this.set_edge_label(this.moving_edge_label, x, x);
                 }                
             }
 
@@ -2197,6 +2402,13 @@ $(document).ready(function()
                     }
                     else {
                         this.moving_edge.strokeColor = 'black';
+                    }
+                    if(this.moving_edge_label) {
+                        this.set_edge_label(
+                            this.moving_edge_label,
+                            this.moving_edge.segments[0].point,
+                            this.moving_edge.segments[1].point
+                        );
                     }
                     paper.view.draw();
                 }
@@ -2809,6 +3021,20 @@ $(document).ready(function()
     Mousetrap.bind('j', function() { console.log(paper.project.exportJSON()) });
     Mousetrap.bind('D', function() { fn_raise_dl_dialog() });
     Mousetrap.bind('?', function() { help_dialog.dialog("open"); });
+    Mousetrap.bind(['c', 'C'], function() {
+        const btn = $(".geojson-toggle").first();
+        if(btn.length) {
+            btn.trigger("click");
+            return false;
+        }
+    });
+    Mousetrap.bind(['n', 'N'], function() {
+        const btn = $("#nuclei-morphometric-toggle");
+        if(btn.length) {
+            btn.trigger("click");
+            return false;
+        }
+    });
 
     // Also bind the download function to the download button
     $("#button_download").button();
@@ -3320,6 +3546,262 @@ $(document).ready(function()
         // Set the listener
         s_ovl.change(on_overlay_select);
     }
+
+    // Nuclei Morphometric Overlay Handling
+    let nuclei_overlay_element = null;
+    let nuclei_overlay_enabled = false;
+    let nuclei_selected_kind = null;
+    let nuclei_overlay_request_id = 0;
+
+    let remove_nuclei_overlay = function() {
+        if(nuclei_overlay_element) {
+            viewer.removeOverlay(nuclei_overlay_element);
+            $(nuclei_overlay_element).remove();
+            nuclei_overlay_element = null;
+        }
+    };
+
+    let get_first_available_nuclei_kind = function() {
+        let choice = $(".nuclei-overlay-choice:not(:disabled)").first();
+        return choice.length ? choice.val() : null;
+    };
+
+    let render_nuclei_overlay = function() {
+        remove_nuclei_overlay();
+
+        if(!nuclei_overlay_enabled || !nuclei_selected_kind || !nuclei_heatmap_overlays[nuclei_selected_kind]) {
+            return;
+        }
+
+        let base_item = viewer.world.getItemAt(0);
+        if(!base_item) {
+            return;
+        }
+
+        let cfg = nuclei_heatmap_overlays[nuclei_selected_kind];
+        let base_bounds = base_item.getBounds();
+        let base_content = base_item.getContentSize();
+        let opacity_percent = parseInt($("#nuclei-opacity-slider").val(), 10);
+        let opacity = opacity_percent / 100.0;
+        let req_id = ++nuclei_overlay_request_id;
+
+        // Downsample-aware mapping: detect downsample ratio from PNG size vs displayed base image size.
+        let detected_scale_x = (cfg.png_w && base_content.x) ? (base_content.x / cfg.png_w) : 1.0;
+        let detected_scale_y = (cfg.png_h && base_content.y) ? (base_content.y / cfg.png_h) : 1.0;
+        let mapped_w = (cfg.png_w || base_content.x) * detected_scale_x;
+        let mapped_h = (cfg.png_h || base_content.y) * detected_scale_y;
+        let w_frac = mapped_w / base_content.x;
+        let h_frac = mapped_h / base_content.y;
+        let overlay_rect = new OpenSeadragon.Rect(
+            base_bounds.x,
+            base_bounds.y,
+            base_bounds.width * w_frac,
+            base_bounds.height * h_frac
+        );
+
+        let overlay_img = document.createElement("img");
+        overlay_img.style.width = "100%";
+        overlay_img.style.height = "100%";
+        overlay_img.style.pointerEvents = "none";
+        overlay_img.style.opacity = opacity.toString();
+        overlay_img.alt = "Nuclei heatmap overlay";
+
+        overlay_img.onload = function() {
+            if(req_id !== nuclei_overlay_request_id || !nuclei_overlay_enabled || !nuclei_selected_kind) {
+                return;
+            }
+            viewer.addOverlay({
+                element: overlay_img,
+                location: overlay_rect,
+                checkResize: false
+            });
+            nuclei_overlay_element = overlay_img;
+        };
+
+        overlay_img.onerror = function() {
+            if(req_id === nuclei_overlay_request_id) {
+                window.alert("Nuclei heatmap overlay failed to load");
+            }
+        };
+
+        overlay_img.src = cfg.url;
+    };
+
+    if(nuclei_heatmap_overlays && Object.keys(nuclei_heatmap_overlays).length > 0) {
+        let checked_choice = $(".nuclei-overlay-choice:checked").first();
+        nuclei_selected_kind = checked_choice.length ? checked_choice.val() : get_first_available_nuclei_kind();
+        if(nuclei_selected_kind && checked_choice.length === 0) {
+            $(`.nuclei-overlay-choice[value=\"${nuclei_selected_kind}\"]`).prop("checked", true);
+        }
+
+        $(".nuclei-overlay-choice").on("change", function() {
+            if($(this).is(":checked")) {
+                $(".nuclei-overlay-choice").not(this).prop("checked", false);
+                nuclei_selected_kind = $(this).val();
+            } else {
+                let current_choice = $(".nuclei-overlay-choice:checked").first();
+                nuclei_selected_kind = current_choice.length ? current_choice.val() : null;
+            }
+
+            if(nuclei_overlay_enabled) {
+                if(nuclei_selected_kind) {
+                    render_nuclei_overlay();
+                } else {
+                    nuclei_overlay_enabled = false;
+                    $("#nuclei-morphometric-toggle").removeClass("active");
+                    remove_nuclei_overlay();
+                }
+            }
+        });
+
+        $("#nuclei-morphometric-toggle").on("click", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if(!nuclei_overlay_enabled) {
+                if(!nuclei_selected_kind) {
+                    nuclei_selected_kind = get_first_available_nuclei_kind();
+                    if(nuclei_selected_kind) {
+                        $(`.nuclei-overlay-choice[value=\"${nuclei_selected_kind}\"]`).prop("checked", true);
+                    }
+                }
+                if(!nuclei_selected_kind) {
+                    return;
+                }
+                nuclei_overlay_enabled = true;
+                $(this).addClass("active");
+                render_nuclei_overlay();
+            } else {
+                nuclei_overlay_enabled = false;
+                $(this).removeClass("active");
+                remove_nuclei_overlay();
+            }
+        });
+
+        $("#nuclei-opacity-slider").on("input change", function() {
+            let opacity_percent = parseInt($(this).val(), 10);
+            $("#nuclei-opacity-value").text(opacity_percent);
+            if(nuclei_overlay_element) {
+                $(nuclei_overlay_element).css("opacity", opacity_percent / 100.0);
+            }
+        });
+    }
+
+    // GeoJSON Overlay Handling
+    const geojson_overlays = {{geojson_overlays|tojson}};
+    const geojson_layers = {};  // Store layer data by overlay name
+
+    // Draw GeoJSON LineStrings on the viewer using paper.js
+    function draw_geojson(geojson_data, overlay_name) {
+        if (!geojson_data.features) {
+            console.log('ERROR: No features in GeoJSON for', overlay_name, geojson_data);
+            return;
+        }
+
+        let overlay_group = new paper.Group({name: 'geojson_' + overlay_name});
+        let path_count = 0;
+
+        for (let feature of geojson_data.features) {
+            if (feature.geometry.type === 'LineString') {
+                let coords = feature.geometry.coordinates;
+                let stroke_color = feature.properties.stroke_color || '#00FF00';
+                let stroke_width = feature.properties.stroke_width || 2;
+
+                console.log('Drawing path:', feature.properties.contour_id, 'color:', stroke_color, 'width:', stroke_width, 'points:', coords.length);
+
+                // Convert pixel coordinates to paper.js coordinates
+                let path = new paper.Path({
+                    strokeColor: stroke_color,
+                    strokeWidth: stroke_width,
+                    closed: false,
+                    name: feature.properties.contour_id
+                });
+
+                for (let coord of coords) {
+                    path.add(new paper.Point(coord[0], coord[1]));
+                }
+
+                overlay_group.addChild(path);
+                path_count++;
+            }
+        }
+
+        geojson_layers[overlay_name] = overlay_group;
+        overlay_group.visible = false;  // Hidden by default
+        console.log('Successfully loaded GeoJSON overlay:', overlay_name, 'with', path_count, 'paths');
+        console.log('Group bounds:', overlay_group.bounds);
+        console.log('Overlay group:', overlay_group);
+    }
+
+    // Load and render all GeoJSON overlays
+    function load_geojson_overlays() {
+        for (let overlay_name in geojson_overlays) {
+            (function(name) {
+                const url = "{{url_for('slide.api_get_geojson_overlay', task_id=task_id, slide_id=slide_id, overlay_name='XXXX')}}".replace('XXXX', name);
+                $.get(url, function(geojson_data) {
+                    draw_geojson(geojson_data, name);
+                });
+            })(overlay_name);
+        }
+    }
+
+    // Slider handler for GeoJSON line width
+    $(document).on('input', '.geojson-width-slider', function() {
+        let overlay_name = $(this).data('overlay');
+        let width = parseFloat($(this).val());
+        
+        $('#width-value').text(width.toFixed(1));
+        
+        if (geojson_layers && geojson_layers[overlay_name]) {
+            let group = geojson_layers[overlay_name];
+            // Update all paths in the group
+            for (let child of group.children) {
+                if (child.strokeWidth !== undefined) {
+                    child.strokeWidth = width;
+                }
+            }
+            paper.view.update();
+        }
+    });
+
+    // Toggle button handler for GeoJSON overlays
+    $(document).on('click', '.geojson-toggle', function(e) {
+        console.log('Toggle button clicked!');
+        e.preventDefault();
+        e.stopPropagation();
+        
+        let overlay_name = $(this).data('overlay');
+        console.log('Toggling overlay:', overlay_name);
+        console.log('geojson_layers:', geojson_layers);
+        
+        if (geojson_layers && geojson_layers[overlay_name]) {
+            let new_state = !geojson_layers[overlay_name].visible;
+            geojson_layers[overlay_name].visible = new_state;
+
+            // When turning on, force current slider width (default 30) instead of GeoJSON file width.
+            if (new_state) {
+                let width_input = $(`.geojson-width-slider[data-overlay="${overlay_name}"]`).first();
+                let width = width_input.length ? parseFloat(width_input.val()) : 30.0;
+                $('#width-value').text(width.toFixed(1));
+                for (let child of geojson_layers[overlay_name].children) {
+                    if (child.strokeWidth !== undefined) {
+                        child.strokeWidth = width;
+                    }
+                }
+            }
+
+            console.log('Toggled to:', new_state);
+            $(this).toggleClass('active');
+            if (paper.view) {
+                paper.view.update();
+            }
+        } else {
+            console.log('ERROR: Overlay not found:', overlay_name, 'Available:', Object.keys(geojson_layers));
+        }
+    });
+
+    // Debug: log what we found
+    console.log('GeoJSON overlays loaded successfully');
 
 });
 </script>

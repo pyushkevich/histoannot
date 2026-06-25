@@ -869,7 +869,7 @@ def orcid_oauth_callback():
         password = str(uuid.uuid4())  # Random password, will never be used
         rc = db.execute(
             '''INSERT INTO user(username, password, fullname, is_group, oauth_only)
-            VALUES (?,?,0,1)''', (username, password, name))
+            VALUES (?,?,?,0,1)''', (username, password, name))
         user_id = rc.lastrowid
         
         # Link the ORCID ID to the user account
@@ -1041,6 +1041,9 @@ def add_user(username, expiry, email, is_group, notify):
     # Check if the user is already in the system
     if get_user_id(username) is not None:
         raise UserExistsException('User %s is already in the system' % (username,))
+
+    if len(email) == 0:
+        email = None
 
     if email is not None and email_exists(email):
         raise DuplicateEmailException('Email address %s is already in use by another user.' % (email,))

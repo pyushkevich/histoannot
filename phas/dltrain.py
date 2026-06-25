@@ -464,7 +464,7 @@ def check_rect(task_id, rect):
     w = round(abs(rect[2] - rect[0]))
     h = round(abs(rect[3] - rect[1]))
 
-    print('Checking %d %d against %d %d' % (w,h,min_size,max_size))
+    print(f'Checking box ({w},{h}) against limits {min_size}, {max_size}')
 
     if min_size is not None and (w < min_size or h < min_size):
         abort(Response('Box is too small', 401))

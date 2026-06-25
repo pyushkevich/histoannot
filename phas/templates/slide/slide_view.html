@@ -235,6 +235,73 @@
         top: 400px;
     }
 
+    .task-switch-dropdown {
+        position: relative;
+        display: inline-block;
+    }
+
+    .task-switch-btn {
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-size: 60%;
+        padding: 0 2px;
+        color: #aaa;
+        vertical-align: middle;
+    }
+
+    .task-switch-btn:hover {
+        color: #555;
+        background-color: #e8e8e8;
+        border-radius: 3px;
+    }
+
+    .task-switch-dropdown-content {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        min-width: 200px;
+        background-color: #f9f9f9;
+        box-shadow: 0px 8px 16px rgba(0,0,0,0.2);
+        border-radius: 4px;
+        z-index: 100;
+    }
+
+    .task-switch-dropdown:hover .task-switch-dropdown-content {
+        display: block;
+    }
+
+    .task-switch-dropdown-heading {
+        padding: 5px 12px 3px;
+        font-size: 75%;
+        font-weight: bold;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .task-switch-dropdown-content a {
+        display: block;
+        padding: 6px 12px;
+        color: #333;
+        text-decoration: none;
+        white-space: nowrap;
+        font-size: 90%;
+    }
+
+    .task-switch-dropdown-content a i {
+        width: 1.2em;
+        text-align: center;
+        margin-right: 5px;
+        color: #666;
+    }
+
+    .task-switch-dropdown-content a:hover {
+        background-color: #ddd;
+    }
+
 </style>
 
 <!-- The main div. In browse/annot modes it spans the whole window, in dltrain, only 4/5 of the window -->
@@ -249,7 +316,21 @@
             <td>
                 <a href="{{ url_for('slide.index')}}">Home</a> :
                 <a href="{{ url_for('slide.project_detail', project=project)}}">{{project_name}}</a> :
-                <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a> :
+                <a href="{{ url_for('slide.task_detail', task_id = task_id)}}">{{task['name']}}</a>&thinsp;{%- if other_tasks -%}
+                  <span class="task-switch-dropdown">
+                    <button class="task-switch-btn">&#9660;</button>
+                    <div class="task-switch-dropdown-content">
+                        <div class="task-switch-dropdown-heading">Switch Task</div>
+                        {% for tid, tdata in other_tasks.items() %}
+                        <a href="{{ url_for('slide.slide_view', task_id=tid, slide_id=slide_id, resolution=resolution, affine_mode=affine_mode) }}">
+                          <i class="fa {% if tdata['mode'] == 'annot' %}fa-brain
+                                       {% elif tdata['mode'] == 'dltrain' %}fa-robot
+                                       {% elif tdata['mode'] == 'sampling' %}fa-draw-polygon
+                                       {% else %}fa-eye{% endif %}"></i>{{tdata['name']}}</a>
+                        {% endfor %}
+                    </div>
+                  </span>{%- endif %}
+                :
                 <a href="{{ url_for('slide.specimen_detail_by_id', task_id = task_id, specimen=slide_info['specimen']) }}">{{ slide_info['specimen_display'] }}</a> :
                 <a href="{{ url_for('slide.block_detail_by_id', task_id = task_id, specimen=slide_info['specimen'], block_name=slide_info['block_name']) }}">{{ slide_info['block_name'] }}</a>
                 --- {{sample_id}}

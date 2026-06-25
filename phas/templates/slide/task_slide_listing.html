@@ -42,6 +42,9 @@ Specimen Listing - {{task['name']}}
           <th>Stain</th>
           <th>Section</th>
           <th>Slice</th>
+          {% if not anon %}
+          <th>Filename</th>
+          {% endif %}
           <!--
           {% if task['mode'] == 'annot' %}
             <th>#Ann</th>
@@ -90,7 +93,8 @@ Specimen Listing - {{task['name']}}
 <script type="text/javascript" charset="utf8">
 $(document).ready(function() {
 
-  mode="{{task['mode']}}";
+  var mode="{{task['mode']}}";
+  var anon=parseInt("{{1 if anon else 0}}");
 
   // AJAX url templates
   var url_sld="{{url_for('slide.task_slide_listing', task_id=task_id)}}";
@@ -130,6 +134,10 @@ $(document).ready(function() {
     { data: "section" },
     { data: "slide" }
   ];
+
+  if(!anon) {
+    sld_col_desc.push({ data: "filename" });
+  }
 
   if(mode === 'annot') {
     // sld_col_desc.push({ data: "n_annot"});

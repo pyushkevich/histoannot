@@ -9,6 +9,7 @@ from PIL import Image
 
 from ..auth import login_with_api_key
 from ..slide import project_listing, task_listing, get_slide_detailed_manifest, task_get_info
+from ..slide import get_annot_json, update_annot_json, api_get_annot_svg, api_get_annot_svg_fullres, api_get_annot_timestamp
 from ..dltrain import get_sampling_rois, make_sampling_roi_image, get_labelset_for_task, get_labelset_label_listing
 from ..dltrain import create_sampling_roi, sampling_roi_delete_on_slice, compute_sampling_roi_bounding_box, draw_sampling_roi
 from ..dltrain import spatial_transform_roi, get_samples, get_sample_png
@@ -59,9 +60,8 @@ class Client:
             raise
         
         # Connect to the server with the API key
-        self.jar = None
-        r = self._post('auth', login_with_api_key, {'api_key': api_key_token})
-        self.jar = r.cookies
+        self.jar = requests.cookies.RequestsCookieJar()
+        self._post('auth', login_with_api_key, {'api_key': api_key_token})
         
     def __str__(self) -> str:
         o = StringIO()
@@ -84,7 +84,7 @@ class Client:
         r = requests.post(url, cookies=self.jar, data=data, json=json, verify=self.verify)
         simplefilter('default', InsecureRequestWarning)
         r.raise_for_status()
-        self.jar = r.cookies
+        self.jar.update(r.cookies)
         return r
                
     def project_listing(self):
@@ -159,7 +159,13 @@ class Labelset:
         self.labelset_id = labelset_id
         
     def label_listing(self):
-        r = self.client._get('dltrain', get_labelset_label_listing, 
+        """List all labels in this labelset.
+
+        Returns:
+            A ``list`` of dicts, each describing a label with fields such as ``id``, ``name``,
+            and ``color``.
+        """
+        r = self.client._get('dltrain', get_labelset_label_listing,
                              project = self.project, lset=self.labelset_id)
         return r.json()
 
@@ -191,7 +197,8 @@ class Task:
         
     def slide_manifest(self, specimen=None, block=None, 
                        section=None, slide=None, stain=None, 
-                       min_paths=None, min_markers=None, min_sroi=None):
+                       min_paths=None, min_markers=None, min_sroi=None,
+                       tags_any=None, tags_all=None, tags_none=None):
         """A detailed listing of the slides in the task.
         
         Args:
@@ -203,6 +210,9 @@ class Task:
             min_paths (int, optional): Only list slides with at least so many annotation paths
             min_markers (int, optional): Only list slides with at least so many annotation markers
             min_sroi (int, optional): Only list slides with at least so many sampling ROIs
+            tags_any (list of str, optional): Only list slides that have at least one of the tags in this list
+            tags_all (list of str, optional): Only list slides that have all the tags in this list
+            tags_none (list of str, optional): Only list slides that have none of the tags in this list
         Returns:
             A ``dict`` with slide details that can be passed to a pandas DataFrame constructor
         """
@@ -331,7 +341,7 @@ class DLTrainingTask(Task):
     
     def get_sample_image(self, sample_id:int):
         """Download a PNG for a sample.
-        
+
         Args:
             sample_id(id): ID of the sample
         Returns:
@@ -339,8 +349,158 @@ class DLTrainingTask(Task):
         """
         r = self.client._get('dltrain', get_sample_png, id=sample_id)
         return Image.open(BytesIO(r.content))
-        
-                
+
+
+class AnnotationTask(Task):
+    """A representation of an annotation task on the remote server.
+
+    Args:
+        client (Client): Connection to the PHAS server
+        task_id (int): Numerical id of the task
+    """
+
+    def __init__(self, client:Client, task_id:int):
+        Task.__init__(self, client, task_id)
+        if self.detail["mode"] != 'annot':
+            raise ValueError(f'AnnotationTask cannot be used for task of mode {self.detail["mode"]}')
+
+    def get_slide_annot_json(self, slide_id:int):
+        """Get the annotation for a slide in raw paper.js JSON format.
+
+        Args:
+            slide_id (int): Slide ID
+
+        Returns:
+            A ``dict`` containing the paper.js annotation, or ``None`` if the slide has no annotation.
+        """
+        r = self.client._get('slide', get_annot_json,
+                             task_id=self.task_id, slide_id=slide_id,
+                             mode='raw', resolution='raw')
+        return r.json() if r.text.strip() else None
+
+    def set_slide_annot_json(self, slide_id:int, data:dict):
+        """Upload an annotation for a slide in raw paper.js JSON format.
+
+        Args:
+            slide_id (int): Slide ID
+            data (dict): Annotation in paper.js JSON format (raw slide coordinate space)
+
+        Returns:
+            True if the update was successful.
+        """
+        r = self.client._post('slide', update_annot_json,
+                              task_id=self.task_id, slide_id=slide_id,
+                              mode='raw', resolution='raw',
+                              json=data)
+        return r.json().get('success', False)
+
+    def get_slide_annot_svg(self, slide_id:int, downsample:int=0,
+                            stroke_width:int=480, strip_width:int=0,
+                            font_size:str='2000px', font_color:str='black',
+                            filename:str=None):
+        """Get the annotation for a slide rendered as an SVG.
+
+        Args:
+            slide_id (int): Slide ID
+            downsample (int, optional): Maximum image dimension; 0 means full resolution (default: 0).
+            stroke_width (int, optional): Stroke width for exported paths (default: 480).
+            strip_width (int, optional): Strip width (default: 0).
+            font_size (str, optional): Font size for markers (default: '2000px').
+            font_color (str, optional): Font color for markers (default: 'black').
+            filename (str, optional): If provided, save SVG bytes to this file; otherwise return bytes.
+
+        Returns:
+            Raw SVG ``bytes``, or ``None`` if filename was provided.
+        """
+        form = {'stroke_width': stroke_width, 'strip_width': strip_width,
+                'font_size': font_size, 'font_color': font_color}
+        if downsample > 0:
+            r = self.client._post('slide', api_get_annot_svg,
+                                  task_id=self.task_id, slide_id=slide_id,
+                                  downsample=downsample, data=form)
+        else:
+            r = self.client._post('slide', api_get_annot_svg_fullres,
+                                  task_id=self.task_id, slide_id=slide_id,
+                                  data=form)
+        if filename:
+            with open(filename, 'wb') as f:
+                f.write(r.content)
+        else:
+            return r.content
+
+    def get_slide_annot_timestamp(self, slide_id:int):
+        """Get the timestamp of the last edit to an annotation.
+
+        Args:
+            slide_id (int): Slide ID
+
+        Returns:
+            Timestamp string (ISO format) of the last edit, or ``None`` if the slide has no annotation.
+        """
+        r = self.client._get('slide', api_get_annot_timestamp,
+                             task_id=self.task_id, slide_id=slide_id)
+        return r.json().get('timestamp', None)
+
+    def export_task_annots(self, filename:str):
+        """Export all annotations in the task to a JSON file.
+
+        Each entry in the file contains the slide name, slide id, and the paper.js
+        annotation JSON. Slides with no annotation are omitted. The format is
+        compatible with `import_task_annots`.
+
+        Args:
+            filename (str): Path to the output JSON file.
+
+        Returns:
+            Number of annotations exported.
+        """
+        manifest = self.slide_manifest()
+        ids = list(manifest['id'].values())
+        names = list(manifest['slide_name'].values())
+
+        records = []
+        for slide_id, slide_name in zip(ids, names):
+            annot = self.get_slide_annot_json(int(slide_id))
+            if annot is not None:
+                records.append({'slide_name': slide_name, 'slide_id': int(slide_id), 'annot': annot})
+
+        with open(filename, 'wt') as f:
+            json.dump(records, f)
+
+        return len(records)
+
+    def import_task_annots(self, filename:str):
+        """Import annotations from a JSON file created by `export_task_annots`.
+
+        Slides are matched by ``slide_name``. Records whose slide name is not found
+        in the task manifest are skipped.
+
+        Args:
+            filename (str): Path to the input JSON file.
+
+        Returns:
+            Number of annotations successfully imported.
+        """
+        with open(filename, 'rt') as f:
+            records = json.load(f)
+
+        # Build slide_name -> slide_id lookup from the task manifest
+        manifest = self.slide_manifest()
+        name_to_id = {v: manifest['id'][k] for k, v in manifest['slide_name'].items()}
+
+        n_imported = 0
+        for rec in records:
+            slide_name = rec.get('slide_name')
+            slide_id = name_to_id.get(slide_name)
+            if slide_id is None:
+                print(f'import_task_annots: slide {slide_name!r} not found in task, skipping')
+                continue
+            if self.set_slide_annot_json(int(slide_id), rec['annot']):
+                n_imported += 1
+
+        return n_imported
+
+
 class Slide:
     """A representation of a slide on the remote server.
     
@@ -361,6 +521,7 @@ class Slide:
         self._header = None
         self._osl_header = None
         self._fullpath = None
+        self._tags = None
         
     def __str__(self):
         o = StringIO()
@@ -374,15 +535,15 @@ class Slide:
         return o.getvalue()
     
     def thumbnail_nifti_image(self, filename:str=None, max_dim:int=1000):
-        """Generate a NIFTI image of the sampling ROIs on a slide.
-        
+        """Download a thumbnail of the slide as a NIfTI image.
+
         Args:
-            filename (str, optional): File where to save the image, if not specified ``bytes``
-                containing the image are returned
-            max_dim (int, optional): Maximum image dimension, defaults to 1000.
-        
+            filename (str, optional): File where to save the image. If not specified, raw
+                ``bytes`` containing the image are returned.
+            max_dim (int, optional): Maximum image dimension in pixels, defaults to 1000.
+
         Returns:
-            raw image data as ``bytes`` or None if filename provided
+            Raw image data as ``bytes``, or ``None`` if filename was provided.
         """
         r = self.client._get('dzi', dzi_download_nii_gz, 
                              project=self.project, slide_id=self.slide_id, resource='raw', downsample=max_dim)
@@ -413,17 +574,18 @@ class Slide:
             # Break the image region into tiles
             full_image = None
             tiles_x, tiles_y = np.arange(0, size[0], tile_size), np.arange(0, size[1], tile_size)
+            scale = self.level_downsamples[level]
             for x in tiles_x:
                 w = np.minimum(size[0] - x, tile_size)
-                cx = center[0] + x - 0.5 * (size[0] - w)
+                cx = center[0] + scale * (x - 0.5 * (size[0] - w))
                 for y in tiles_y:
                     h = np.minimum(size[1] - y, tile_size)
-                    cy = center[1] + y - 0.5 * (size[1] - h)
+                    cy = center[1] + scale * (y - 0.5 * (size[1] - h))
                     r = self.client._get('dzi', get_patch_endpoint, 
                                  project=self.project, slide_id=self.slide_id, resource='raw',
                                  level=level, ctrx=cx, ctry=cy, w=w, h=h, format='png')
                     tile = Image.open(BytesIO(r.content))
-                    print(f'Requesting region {cx-w/2,cy-w/2,w,h} from image, tile {tile} pasting at {x,y}')
+                    print(f'Requesting region with center {cx, cy} size {w,h} from image, tile {tile} pasting at {x,y}')
                     if full_image is None:
                         full_image = Image.new(tile.mode, (size[0], size[1]))
                     full_image.paste(tile, (x, y))
@@ -438,6 +600,11 @@ class Slide:
         if self._osl_header is None:
             self._osl_header = self.client._get('dzi', dzi_download_header, project=self.project, slide_id=self.slide_id, resource='raw').json()
         return self._osl_header
+    
+    def _get_tags(self):
+        if self._tags is None:
+            self._tags = self.client._get('slide', get_slide_tags, task_id=self.task_id, slide_id=self.slide_id).json()
+        return self._tags
         
     @property
     def dimensions(self):
@@ -451,17 +618,17 @@ class Slide:
     
     @property
     def level_dimensions(self):
-        """Slide pixel spacing in millimeters."""
+        """Pixel dimensions at each OpenSlide downsample level (list of (width, height) tuples)."""
         return self._get_openslide_header()['level_dimensions']
-    
+
     @property
     def level_downsamples(self):
-        """Slide pixel spacing in millimeters."""
+        """Downsample factor for each OpenSlide level relative to level 0 (list of float)."""
         return self._get_openslide_header()['level_downsamples']
-    
+
     @property
     def properties(self):
-        """Slide pixel spacing in millimeters."""
+        """OpenSlide properties dict for the slide (e.g. scanner metadata, MPP values)."""
         return self._get_openslide_header()['properties']
     
     # TODO: need to implement fine-grained permissions
@@ -501,6 +668,11 @@ class Slide:
     def slide_number(self):
         """Number of the slide within the section (int)"""
         return self.detail['slide']
+    
+    @property
+    def tags(self):
+        """List of tags associated with the slide. Tags are arbitrary strings that can be used to label slides and filter them when listing slides in a task."""
+        return self._get_tags()
 
 
 class SamplingROIPatchExtractor:

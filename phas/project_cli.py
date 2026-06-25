@@ -46,23 +46,17 @@ from .common import AccessLevel
 from .gspread_support import GoogleSheetManifest
 from .schemas import task_schema, label_schema, project_schema, slide_json_schema
 
-def init_db_dltrain():
-    db = get_db()
-    with current_app.open_resource('schema_dltrain.sql') as f:
-        db.executescript(f.read().decode('utf8'))
-
 
 def init_db_views():
     db = get_db()
-    with current_app.open_resource('schema_views.sql') as f:
+    with current_app.open_resource('sql/schema_views.sql') as f:
         db.executescript(f.read().decode('utf8'))
 
 
 def init_db():
     db = get_db()
-    with current_app.open_resource('schema.sql') as f:
+    with current_app.open_resource('sql/schema.sql') as f:
         db.executescript(f.read().decode('utf8'))
-    init_db_dltrain()
     init_db_views()
 
 
@@ -97,19 +91,16 @@ def parse_slide_filename(matfile, src_dir):
 
 
 @click.command('init-db')
+@click.option('--confirm', is_flag=True, help='Confirm database reset by typing "yes"')
 @with_appcontext
-def init_db_command():
+def init_db_command(confirm=False):
     """Clear the existing data and create new tables."""
-    init_db()
-    click.echo('Initialized the database.')
-
-
-@click.command('init-db-dltrain')
-@with_appcontext
-def init_db_dltrain_command():
-    """Clear the existing data related to DL training and create new tables."""
-    init_db_dltrain()
-    click.echo('Initialized the DL training database.')
+    # Interactively prompt user to type "yes" to confirm deletion
+    if confirm or click.confirm('Are you sure you want to reset the database? This will delete all existing data.'):
+        init_db()
+        click.echo('Initialized the database.')
+    else:
+        click.echo('Database reset cancelled.')
 
 
 @click.command('init-db-views')
@@ -1359,7 +1350,6 @@ def anon_set_specimen_aliases_csv(project, csv):
 
 def init_app(app):
     app.cli.add_command(init_db_command)
-    app.cli.add_command(init_db_dltrain_command)
     app.cli.add_command(init_db_views_command)
     app.cli.add_command(list_projects_command)
     app.cli.add_command(project_get_json_command)

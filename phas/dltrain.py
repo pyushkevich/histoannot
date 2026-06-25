@@ -422,13 +422,19 @@ def get_project_labelset_listing(project):
     rc = db.execute("""
         select LS.id as id, LS.name as name, LS.description as description,
                count(L.id) as n_labels, 
-               sum(STAT.N) as n_samples 
+               sum(STAT.N) as n_samples,
+               sum(SROI_STAT.N) as n_sampling_rois
         from labelset_info LS left join label L on L.labelset=LS.id
                               left join (
                                   select L.id,count(TS.id) as N
                                   from label L left join training_sample TS on L.id=TS.label 
                                   group by L.id
                                   ) STAT on L.id=STAT.id
+                              left join (
+                                  select L.id,count(TS.id) as N
+                                  from label L left join sampling_roi TS on L.id=TS.label 
+                                  group by L.id
+                                  ) SROI_STAT on L.id=SROI_STAT.id
         where project=? group by LS.id order by LS.name""", (project,))
 
     # Return the json dump of the listing

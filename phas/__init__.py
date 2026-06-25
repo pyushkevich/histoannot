@@ -31,7 +31,7 @@ from . import admin
 from . import frontend
 import click
 from flask.cli import with_appcontext
-
+import importlib.util
 from flask import before_render_template
 
 def debug_template_paths(sender, template, context, **extra):

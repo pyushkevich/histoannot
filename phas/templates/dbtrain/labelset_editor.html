@@ -27,6 +27,7 @@ PICSL Histology Annotation Server
           <th>Name</th>
           <th>#Labels</th>
           <th>#Samples</th>
+          <th>#ROIs</th>
         </tr>
         </thead>
         <tbody>
@@ -47,6 +48,7 @@ PICSL Histology Annotation Server
         <th>Id</th>
         <th>Label</th>
         <th>#Samples</th>
+        <th>#ROIs</th>
         <th>Description</th>
         <th>Color</th>
       </tr>
@@ -64,6 +66,9 @@ PICSL Histology Annotation Server
     <h3 align="center">LABEL PROPERTIES</h3>
     <form method="post" id="form_ledit" class="pure-form pure-form-stacked">
       <fieldset>
+        <label for="ledit_id">Label Id:</label>
+        <input name="id" id="ledit_id" style="width:100%" readonly>
+
         <label for="ledit_name">Display Name:</label>
         <input name="name" id="ledit_name" style="width:100%">
 
@@ -116,13 +121,15 @@ PICSL Histology Annotation Server
       { data: "id", visible: false },
       { data: "name" },
       { data: "n_labels" },
-      { data: "n_samples" }
+      { data: "n_samples" },
+      { data: "n_sampling_rois" }
     ];
 
     let labels_col_desc = [
       { data: "id", visible: false },
       { data: "name" },
       { data: "n_samples" },
+      { data: "n_sampling_rois" },
       { data: "description", visible: false },
       { data: "color", visible: false }
     ];
@@ -213,6 +220,7 @@ PICSL Histology Annotation Server
         $('#ledit_name').val(rdata.pluck('name')[0]);
         $('#ledit_desc').val(rdata.pluck('description')[0]);
         $('#ledit_color').val(rdata.pluck('color')[0]);
+        $('#ledit_id').val(rdata.pluck('id')[0]);
         $('#d_label_editor').css('display','block');
       }
     });

@@ -237,7 +237,7 @@ def dzi_download(task_id:int, slide_id:int, resource:str, downsample:int, extens
             return resp
 
         elif extension == 'nii.gz':
-            if mpp is not None:
+            if mpp is None:
                 abort(404, 'Missing pixel dimension metadata to create NIFTI file')
             spacing = [ os.dimensions[d] * mpp[d] / thumb.size[d] for d in (0,1) ]
             data = pil_to_nifti_gz(thumb, spacing) 

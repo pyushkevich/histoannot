@@ -844,6 +844,64 @@ def get_available_tasks_for_slide(project, slide_id):
 def load_slide_into_cache(slide_id, sr, resource, socket_addr_list):
     osl = get_osl(slide_id, sr, resource, socket_addr_list)
     print(f'================== Slide {slide_id} has dimensions {osl.dimensions} ===================')
+
+
+# Discover GeoJSON overlays (e.g., contours) in the same directory as .svs
+def get_geojson_overlays(sr, slide_id, task_id):
+    """Find GeoJSON contour overlays from neuseg_contour resource schema."""
+    overlays = {}
+    try:
+        contour_path = sr.get_resource_url('neuseg_contour', True)
+        if contour_path and os.path.exists(contour_path):
+            overlays['neuseg_contour'] = {
+                'name': 'GM/WM Contour',
+                'url': url_for('slide.api_get_geojson_overlay', task_id=task_id, slide_id=slide_id, overlay_name='neuseg_contour')
+            }
+    except:
+        pass
+    return overlays
+
+
+# Discover nuclei morphometric heatmaps in the same directory as .svs
+def resolve_nuclei_heatmap_path(sr, kind):
+    resource_map = {
+        'density': 'neuseg_density',
+        'size': 'neuseg_size'
+    }
+    if kind not in resource_map:
+        return None
+
+    try:
+        f_neuseg = sr.get_resource_url(resource_map[kind], True)
+        if f_neuseg and os.path.exists(f_neuseg):
+            return f_neuseg
+    except:
+        pass
+    return None
+
+
+def get_nuclei_heatmap_overlays(sr, slide_id, task_id):
+    overlays = {}
+    name_map = {
+        'density': 'Nuclei Density',
+        'size': 'Nuclei Size'
+    }
+    try:
+        for kind, name in name_map.items():
+            if resolve_nuclei_heatmap_path(sr, kind):
+                overlays[kind] = {
+                    'name': name,
+                    'kind': kind,
+                    'url': url_for(
+                        'slide.api_get_nuclei_heatmap_overlay',
+                        task_id=task_id,
+                        slide_id=slide_id,
+                        kind=kind
+                    )
+                }
+    except:
+        pass
+    return overlays
         
 
 # The slide view
@@ -877,6 +935,10 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
 
     # Get the list of available overlays and jsonify
     overlays = sr.get_available_overlays(local = False)
+    
+    # Get GeoJSON contour & Nuclei Morphometric overlays
+    geojson_overlays = get_geojson_overlays(sr, slide_id, task_id)
+    nuclei_heatmap_overlays = get_nuclei_heatmap_overlays(sr, slide_id, task_id)
     
     # Get the list of other tasks available for this slide
     other_tasks = get_available_tasks_for_slide(tr.project, slide_id)
@@ -948,6 +1010,8 @@ def slide_view(task_id, slide_id, resolution, affine_mode):
         'user_prefs': user_prefs,
         'overlays': overlays,
         'other_tasks': other_tasks,
+        'geojson_overlays': geojson_overlays,
+        'nuclei_heatmap_overlays': nuclei_heatmap_overlays,
         'read_only': read_only,
         'download_size_limit' : tr.download_size_limit if tr.download_size_limit is not None else -1
     }
@@ -1344,6 +1408,40 @@ class PILBytesIO(BytesIO):
     def fileno(self):
         '''Classic PIL doesn't understand io.UnsupportedOperation.'''
         raise AttributeError('Not supported')
+
+
+# Serve GeoJSON overlay (contours, etc.)
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/geojson/<overlay_name>.json', methods=('GET',))
+@access_task_slide_read()
+def api_get_geojson_overlay(task_id, slide_id, overlay_name):
+    _,_,sr = get_project_task_slide_ref(task_id, slide_id)
+
+    if overlay_name != 'neuseg_contour':
+        abort(404, f'Unsupported GeoJSON overlay: {overlay_name}')
+
+    geojson_path = sr.get_resource_url('neuseg_contour', True)
+
+    if geojson_path and os.path.exists(geojson_path):
+        with open(geojson_path, 'r') as f:
+            return Response(f.read(), mimetype='application/json')
+    else:
+        abort(404, f'GeoJSON overlay not found: {overlay_name}')
+
+
+# Serve nuclei morphometric heatmap image if available
+@bp.route('/api/task/<int:task_id>/slide/<int:slide_id>/nuclei_heatmap/<kind>.png', methods=('GET',))
+@access_task_slide_read()
+def api_get_nuclei_heatmap_overlay(task_id, slide_id, kind):
+    _, _, sr = get_project_task_slide_ref(task_id, slide_id)
+
+    if kind not in ('density', 'size'):
+        abort(404, f'Unsupported nuclei heatmap kind: {kind}')
+
+    heatmap_path = resolve_nuclei_heatmap_path(sr, kind)
+
+    if heatmap_path and os.path.exists(heatmap_path):
+        return send_file(heatmap_path, mimetype='image/png')
+    abort(404, f'Nuclei heatmap not found: {kind}')
 
 
 # Serve label image if available
@@ -1873,4 +1971,3 @@ def init_app(app):
     app.cli.add_command(export_task_annot_cmd)
     app.cli.add_command(import_task_annot_cmd)
     app.cli.add_command(annot_copy_to_task_cmd)
-

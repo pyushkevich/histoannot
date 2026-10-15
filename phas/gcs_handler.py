@@ -439,12 +439,16 @@ class AbstractStreamOpenSlideWrapper:
                     data = fh.read(page.databytecounts[i_tile])
                     tile, indices, shape = page.decode(data, i_tile, jpegtables=page.jpegtables)
                     offx, offy = (tx - tx0) * tw, (ty - ty0) * th
-                    image[offy:(offy+th),offx:(offx+th),:] = np.array(tile, dtype=page.dtype)
+                    image[offy:(offy+th),offx:(offx+tw),:] = np.array(tile, dtype=page.dtype)
                     
             # Crop out the exact image requested
             crop_x, crop_y = location[0] - tx0 * tw, location[1] - ty0 * th
             icrop = image[crop_y:(crop_y+size[1]),crop_x:(crop_x+size[0]),:]
         
+        # Single-channel images (e.g., density maps) must be 2D for PIL
+        if icrop.ndim == 3 and icrop.shape[2] == 1:
+            icrop = icrop[:, :, 0]
+
         # Return the image as PIL
         return Image.fromarray(icrop).convert("RGBA")
 

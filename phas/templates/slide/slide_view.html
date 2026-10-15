@@ -444,7 +444,8 @@
                                             <option value="none">None</option>
                                         </select>
                                     </div>
-                                    <div id="div_overlay_options" class="display-opts-hidden-content">
+                                    <div id="div_overlay_options" class="pure-u-1 display-opts-hidden-content">
+                                    <div class="pure-g">
                                         <div class="pure-u-1 pure-u-md-1-1"> 
                                             <h4>Overlay Properties</h4>
                                         </div> 
@@ -464,6 +465,7 @@
                                         <div class="pure-u-1 pure-u-md-1-2"> 
                                             <div id="overlay_opacity_ramp" class="display-opts-right-slider"></div>
                                         </div>
+                                    </div>
                                     </div>
                                     {% endif %}
 
@@ -3251,6 +3253,8 @@ $(document).ready(function()
         ovl = $("#form_overlay_select").val();
         if(ovl === "none") {
             remove_all_overlays();
+            display_options.overlay.enabled = false;
+            apply_display_options();
             $("#div_overlay_options").hide();
         }
         else {
@@ -3266,7 +3270,8 @@ $(document).ready(function()
                 make_slider_with_handle(overlay_level_slider, o.level, on_overlay_level_window_change);
                 make_slider_with_handle(overlay_window_slider, o.window, on_overlay_level_window_change);
 
-                // Initialize
+                // Initialize (enables the colormap filter on the overlay layer)
+                display_options.overlay.enabled = true;
                 on_overlay_level_window_change(null, null);
 
                 $("#div_overlay_options").show();

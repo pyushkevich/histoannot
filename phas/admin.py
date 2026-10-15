@@ -111,8 +111,8 @@ def user_get_reset_link(user_id, notify):
 
 # Email validation
 def validate_email(email):
-    pat = "([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\\.[A-Z|a-z]{2,})+"
-    return True if re.match(pat, email) else False
+    pat = r"([A-Za-z0-9]+[._+-])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
+    return re.fullmatch(pat, email) is not None
 
 
 # Change the user's global access level
